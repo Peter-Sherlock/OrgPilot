@@ -1,6 +1,10 @@
 """Provider-agnostic LLM clients supporting deterministic mock, replay, and live APIs."""
 
+import json
 from abc import ABC, abstractmethod
+from typing import Any
+
+import httpx
 
 from orgpilot.domain.enums import HealthStatus
 from orgpilot.extraction.models import (
@@ -20,6 +24,84 @@ class LLMClient(ABC):
         self, system_prompt: str, user_prompt: str, raw_message: str, context: MessageContext
     ) -> ExtractionResult:
         """Extracts structured claims from text."""
+
+
+class AnthropicCompatibleLLMClient(LLMClient):
+    """Calls an Anthropic Messages-compatible endpoint and validates typed JSON output."""
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        base_url: str = "https://aihubmix.com",
+        max_tokens: int = 1024,
+        timeout: float = 30.0,
+        client: httpx.Client | None = None,
+    ) -> None:
+        if not api_key:
+            raise ValueError("api_key must not be empty")
+        self.api_key = api_key
+        self.model = model
+        self.base_url = base_url.rstrip("/")
+        self.max_tokens = max_tokens
+        self._owns_client = client is None
+        self._client = client or httpx.Client(timeout=timeout)
+
+    def extract(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        raw_message: str,
+        context: MessageContext,
+    ) -> ExtractionResult:
+        schema = json.dumps(ExtractionResult.model_json_schema(), ensure_ascii=False)
+        payload = {
+            "model": self.model,
+            "system": system_prompt,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": f"{user_prompt}\n\nOutput JSON matching this schema:\n{schema}",
+                }
+            ],
+            "max_tokens": self.max_tokens,
+            "stream": False,
+        }
+        response = self._client.post(
+            f"{self.base_url}/v1/messages",
+            headers={
+                "x-api-key": self.api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json=payload,
+        )
+        response.raise_for_status()
+        data: dict[str, Any] = response.json()
+        text_blocks = [
+            block.get("text", "")
+            for block in data.get("content", [])
+            if block.get("type") == "text"
+        ]
+        if not text_blocks:
+            raise ValueError("LLM response did not contain a text block")
+        return ExtractionResult.model_validate_json(self._extract_json(text_blocks[0]))
+
+    @staticmethod
+    def _extract_json(text: str) -> str:
+        stripped = text.strip()
+        if stripped.startswith("```"):
+            lines = stripped.splitlines()
+            stripped = "\n".join(lines[1:-1]).strip()
+        start = stripped.find("{")
+        end = stripped.rfind("}")
+        if start < 0 or end < start:
+            raise ValueError("LLM text block did not contain a JSON object")
+        return stripped[start : end + 1]
+
+    def close(self) -> None:
+        if self._owns_client:
+            self._client.close()
 
 
 class MockLLMClient(LLMClient):
@@ -62,16 +144,14 @@ class MockLLMClient(LLMClient):
             if "前端" in message and ("frontend" in t_id_lower or "frontend" in t_title_lower):
                 matched_task_id = task_id
                 break
-            if any(w in message for w in ["后端", "支付", "sdk", "数据库", "redis", "接口"]) and (
-                "backend" in t_id_lower or "api" in t_id_lower
-            ):
+            if any(
+                w in message for w in ["后端", "支付", "sdk", "数据库", "redis", "接口", "网关"]
+            ) and ("backend" in t_id_lower or "api" in t_id_lower):
                 matched_task_id = task_id
                 break
 
-        if matched_task_id is None and context.known_tasks:
-            matched_task_id = next(iter(context.known_tasks.keys()))
-        elif matched_task_id is None:
-            matched_task_id = "default_task"
+        if matched_task_id is None and len(context.known_tasks) == 1:
+            matched_task_id = next(iter(context.known_tasks))
 
         # 1. Check for casual chat / non-actionable noise
         casual_phrases = [
@@ -90,6 +170,14 @@ class MockLLMClient(LLMClient):
         ):
             return ExtractionResult(
                 is_actionable=False, claims=[], commitments=[], reasoning="Casual chat"
+            )
+
+        if matched_task_id is None:
+            return ExtractionResult(
+                is_actionable=False,
+                claims=[],
+                commitments=[],
+                reasoning="No unambiguous task reference found",
             )
 
         # 2. Check for commitment

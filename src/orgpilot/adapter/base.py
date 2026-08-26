@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 
 from orgpilot.domain.enums import ActionType
 from orgpilot.domain.models import ActionCommand, ActionResult
+from orgpilot.events.models import OrgEvent
 
 
 class CollaborationAdapter(ABC):
@@ -39,3 +40,7 @@ class CollaborationAdapter(ABC):
                 return self.notify_group(command)
             case _:
                 raise ValueError(f"Unsupported action type: {command.action_type}")
+
+    def pop_generated_events(self) -> list[OrgEvent]:
+        """Returns domain events produced by successful external side effects."""
+        return []

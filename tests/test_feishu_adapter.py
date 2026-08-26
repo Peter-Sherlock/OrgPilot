@@ -2,6 +2,8 @@
 
 from datetime import datetime
 
+import pytest
+
 from orgpilot.domain.enums import ActionType, CommandStatus
 from orgpilot.domain.models import ActionCommand
 from orgpilot.feishu.adapter import FeishuCollaborationAdapter
@@ -103,3 +105,24 @@ def test_feishu_adapter_notify_group() -> None:
     assert result.status is CommandStatus.SUCCESS
     assert len(client.sent_cards) == 1
     assert client.sent_cards[0]["receive_id"] == "oc_dev_chat"
+
+
+async def test_feishu_adapter_propagates_async_failure_before_reporting_success() -> None:
+    class FailingClient(MockFeishuClient):
+        async def send_card(self, *args, **kwargs):
+            raise RuntimeError("Feishu unavailable")
+
+    adapter = FeishuCollaborationAdapter(client=FailingClient(), project_id="feishu-proj")
+    command = ActionCommand(
+        command_id="cmd:failure",
+        action_id="act:failure",
+        action_type=ActionType.ASK_RECOVERY_ESTIMATE,
+        targets=("ou_alice",),
+        payload={"task_id": "backend_api"},
+        idempotency_key="idem:failure",
+        created_at=NOW,
+    )
+
+    with pytest.raises(RuntimeError, match="Feishu unavailable"):
+        adapter.execute(command)
+    assert adapter.audit_log == []

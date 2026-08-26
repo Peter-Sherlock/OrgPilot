@@ -114,7 +114,35 @@ async def test_feishu_message_and_card_approval_flow(client: httpx.AsyncClient) 
     assert len(approvals) == 1
     approval_id = approvals[0]["approval_id"]
 
-    # 4. Simulate Feishu card.action.trigger (PM Carol clicks [Approve])
+    # 4. Missing or different operators cannot approve Carol's request.
+    missing_operator = await client.post(
+        "/api/v1/feishu/events",
+        json={
+            "open_message_id": "om_card_msg_missing_operator",
+            "action": {
+                "value": {
+                    "action": "approved",
+                    "approval_id": approval_id,
+                }
+            },
+        },
+    )
+    assert missing_operator.json()["code"] == 400
+
+    spoofed_callback = {
+        "open_message_id": "om_card_msg_spoofed",
+        "operator": {"open_id": "ou_mallory"},
+        "action": {
+            "value": {
+                "action": "approved",
+                "approval_id": approval_id,
+            }
+        },
+    }
+    spoofed = await client.post("/api/v1/feishu/events", json=spoofed_callback)
+    assert spoofed.json()["code"] == 403
+
+    # 5. Simulate Feishu card.action.trigger (PM Carol clicks [Approve])
     card_callback_payload = {
         "open_message_id": "om_card_msg_1",
         "operator": {"open_id": "ou_carol"},
@@ -198,6 +226,10 @@ async def test_feishu_card_missing_or_invalid_approval(client: httpx.AsyncClient
     # Non-existent approval_id
     resp_not_found = await client.post(
         "/api/v1/feishu/events",
-        json={"open_message_id": "om_1", "action": {"value": {"approval_id": "non-existent"}}},
+        json={
+            "open_message_id": "om_1",
+            "operator": {"open_id": "ou_carol"},
+            "action": {"value": {"action": "approved", "approval_id": "non-existent"}},
+        },
     )
     assert resp_not_found.json()["code"] == 404

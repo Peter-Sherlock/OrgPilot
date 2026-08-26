@@ -24,6 +24,20 @@ def test_grounding_verifier_quote_validation() -> None:
     assert not verifier.verify_quote(msg, "")
 
 
+def test_grounding_verifier_rejects_claims_without_canonical_tasks() -> None:
+    verifier = GroundingVerifier()
+    message = "未知任务延期了"
+    claim = ExtractedHealthClaim(
+        task_id="invented-task",
+        health_status=HealthStatus.DELAYED,
+        confidence=0.9,
+        source_quote=message,
+    )
+    context = MessageContext(project_id="p1", actor_id="alice", occurred_at=NOW)
+
+    assert verifier.verify_claim(claim, message, context) is False
+
+
 def test_grounding_verifier_filters_hallucinated_claims() -> None:
     verifier = GroundingVerifier()
     msg = "支付 SDK 报错，排查需要到明天下午 5 点"

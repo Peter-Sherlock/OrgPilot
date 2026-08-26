@@ -35,7 +35,7 @@ def build_extraction_prompt(message: str, context: MessageContext) -> str:
     tasks_desc = (
         "\n".join(f"- {task_id}: {desc}" for task_id, desc in context.known_tasks.items())
         if context.known_tasks
-        else "无已知任务列表（需从消息中推断）"
+        else "无已知任务列表（禁止创建任务声明，需先同步任务或请求澄清）"
     )
 
     members_desc = (

@@ -18,6 +18,10 @@ class MessageContext(StrictModel):
     project_id: str
     actor_id: str
     occurred_at: datetime
+    source_ref: str | None = Field(
+        default=None,
+        description="Stable upstream message identifier used for event idempotency",
+    )
     known_tasks: dict[str, str] = Field(
         default_factory=dict, description="Map of canonical task_id to title and status"
     )
@@ -58,7 +62,7 @@ class ExtractionResult(StrictModel):
     is_actionable: bool
     claims: list[ExtractedHealthClaim] = Field(default_factory=list)
     commitments: list[ExtractedCommitment] = Field(default_factory=list)
-    reasoning: str = Field(default="", description="Chain-of-thought rationale")
+    reasoning: str = Field(default="", description="Brief extraction decision summary")
 
 
 class EvaluationSample(StrictModel):

@@ -96,3 +96,16 @@ def test_approval_manager_missing_keys() -> None:
         mgr.consume("missing", NOW)
     assert mgr.get_request("missing") is None
     assert mgr.get_requests_for_case("missing") == ()
+
+
+def test_only_designated_approver_can_decide() -> None:
+    mgr, action, cmd = _fixture()
+    req = mgr.create_request("case:1", action, cmd, "carol", NOW)
+
+    with pytest.raises(PermissionError, match="not authorized"):
+        mgr.approve(req.approval_id, "mallory", NOW + timedelta(minutes=1))
+    with pytest.raises(PermissionError, match="not authorized"):
+        mgr.reject(req.approval_id, "mallory", "spoofed", NOW + timedelta(minutes=1))
+
+    assert req.status is ApprovalStatus.PENDING
+    assert req.approver_id == "carol"

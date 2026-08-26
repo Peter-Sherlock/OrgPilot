@@ -1,6 +1,7 @@
 """Feishu collaboration adapter for ActionCommands, Feishu cards, and OpenAPI calls."""
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import Any
 
@@ -48,10 +49,11 @@ class FeishuCollaborationAdapter(CollaborationAdapter):
             loop = None
 
         if loop and loop.is_running():
-            # In an active loop, schedule task in background
-            return asyncio.ensure_future(coro)
-        else:
-            return asyncio.run(coro)
+            # The Agent adapter contract is synchronous. Run the coroutine on a
+            # separate loop and wait so failures cannot be reported as success.
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                return executor.submit(asyncio.run, coro).result()
+        return asyncio.run(coro)
 
     def send_private_message(self, command: ActionCommand) -> ActionResult:
         """Sends a private inquiry card to the target team members."""

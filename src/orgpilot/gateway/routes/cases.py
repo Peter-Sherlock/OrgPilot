@@ -8,7 +8,7 @@ router = APIRouter(prefix="/api/v1/projects/{project_id}/cases", tags=["cases"])
 
 
 def get_service(request: Request) -> GatewayService:
-    return GatewayService(request.app.state.db)
+    return request.app.state.gateway_service
 
 
 @router.get("")

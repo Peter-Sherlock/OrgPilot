@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/v1/projects/{project_id}", tags=["coordination"]
 
 
 def get_service(request: Request) -> GatewayService:
-    return GatewayService(request.app.state.db)
+    return request.app.state.gateway_service
 
 
 @router.post("/run-turn", response_model=TurnRunResponse)
@@ -27,8 +27,7 @@ async def run_turn(
     """Explicitly triggers one turn of the CoordinationAgent loop."""
     now = (body.current_time if body and body.current_time else None) or datetime.now(UTC)
     agent = await service.get_or_replay_agent(project_id)
-    turn_trace, _ = agent.run_turn([], now)
-    await service.save_agent_state(agent)
+    turn_trace, _ = await service.run_agent_turn(agent, [], now)
 
     return TurnRunResponse(
         round_number=turn_trace.round_number,

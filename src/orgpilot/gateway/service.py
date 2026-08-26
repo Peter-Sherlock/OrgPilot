@@ -1,9 +1,14 @@
-"""Gateway coordination service orchestrating database persistence and Agent loop execution."""
+"""Gateway coordination service orchestrating persistence and Agent execution."""
 
+import asyncio
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
+from orgpilot.adapter.base import CollaborationAdapter
+from orgpilot.adapter.mock import MockCollaborationAdapter
 from orgpilot.agent.loop import CoordinationAgent
+from orgpilot.domain.models import AgentTurnTrace
 from orgpilot.events.log import AppendResult
 from orgpilot.events.models import OrgEvent, parse_event
 from orgpilot.extraction.extractor import ClaimExtractor
@@ -18,21 +23,41 @@ class GatewayService:
     SQL persistence.
     """
 
-    def __init__(self, db: Database) -> None:
+    def __init__(
+        self,
+        db: Database,
+        extractor: ClaimExtractor | None = None,
+        adapter_factory: Callable[[str], CollaborationAdapter] | None = None,
+    ) -> None:
         self.db = db
         self.event_store = SqlEventStore(db)
         self.state_store = SqlStateStore(db)
-        self.extractor = ClaimExtractor()
+        self.extractor = extractor or ClaimExtractor()
+        self.adapter_factory = adapter_factory or (
+            lambda project_id: MockCollaborationAdapter(project_id=project_id)
+        )
 
     async def get_or_replay_agent(self, project_id: str) -> CoordinationAgent:
         """Constructs an Agent with state restored from the persistent SQL event log and stores."""
-        agent = CoordinationAgent(project_id=project_id)
+        agent = CoordinationAgent(
+            project_id=project_id,
+            adapter=self.adapter_factory(project_id),
+        )
         events = await self.event_store.get_events(project_id)
 
-        # Apply existing events to restore projector state
+        # A snapshot is a replay cache. The event log remains authoritative and any
+        # events not represented by the snapshot are applied after restoration. A
+        # snapshot that references a missing event is discarded rather than allowed
+        # to introduce state that cannot be reproduced from the event log.
+        snapshot = await self.state_store.load_state(project_id)
+        persisted_event_ids = {event.event_id for event in events}
+        if snapshot is not None and snapshot.processed_event_ids <= persisted_event_ids:
+            agent.projector.state = snapshot
+
         for evt in events:
             agent.event_log.append(evt)
-            agent.projector.apply(evt)
+            if evt.event_id not in agent.projector.state.processed_event_ids:
+                agent.projector.apply(evt)
 
         # Restore cases and approvals
         cases = await self.state_store.load_cases(project_id)
@@ -44,6 +69,23 @@ class GatewayService:
             agent.approval_manager._requests[r.approval_id] = r
 
         return agent
+
+    async def run_agent_turn(
+        self,
+        agent: CoordinationAgent,
+        events: list[OrgEvent],
+        current_time: datetime,
+    ) -> tuple[AgentTurnTrace, list[OrgEvent]]:
+        """Runs the synchronous deterministic kernel off-loop and persists all outputs."""
+        trace, generated_events = await asyncio.to_thread(
+            agent.run_turn,
+            events,
+            current_time,
+        )
+        for event in generated_events:
+            await self.event_store.append(event)
+        await self.save_agent_state(agent)
+        return trace, generated_events
 
     async def save_agent_state(self, agent: CoordinationAgent) -> None:
         """Persists current state snapshot, active cases, and approvals."""
@@ -74,6 +116,7 @@ class GatewayService:
         message: str,
         actor_id: str,
         occurred_at: datetime | None = None,
+        source_ref: str | None = None,
         auto_run_turn: bool = True,
     ) -> tuple[bool, list[OrgEvent], CoordinationAgent, str | None, int | None]:
         """Extracts claims from natural language message, persists events, and optionally
@@ -89,6 +132,7 @@ class GatewayService:
             project_id=project_id,
             actor_id=actor_id,
             occurred_at=ts,
+            source_ref=source_ref,
             known_tasks=tasks_dict,
             known_members=members_dict,
         )
@@ -103,10 +147,9 @@ class GatewayService:
         round_num: int | None = None
 
         if auto_run_turn and extracted_events:
-            turn_trace, _ = agent.run_turn(extracted_events, ts)
+            turn_trace, _ = await self.run_agent_turn(agent, extracted_events, ts)
             turn_reason = turn_trace.termination_reason.value
             round_num = turn_trace.round_number
-            await self.save_agent_state(agent)
 
         return (
             extraction_result.is_actionable,

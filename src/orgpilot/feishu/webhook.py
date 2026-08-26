@@ -1,5 +1,6 @@
 """Feishu Webhook event parser and dispatcher for URL challenge, messages, and card actions."""
 
+import hmac
 import json
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
@@ -13,12 +14,19 @@ if TYPE_CHECKING:
 class FeishuWebhookHandler:
     """Handles Feishu OpenAPI webhook callbacks and card interactions."""
 
-    def __init__(self, service: Any, project_id: str = "feishu-default") -> None:
+    def __init__(
+        self,
+        service: Any,
+        project_id: str = "feishu-default",
+        verification_token: str | None = None,
+    ) -> None:
         self.service: GatewayService = service
         self.project_id = project_id
+        self.verification_token = verification_token
 
     async def handle_event(self, body: dict[str, Any]) -> dict[str, Any]:
         """Dispatches Feishu webhook payload according to event type."""
+        self._verify_callback(body)
         # 1. Handle URL verification challenge
         if body.get("type") == "url_verification":
             return {"challenge": body.get("challenge", "")}
@@ -41,6 +49,13 @@ class FeishuWebhookHandler:
             return await self._handle_card_action(body.get("event", {}))
 
         return {"code": 0, "msg": "event ignored"}
+
+    def _verify_callback(self, body: dict[str, Any]) -> None:
+        if not self.verification_token:
+            return
+        supplied = body.get("token") or body.get("header", {}).get("token") or ""
+        if not hmac.compare_digest(str(supplied), self.verification_token):
+            raise PermissionError("Invalid Feishu verification token")
 
     async def _handle_message_received(self, event_data: dict[str, Any]) -> dict[str, Any]:
         """Processes an incoming chat message from a team member."""
@@ -71,6 +86,7 @@ class FeishuWebhookHandler:
             message=raw_text,
             actor_id=actor_id,
             occurred_at=occurred_at,
+            source_ref=message.get("message_id"),
             auto_run_turn=True,
         )
 
@@ -88,19 +104,25 @@ class FeishuWebhookHandler:
     async def _handle_card_action(self, event_data: dict[str, Any]) -> dict[str, Any]:
         """Processes a card action button click and returns in-place updated card JSON."""
         action_val = event_data.get("action", {}).get("value", {})
-        decision = action_val.get("action", "approved")
+        decision = action_val.get("action")
         approval_id = action_val.get("approval_id")
 
-        operator = event_data.get("operator", {}).get("open_id") or "approver"
+        operator = event_data.get("operator", {}).get("open_id")
         now = datetime.now(UTC)
 
         if not approval_id:
             return {"code": 400, "msg": "missing approval_id in button value"}
+        if decision not in {"approved", "rejected"}:
+            return {"code": 400, "msg": "invalid approval decision"}
+        if not operator:
+            return {"code": 400, "msg": "missing operator open_id"}
 
         agent = await self.service.get_or_replay_agent(self.project_id)
         req = agent.approval_manager.get_request(approval_id)
         if req is None:
             return {"code": 404, "msg": f"approval request {approval_id} not found"}
+        if req.approver_id != operator:
+            return {"code": 403, "msg": f"operator {operator} is not the designated approver"}
 
         if decision == "approved":
             agent.approval_manager.approve(approval_id, operator, now)
@@ -108,8 +130,7 @@ class FeishuWebhookHandler:
             agent.approval_manager.reject(approval_id, operator, "declined via card", now)
 
         # Run turn to execute task update or escalation
-        turn_trace, _ = agent.run_turn([], now)
-        await self.service.save_agent_state(agent)
+        turn_trace, _ = await self.service.run_agent_turn(agent, [], now)
 
         # Build in-place updated card
         task_id = req.proposed_command.payload.get("task_id", "task")

@@ -141,7 +141,7 @@ class CoordinationAgent:
                             idempotency_key=f"idem:{action.action_id}:r{self._turn_count}",
                         )
                         approver = action.targets[0] if action.targets else "approver"
-                        self.approval_manager.create_request(
+                        approval_request = self.approval_manager.create_request(
                             case.case_id,
                             action,
                             proposed_command,
@@ -149,7 +149,16 @@ class CoordinationAgent:
                             current_time,
                             expires_at=current_time + timedelta(days=2),
                         )
-                        self.adapter.request_approval(proposed_command, approver)
+                        outbound_command = proposed_command.model_copy(
+                            update={
+                                "payload": {
+                                    **proposed_command.payload,
+                                    "approval_id": approval_request.approval_id,
+                                    "case_id": case.case_id,
+                                }
+                            }
+                        )
+                        self.adapter.request_approval(outbound_command, approver)
                         executed_cmd_ids.append(proposed_command.command_id)
 
                         self.case_ledger.transition(
@@ -209,9 +218,7 @@ class CoordinationAgent:
                         )
 
         # Collect side effects / feedback events from adapter
-        generated_events: list[OrgEvent] = []
-        if isinstance(self.adapter, MockCollaborationAdapter):
-            generated_events = self.adapter.pop_generated_events()
+        generated_events = self.adapter.pop_generated_events()
 
         # Apply any adapter-generated events (e.g., TaskUpdatedEvent) to internal state immediately
         for gen_evt in generated_events:

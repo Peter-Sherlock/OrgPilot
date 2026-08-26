@@ -8,7 +8,7 @@
 在 P0 至 P1 阶段，OrgPilot 建立了协调内核、Case 状态机、LLM 声明抽取与 SQL 持久化网关。为了将系统真正接入团队的真实工作流，需要对接企业级即时通讯平台（飞书 / Lark）：
 1. 团队成员使用飞书桌面端与移动端日常沟通，无需切换到任何外部管理后台；
 2. PM 审批需要以交互式富文本卡片（带按钮）的形式在飞书内原地完成；
-3. 需要兼顾生产 Webhook 部署与本地开发/测试的零配置免公网 IP 需求。
+3. 当前阶段使用可验证的 HTTP Webhook；长连接模式留待后续实现。
 
 ## 决策
 
@@ -20,8 +20,8 @@
    - 将 `POST_GROUP_NOTIFICATION` 映射为向项目协作群发送富文本周知卡片。
 
 2. **飞书 2.0 交互式卡片与原地审批机制**：
-   - 按钮点击触发 `card.action.trigger` 事件回调，携带审批 ID 与操作 Token；
-   - OrgPilot 校验 Token 合法性后原地更新飞书卡片样式（置灰按钮并展示审批人与时间），同时触发 Agent Loop 推进改期执行。
+   - 按钮点击触发 `card.action.trigger` 事件回调并携带持久化审批 ID；
+   - OrgPilot 校验 Webhook Verification Token，并要求回调操作者 `open_id` 与指定审批人一致，再推进改期执行。
 
 3. **双模客户端与安全鉴权 (`FeishuClient`)**：
    - 自动维护与刷新 `tenant_access_token`；
@@ -42,3 +42,5 @@
 限制与代价：
 - 依赖飞书开放平台应用凭据配置（`App ID` / `App Secret`）；
 - 需注意飞书 API 频率限制（Rate Limits），客户端需内置错误重试与超时控制。
+- 当前实现有超时与错误传播，但尚未实现自动重试；上线前需要真实租户 smoke test。
+- WebSocket 长连接、Encrypt Key 事件解密、多维表格和日历不在当前实现范围。

@@ -109,5 +109,5 @@ async def test_async_feishu_client_token_failure() -> None:
     http_client = httpx.AsyncClient(transport=transport, base_url="https://open.feishu.cn")
     client = AsyncFeishuClient(app_id="cli_bad", app_secret="bad", client=http_client)
 
-    with pytest.raises(RuntimeError, match="Failed to get tenant_access_token"):
+    with pytest.raises(RuntimeError, match="tenant token request failed"):
         await client.get_tenant_access_token()

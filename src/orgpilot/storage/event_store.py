@@ -5,6 +5,7 @@ import json
 from datetime import UTC, datetime
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from orgpilot.domain.errors import DuplicateEventConflict
 from orgpilot.events.log import AppendResult
@@ -20,44 +21,66 @@ class SqlEventStore:
         self.db = db
 
     @staticmethod
-    def _compute_hash(payload_data: dict) -> str:
-        serialized = json.dumps(payload_data, sort_keys=True, default=str)
+    def _compute_hash(event: OrgEvent) -> str:
+        envelope = event.model_dump(mode="json", exclude={"received_at"})
+        serialized = json.dumps(envelope, sort_keys=True, default=str)
         return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
     async def append(self, event: OrgEvent) -> AppendResult:
         """Appends an OrgEvent to the persistent log or detects duplicates/conflicts."""
         payload_dict = event.payload.model_dump(mode="json")
-        payload_hash = self._compute_hash(payload_dict)
+        payload_hash = self._compute_hash(event)
 
-        async with self.db.session() as session:
-            stmt = select(EventRecord).where(
-                EventRecord.project_id == event.project_id,
-                EventRecord.event_id == event.event_id,
-            )
-            result = await session.execute(stmt)
-            existing = result.scalar_one_or_none()
-
-            if existing is not None:
-                if existing.payload_hash == payload_hash:
-                    return AppendResult.DUPLICATE
-                raise DuplicateEventConflict(
-                    f"event {event.event_id} already exists with different payload"
+        try:
+            async with self.db.session() as session:
+                stmt = select(EventRecord).where(
+                    EventRecord.project_id == event.project_id,
+                    EventRecord.event_id == event.event_id,
                 )
+                result = await session.execute(stmt)
+                existing = result.scalar_one_or_none()
 
-            record = EventRecord(
-                project_id=event.project_id,
-                event_id=event.event_id,
-                event_type=event.event_type,
-                source=event.source.value if hasattr(event.source, "value") else str(event.source),
-                source_ref=event.source_ref,
-                actor_id=event.actor_id,
-                occurred_at=event.occurred_at.astimezone(UTC),
-                received_at=event.received_at.astimezone(UTC),
-                payload_json=json.dumps(payload_dict, default=str),
-                payload_hash=payload_hash,
-            )
-            session.add(record)
-            return AppendResult.APPENDED
+                if existing is not None:
+                    return self._classify_existing(
+                        existing.payload_hash, payload_hash, event.event_id
+                    )
+
+                record = EventRecord(
+                    project_id=event.project_id,
+                    event_id=event.event_id,
+                    event_type=event.event_type,
+                    source=(
+                        event.source.value if hasattr(event.source, "value") else str(event.source)
+                    ),
+                    source_ref=event.source_ref,
+                    actor_id=event.actor_id,
+                    occurred_at=event.occurred_at.astimezone(UTC),
+                    received_at=event.received_at.astimezone(UTC),
+                    payload_json=json.dumps(payload_dict, default=str),
+                    payload_hash=payload_hash,
+                )
+                session.add(record)
+                return AppendResult.APPENDED
+        except IntegrityError:
+            # Another writer may win the unique-key race after our initial SELECT.
+            async with self.db.session() as session:
+                stmt = select(EventRecord).where(
+                    EventRecord.project_id == event.project_id,
+                    EventRecord.event_id == event.event_id,
+                )
+                result = await session.execute(stmt)
+                existing = result.scalar_one()
+                return self._classify_existing(existing.payload_hash, payload_hash, event.event_id)
+
+    @staticmethod
+    def _classify_existing(
+        existing_hash: str,
+        incoming_hash: str,
+        event_id: str,
+    ) -> AppendResult:
+        if existing_hash == incoming_hash:
+            return AppendResult.DUPLICATE
+        raise DuplicateEventConflict(f"event {event_id} already exists with different content")
 
     async def get_events(self, project_id: str, since: datetime | None = None) -> list[OrgEvent]:
         """Retrieves ordered immutable events for a project."""

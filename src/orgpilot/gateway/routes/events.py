@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api/v1/projects/{project_id}", tags=["events"])
 
 
 def get_service(request: Request) -> GatewayService:
-    return GatewayService(request.app.state.db)
+    return request.app.state.gateway_service
 
 
 @router.post("/events", response_model=EventIngestResponse)
@@ -55,6 +55,7 @@ async def ingest_message(
             message=body.message,
             actor_id=body.actor_id,
             occurred_at=body.occurred_at,
+            source_ref=body.message_id,
             auto_run_turn=body.auto_run_turn,
         )
         return MessageIngestResponse(

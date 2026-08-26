@@ -1,5 +1,7 @@
 """Core ClaimExtractor bridging unstructured text to verified OrgEvents."""
 
+import hashlib
+
 from orgpilot.events.models import (
     CommitmentMadeEvent,
     CommitmentMadePayload,
@@ -37,17 +39,21 @@ class ClaimExtractor:
 
         events: list[OrgEvent] = []
         event_counter = 1
-        ts = int(context.occurred_at.timestamp())
+        identity = context.source_ref or (
+            f"{context.project_id}|{context.actor_id}|{context.occurred_at.isoformat()}|{message}"
+        )
+        message_key = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24]
+        source_ref = f"message:{context.source_ref or message_key}"
 
         for claim in verified_result.claims:
-            event_id = f"evt-extracted-claim-{context.actor_id}-{ts}-{event_counter}"
+            event_id = f"evt-extracted-claim-{message_key}-{event_counter}"
             event_counter += 1
             event = TaskHealthReportedEvent(
                 project_id=context.project_id,
                 event_id=event_id,
                 event_type="task.health_reported",
                 source=EventSource.MESSAGE,
-                source_ref=f"message:{context.actor_id}:{ts}",
+                source_ref=source_ref,
                 actor_id=context.actor_id,
                 occurred_at=context.occurred_at,
                 received_at=context.occurred_at,
@@ -62,15 +68,15 @@ class ClaimExtractor:
             events.append(event)
 
         for commitment in verified_result.commitments:
-            commitment_id = f"commitment-{context.actor_id}-{commitment.target_id}-{ts}"
-            event_id = f"evt-extracted-cmt-{ts}-{event_counter}"
+            commitment_id = f"commitment-{commitment.target_id}-{message_key}"
+            event_id = f"evt-extracted-cmt-{message_key}-{event_counter}"
             event_counter += 1
             event = CommitmentMadeEvent(
                 project_id=context.project_id,
                 event_id=event_id,
                 event_type="commitment.made",
                 source=EventSource.MESSAGE,
-                source_ref=f"message:{context.actor_id}:{int(context.occurred_at.timestamp())}",
+                source_ref=source_ref,
                 actor_id=context.actor_id,
                 occurred_at=context.occurred_at,
                 received_at=context.occurred_at,

@@ -25,6 +25,10 @@ class EventIngestResponse(StrictSchema):
 class MessageIngestRequest(StrictSchema):
     message: str = Field(description="Natural language chat message text")
     actor_id: str = Field(description="ID of the member who authored the message")
+    message_id: str | None = Field(
+        default=None,
+        description="Stable upstream message identifier used for idempotency",
+    )
     occurred_at: datetime | None = Field(
         default=None, description="Message timestamp; defaults to now UTC if omitted"
     )

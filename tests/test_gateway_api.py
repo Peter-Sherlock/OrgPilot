@@ -147,9 +147,12 @@ async def test_gateway_natural_language_message_and_approval_flow(
     resp_state = await client.get("/api/v1/projects/proj-nl-flow/state")
     assert resp_state.status_code == 200
     state_data = resp_state.json()
-    assert state_data["tasks"]["backend_api"]["deadline"] is not None
+    assert state_data["tasks"]["backend_api"]["deadline"] == "2026-09-11T17:00:00+08:00"
     assert len(state_data["active_cases"]) == 0
     assert len(state_data["pending_approvals"]) == 0
+
+    persisted_events = await client.get("/api/v1/projects/proj-nl-flow/events")
+    assert [event["event_type"] for event in persisted_events.json()].count("task.updated") == 1
 
 
 async def test_gateway_rejection_flow(client: httpx.AsyncClient) -> None:

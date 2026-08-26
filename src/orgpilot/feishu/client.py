@@ -56,10 +56,19 @@ class AsyncFeishuClient:
         self._tenant_token: str | None = None
         self._token_expires_at: float = 0.0
 
-    async def _get_http_client(self) -> httpx.AsyncClient:
+    async def _request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
         if self._client is not None:
-            return self._client
-        return httpx.AsyncClient(base_url=self.base_url, timeout=10.0)
+            return await self._client.request(method, url, **kwargs)
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=10.0) as client:
+            return await client.request(method, url, **kwargs)
+
+    @staticmethod
+    def _response_json(response: httpx.Response, operation: str) -> dict[str, Any]:
+        response.raise_for_status()
+        data = response.json()
+        if data.get("code", 0) != 0:
+            raise RuntimeError(f"Feishu {operation} failed: {data.get('msg', 'unknown error')}")
+        return data
 
     async def get_tenant_access_token(self) -> str:
         """Retrieves and caches valid tenant_access_token."""
@@ -70,13 +79,8 @@ class AsyncFeishuClient:
         url = f"{self.base_url}/open-apis/auth/v3/tenant_access_token/internal"
         payload = {"app_id": self.app_id, "app_secret": self.app_secret}
 
-        client = await self._get_http_client()
-        resp = await client.post(url, json=payload)
-        resp.raise_for_status()
-        data = resp.json()
-
-        if data.get("code") != 0:
-            raise RuntimeError(f"Failed to get tenant_access_token: {data.get('msg')}")
+        resp = await self._request("POST", url, json=payload)
+        data = self._response_json(resp, "tenant token request")
 
         self._tenant_token = data["tenant_access_token"]
         # expire in seconds
@@ -103,10 +107,8 @@ class AsyncFeishuClient:
             "content": content_str,
         }
 
-        client = await self._get_http_client()
-        resp = await client.post(url, json=body, headers=headers)
-        resp.raise_for_status()
-        return resp.json()
+        resp = await self._request("POST", url, json=body, headers=headers)
+        return self._response_json(resp, "send message")
 
     async def send_card(
         self,
@@ -138,10 +140,8 @@ class AsyncFeishuClient:
             }
         }
 
-        client = await self._get_http_client()
-        resp = await client.patch(url, json=body, headers=headers)
-        resp.raise_for_status()
-        return resp.json()
+        resp = await self._request("PATCH", url, json=body, headers=headers)
+        return self._response_json(resp, "update task")
 
 
 class MockFeishuClient:

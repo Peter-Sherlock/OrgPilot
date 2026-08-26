@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api/v1/projects/{project_id}/approvals", tags=["appr
 
 
 def get_service(request: Request) -> GatewayService:
-    return GatewayService(request.app.state.db)
+    return request.app.state.gateway_service
 
 
 @router.get("")
@@ -57,8 +57,7 @@ async def submit_approval_decision(
             )
 
         # Run an agent turn to execute approved actions or escalate rejected actions
-        turn_trace, _ = agent.run_turn([], now)
-        await service.save_agent_state(agent)
+        turn_trace, _ = await service.run_agent_turn(agent, [], now)
 
         updated_req = agent.approval_manager.get_request(approval_id)
         return ApprovalDecisionResponse(
@@ -67,5 +66,7 @@ async def submit_approval_decision(
             status=updated_req.status.value if updated_req else "unknown",
             turn_termination_reason=turn_trace.termination_reason.value,
         )
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

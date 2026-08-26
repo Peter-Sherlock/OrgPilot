@@ -1,6 +1,34 @@
 # 开发记录
 
-## 2026-08-26：F1 飞书开放平台真实接入与交互式卡片
+## 2026-08-26：集成硬化与完成度校正
+
+### 已修复
+
+- 审批状态机严格校验指定审批人，拒绝请求体或卡片回调中的身份冒用；
+- Agent 产生的任务更新事件写入 SQL 事件库，快照恢复后不会丢失已批准改期；引用未持久化事件的异常快照会被丢弃并完整重放；
+- 消息事件 ID 改为基于上游消息 ID 或完整消息身份的稳定哈希，消除秒级碰撞；
+- 增加显式 `OrgPilotSettings`，外部 LLM 和飞书适配器默认关闭，避免测试意外调用和计费；
+- 接入 AIHubMix Anthropic Messages 兼容客户端，按内容块类型选择文本并执行 Pydantic 校验；
+- 真实飞书适配器接入 GatewayService，Webhook 增加 Verification Token 与审批人 `open_id` 校验；
+- 网关默认使用持久化 SQLite，并可通过 `ORGPILOT_DATABASE_URL` 配置 PostgreSQL；项目 REST API 支持可选 Bearer Token 门禁；
+- 校正文档：WebSocket、日历、多维表格、在线模型准确率和生产级多实例一致性均不再被标记为已完成。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS (4 P0 + 5 M1)
+orgpilot eval-extraction: PASS (20 个离线规则样本；不代表在线模型准确率)
+pytest: 138 passed
+coverage: 93.81% branch-aware total coverage (fail_under=90%)
+ruff: All checks passed
+git diff --check: PASS
+```
+
+真实 AIHubMix 和飞书调用未执行，避免未经确认产生费用或外部副作用。
+
+---
+
+## 2026-08-26：F1 飞书开放平台适配层与交互式卡片原型
 
 ### 已实现
 

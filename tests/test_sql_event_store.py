@@ -74,8 +74,28 @@ async def test_sql_event_store_rejects_conflict(db: Database) -> None:
         received_at=NOW,
         payload=MemberRegisteredPayload(member_id="bob", display_name="Bob", role="frontend"),
     )
-    with pytest.raises(DuplicateEventConflict, match="already exists with different payload"):
+    with pytest.raises(DuplicateEventConflict, match="already exists with different content"):
         await store.append(event2)
+
+
+async def test_sql_event_store_rejects_envelope_conflict(db: Database) -> None:
+    store = SqlEventStore(db)
+    original = MemberRegisteredEvent(
+        project_id="proj-1",
+        event_id="evt-envelope-conflict",
+        event_type="member.registered",
+        source=EventSource.HUMAN,
+        source_ref="setup",
+        actor_id="alice",
+        occurred_at=NOW,
+        received_at=NOW,
+        payload=MemberRegisteredPayload(member_id="alice", display_name="Alice", role="backend"),
+    )
+    changed_actor = original.model_copy(update={"actor_id": "mallory"})
+    await store.append(original)
+
+    with pytest.raises(DuplicateEventConflict, match="different content"):
+        await store.append(changed_actor)
 
 
 async def test_sql_event_store_query_and_ordering(db: Database) -> None:

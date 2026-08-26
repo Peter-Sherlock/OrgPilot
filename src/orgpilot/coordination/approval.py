@@ -45,6 +45,14 @@ class ApprovalManager:
         if request is None:
             raise KeyError(f"Approval request {approval_id!r} not found")
 
+        if request.approver_id != approver_id:
+            raise PermissionError(
+                f"Approver {approver_id!r} is not authorized for request {approval_id!r}"
+            )
+
+        if request.consumed:
+            raise ValueError(f"Approval {approval_id!r} has already been consumed")
+
         if request.expires_at is not None and current_time > request.expires_at:
             request.status = ApprovalStatus.EXPIRED
             raise ValueError(f"Approval request {approval_id!r} has expired")
@@ -52,8 +60,10 @@ class ApprovalManager:
         if request.status is ApprovalStatus.REJECTED:
             raise ValueError(f"Cannot approve already rejected request {approval_id!r}")
 
+        if request.status is ApprovalStatus.APPROVED:
+            return request
+
         request.status = ApprovalStatus.APPROVED
-        request.approver_id = approver_id
         request.approved_at = current_time
         return request
 
@@ -68,8 +78,25 @@ class ApprovalManager:
         if request is None:
             raise KeyError(f"Approval request {approval_id!r} not found")
 
+        if request.approver_id != approver_id:
+            raise PermissionError(
+                f"Approver {approver_id!r} is not authorized for request {approval_id!r}"
+            )
+
+        if request.consumed:
+            raise ValueError(f"Approval {approval_id!r} has already been consumed")
+
+        if request.expires_at is not None and current_time > request.expires_at:
+            request.status = ApprovalStatus.EXPIRED
+            raise ValueError(f"Approval request {approval_id!r} has expired")
+
+        if request.status is ApprovalStatus.APPROVED:
+            raise ValueError(f"Cannot reject already approved request {approval_id!r}")
+
+        if request.status is ApprovalStatus.REJECTED:
+            return request
+
         request.status = ApprovalStatus.REJECTED
-        request.approver_id = approver_id
         request.rejection_reason = reason
         return request
 

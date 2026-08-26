@@ -1,32 +1,92 @@
 """FastAPI application factory and lifecycle management."""
 
+import hmac
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
+from orgpilot.adapter.base import CollaborationAdapter
+from orgpilot.adapter.mock import MockCollaborationAdapter
+from orgpilot.config import OrgPilotSettings
+from orgpilot.extraction.client import AnthropicCompatibleLLMClient, LLMClient
+from orgpilot.extraction.extractor import ClaimExtractor
+from orgpilot.feishu.adapter import FeishuCollaborationAdapter
+from orgpilot.feishu.client import AsyncFeishuClient
 from orgpilot.gateway.routes import approvals, cases, coordination, events, feishu
+from orgpilot.gateway.service import GatewayService
 from orgpilot.storage.database import Database
 
 
-def create_app(db: Database | None = None) -> FastAPI:
+def create_app(
+    db: Database | None = None,
+    settings: OrgPilotSettings | None = None,
+) -> FastAPI:
     """Creates and configures the FastAPI event gateway application."""
-    database = db or Database()
+    runtime_settings = settings or OrgPilotSettings.from_env()
+    runtime_settings.validate()
+    database = db or Database(runtime_settings.database_url)
+
+    llm_client: LLMClient | None = None
+    if runtime_settings.llm_provider == "aihubmix":
+        llm_client = AnthropicCompatibleLLMClient(
+            api_key=runtime_settings.aihubmix_api_key or "",
+            base_url=runtime_settings.aihubmix_base_url,
+            model=runtime_settings.aihubmix_model,
+        )
+    extractor = ClaimExtractor(llm_client=llm_client)
+
+    if runtime_settings.collaboration_adapter == "feishu":
+        feishu_client = AsyncFeishuClient(
+            app_id=runtime_settings.feishu_app_id or "",
+            app_secret=runtime_settings.feishu_app_secret or "",
+        )
+
+        def adapter_factory(project_id: str) -> CollaborationAdapter:
+            return FeishuCollaborationAdapter(client=feishu_client, project_id=project_id)
+
+    else:
+
+        def adapter_factory(project_id: str) -> CollaborationAdapter:
+            return MockCollaborationAdapter(project_id=project_id)
+
+    gateway_service = GatewayService(
+        database,
+        extractor=extractor,
+        adapter_factory=adapter_factory,
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await database.init_db()
-        yield
-        await database.close()
+        try:
+            yield
+        finally:
+            if isinstance(llm_client, AnthropicCompatibleLLMClient):
+                llm_client.close()
+            await database.close()
 
     app = FastAPI(
         title="OrgPilot Event Gateway",
-        description="Production event gateway and coordination API for OrgPilot agent kernel",
+        description="Persistent event gateway and coordination API for the OrgPilot kernel",
         version="0.1.0",
         lifespan=lifespan,
     )
 
     app.state.db = database
+    app.state.settings = runtime_settings
+    app.state.gateway_service = gateway_service
+
+    @app.middleware("http")
+    async def require_api_token(request, call_next):
+        token = runtime_settings.api_token
+        if token and request.url.path.startswith("/api/v1/projects/"):
+            authorization = request.headers.get("authorization", "")
+            expected = f"Bearer {token}"
+            if not hmac.compare_digest(authorization, expected):
+                return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+        return await call_next(request)
 
     # Include route modules
     app.include_router(events.router)

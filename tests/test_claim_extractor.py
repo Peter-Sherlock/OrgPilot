@@ -95,8 +95,60 @@ def test_claim_extractor_with_recorded_replay_client() -> None:
     )
     replay_client = RecordedReplayClient({msg: custom_res})
     extractor = ClaimExtractor(llm_client=replay_client)
-    context = MessageContext(project_id="p1", actor_id="alice", occurred_at=NOW)
+    context = MessageContext(
+        project_id="p1",
+        actor_id="alice",
+        occurred_at=NOW,
+        known_tasks={"t1": "Task 1"},
+    )
 
     res, events = extractor.extract_from_message(msg, context)
     assert res.is_actionable is True
     assert len(events) == 1
+
+
+def test_mock_extractor_refuses_ambiguous_task_assignment() -> None:
+    extractor = ClaimExtractor()
+    context = MessageContext(
+        project_id="p1",
+        actor_id="alice",
+        occurred_at=NOW,
+        known_tasks={"task_a": "Alpha", "task_b": "Beta"},
+    )
+
+    result, events = extractor.extract_from_message("这个活儿延期了", context)
+
+    assert result.is_actionable is False
+    assert result.reasoning == "No unambiguous task reference found"
+    assert events == []
+
+
+def test_distinct_messages_in_same_second_have_distinct_event_ids() -> None:
+    extractor = ClaimExtractor()
+    context = MessageContext(
+        project_id="p1",
+        actor_id="alice",
+        occurred_at=NOW,
+        known_tasks={"backend_api": "Backend API"},
+    )
+
+    _, first_events = extractor.extract_from_message("后端接口延期了", context)
+    _, second_events = extractor.extract_from_message("后端接口卡住了", context)
+
+    assert first_events[0].event_id != second_events[0].event_id
+
+
+def test_upstream_message_id_produces_stable_event_id() -> None:
+    extractor = ClaimExtractor()
+    context = MessageContext(
+        project_id="p1",
+        actor_id="alice",
+        occurred_at=NOW,
+        source_ref="om_123",
+        known_tasks={"backend_api": "Backend API"},
+    )
+
+    _, first_events = extractor.extract_from_message("后端接口延期了", context)
+    _, retry_events = extractor.extract_from_message("后端接口延期了", context)
+
+    assert first_events[0].event_id == retry_events[0].event_id

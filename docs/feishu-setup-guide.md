@@ -1,6 +1,6 @@
-# 飞书开放平台极速配置指南 (Feishu Setup Guide)
+# 飞书开放平台 HTTP Webhook 配置指南
 
-只需 2 分钟，即可在飞书开放平台完成 OrgPilot 自建应用的创建与配置：
+本阶段只支持 HTTP Webhook。WebSocket 长连接、飞书多维表格和日历尚未实现。
 
 ---
 
@@ -41,11 +41,7 @@
 
 在左侧菜单栏点击 **“事件订阅”**：
 
-#### 模式 A：本地开发/无需公网 IP（推荐：WebSocket 长连接模式）
-- 选择 **“使用长连接接收事件”**（WebSocket 模式）；
-- 无需配置公网域名与校验 Token，OrgPilot 启动时会自动连上飞书服务器拉取事件！
-
-#### 模式 B：生产服务器部署（HTTP Webhook 模式）
+#### HTTP Webhook 模式
 - **请求网址 URL**：`https://<your-domain>/api/v1/feishu/events`
 - 添加事件订阅：
   - `im.message.receive_v1`（接收消息）
@@ -55,13 +51,15 @@
 
 ### 第五步：在 OrgPilot 中配置并启动
 
-在 OrgPilot 根目录下创建 `.env` 文件或设置环境变量：
+设置运行环境变量。真实密钥不得提交到 Git：
 
-```ini
-FEISHU_APP_ID=cli_xxxxxxxxxxxx
-FEISHU_APP_SECRET=xxxxxxxxxxxxxxxxxxxxxxxx
-FEISHU_VERIFICATION_TOKEN=xxxxxxxxxxxx  # 可选
-FEISHU_ENCRYPT_KEY=xxxxxxxxxxxx         # 可选
+```powershell
+$env:ORGPILOT_COLLABORATION_ADAPTER = "feishu"
+$env:ORGPILOT_FEISHU_PROJECT_ID = "feishu-project"
+$env:FEISHU_APP_ID = "<set securely>"
+$env:FEISHU_APP_SECRET = "<set securely>"
+$env:FEISHU_VERIFICATION_TOKEN = "<required>"
+$env:ORGPILOT_API_TOKEN = "<required for project REST APIs>"
 ```
 
 启动网关服务：
@@ -69,4 +67,4 @@ FEISHU_ENCRYPT_KEY=xxxxxxxxxxxx         # 可选
 uv run uvicorn orgpilot.gateway.app:create_app --factory --port 8000
 ```
 
-打开飞书桌面端，搜索 `OrgPilot 协调助手`，发送消息即可直接体验！
+启动后先完成 URL Challenge，再用单独测试账号做消息、审批和任务改期 smoke test。操作者的飞书 `open_id` 必须与项目中登记的审批人 ID 一致。

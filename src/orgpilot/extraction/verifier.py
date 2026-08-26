@@ -26,14 +26,14 @@ class GroundingVerifier:
     ) -> bool:
         if not self.verify_quote(message, claim.source_quote):
             return False
-        return not (context.known_tasks and claim.task_id not in context.known_tasks)
+        return claim.task_id in context.known_tasks
 
     def verify_commitment(
         self, commitment: ExtractedCommitment, message: str, context: MessageContext
     ) -> bool:
         if not self.verify_quote(message, commitment.source_quote):
             return False
-        return not (context.known_tasks and commitment.target_id not in context.known_tasks)
+        return commitment.target_id in context.known_tasks
 
     def filter_and_verify(
         self, result: ExtractionResult, message: str, context: MessageContext

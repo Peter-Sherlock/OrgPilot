@@ -34,7 +34,8 @@
 5. **Provider-Agnostic 接口与双轨评测架构**：
    - 抽象 `LLMClient` 统一协议；
    - 提供 `MockLLMClient` 与 `RecordedReplayClient`，保障本地开发与 CI/CD 测试具备 100% 确定性与零成本回归；
-   - 支持通过 `OpenAICompatibleLLMClient` 接入真实在线大模型。
+   - 支持通过 `AnthropicCompatibleLLMClient` 接入 AIHubMix 的 Anthropic Messages 兼容端点；
+   - 在线调用必须显式设置 `ORGPILOT_LLM_PROVIDER=aihubmix`，避免测试与本地启动意外计费。
 
 ## 后果
 
@@ -47,3 +48,4 @@
 代价与限制：
 - 口语化复杂的代词指代和极度模糊的陈述可能需要上下文多轮补充；
 - 相对时间解析依赖上下文参考时戳的准确性。
+- 20 样本 Gold Dataset 只衡量离线规则客户端的确定性回归，不代表在线模型的真实准确率；在线模型需要单独评测并记录成本、延迟和失败样本。
