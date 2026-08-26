@@ -102,5 +102,8 @@ class ApprovalManager:
     def get_pending_requests(self) -> tuple[ApprovalRequest, ...]:
         return tuple(req for req in self._requests.values() if req.status is ApprovalStatus.PENDING)
 
+    def get_all_requests(self) -> tuple[ApprovalRequest, ...]:
+        return tuple(self._requests.values())
+
     def get_requests_for_case(self, case_id: str) -> tuple[ApprovalRequest, ...]:
         return tuple(req for req in self._requests.values() if req.case_id == case_id)

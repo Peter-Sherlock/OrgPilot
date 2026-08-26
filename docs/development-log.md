@@ -1,5 +1,35 @@
 # 开发记录
 
+## 2026-08-26：P1 SQL 异步持久化存储与 FastAPI 事件网关
+
+### 已实现
+
+- 创建分支 `p1/storage-and-gateway` 并编写 `ADR-0004`；
+- 引入 SQLAlchemy 2.0 Async 现代声明式模型与异步会话管理（`src/orgpilot/storage/`）；
+- 实现双驱动支持：生产环境支持 PostgreSQL（`asyncpg`），本地开发与测试原生支持异步 SQLite（`aiosqlite`）；
+- 实现数据库级不可变追加日志 `SqlEventStore`，支持 `(project_id, event_id)` 唯一索引幂等与 SHA-256 哈希冲突校验；
+- 实现 `SqlStateStore`，支持 `OrgState` 快照持久化，以及 `CaseLedger` 与 `ApprovalManager` 的数据库持久化与瞬时恢复；
+- 构建 FastAPI 异步事件网关与 REST API（`src/orgpilot/gateway/`）：
+  - `/api/v1/projects/{project_id}/events`（结构化事件摄入与流式查询）；
+  - `/api/v1/projects/{project_id}/messages`（自然语言文本摄入、自动 ClaimExtractor 抽取与可选 Agent 轮次驱动）；
+  - `/api/v1/projects/{project_id}/cases`（Case 查询与单 Case 详情）；
+  - `/api/v1/projects/{project_id}/approvals`（待审批列表与批准/拒绝决策 Webhook）；
+  - `/api/v1/projects/{project_id}/run-turn`（显式触发 Agent 协调轮次）；
+  - `/api/v1/projects/{project_id}/state`（项目当前投影状态快照）。
+- 编写完整的异步测试套件（`tests/test_sql_event_store.py`, `tests/test_sql_state_store.py`, `tests/test_gateway_api.py`）。
+
+### 当前验证结果
+
+```text
+orgpilot replay --all: 9/9 PASS (4 P0 + 5 M1)
+orgpilot eval-extraction: PASS (20 samples, 100% F1, 100% Grounding)
+pytest: 107 passed in 2.81s
+coverage: 94.83% branch-aware total coverage (fail_under=90%)
+ruff: All checks passed (0 errors, 68 files formatted)
+```
+
+---
+
 ## 2026-08-26：M2 LLM 声明抽取与置信度评估
 
 ### 已实现
@@ -83,6 +113,5 @@ ruff: All checks passed
 
 ### 明确未实现
 
-- PostgreSQL 持久化和事务；
-- 真实飞书/Slack 开放平台 API 接入与消息监听；
+- 真实飞书/Slack 开放平台 API 接入与交互式卡片渲染（F1 阶段）；
 - Web 控制台界面。
