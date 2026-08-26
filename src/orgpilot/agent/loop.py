@@ -213,6 +213,11 @@ class CoordinationAgent:
         if isinstance(self.adapter, MockCollaborationAdapter):
             generated_events = self.adapter.pop_generated_events()
 
+        # Apply any adapter-generated events (e.g., TaskUpdatedEvent) to internal state immediately
+        for gen_evt in generated_events:
+            self.event_log.append(gen_evt)
+            self.projector.apply(gen_evt)
+
         termination_reason = self._determine_termination_reason()
 
         trace = AgentTurnTrace(

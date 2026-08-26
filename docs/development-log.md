@@ -1,5 +1,37 @@
 # 开发记录
 
+## 2026-08-26：M2 LLM 声明抽取与置信度评估
+
+### 已实现
+
+- 完成 M1 代码审查并合并至 `main`，发布 `m1.0.0` 标签；
+- 创建分支 `m2/llm-claim-extraction` 并编写 `ADR-0003`；
+- 建立 `src/orgpilot/extraction/` 结构化声明抽取模块；
+- 定义 Pydantic v2 强类型输出契约（`ExtractedHealthClaim`, `ExtractedCommitment`, `ExtractionResult`）；
+- 实现 `GroundingVerifier`，严格进行引文反查与上下文实体合法性校验；
+- 实现 `TemporalResolver`，支持相对时间表达式向绝对 ISO 8601 时区时间戳的精确归一化；
+- 实现 Provider-Agnostic `LLMClient` 协议体系（`MockLLMClient`, `RecordedReplayClient`）；
+- 构建包含 20 个覆盖各类口语、假警报、多任务、相对时间、承诺与恢复样本的 Gold Dataset（`evals/extraction/gold_dataset.yaml`）；
+- 实现 `orgpilot eval-extraction` 评测命令行工具并输出定量指标；
+- 实现从非结构化自然语言文本到 M1 `CoordinationAgent` 闭环协调的端到端集成测试。
+
+### 当前验证结果
+
+```text
+orgpilot replay --all: 9/9 PASS (4 P0 + 5 M1)
+orgpilot eval-extraction: PASS (20 samples)
+  - Health Status Precision: 100.00%, Recall: 100.00%, F1: 100.00%
+  - Task ID Accuracy: 100.00%
+  - Slot DateTime Accuracy: 100.00%
+  - False Alarm Rate: 0.00%
+  - Grounding Valid Rate: 100.00%
+pytest: 95 passed in 2.06s
+coverage: 94.07% branch-aware total coverage (fail_under=90%)
+ruff: All checks passed (0 errors, 64 files formatted)
+```
+
+---
+
 ## 2026-08-26：M1 Mock 闭环协调 Agent
 
 ### 已实现
@@ -51,8 +83,6 @@ ruff: All checks passed
 
 ### 明确未实现
 
-- 自然语言到结构化 Claim 的提取；
 - PostgreSQL 持久化和事务；
-- Webhook 乱序、并发与重试；
 - 真实飞书/Slack 开放平台 API 接入与消息监听；
 - Web 控制台界面。

@@ -80,11 +80,6 @@ class ScenarioRunner:
             )
             turn_traces.append(turn_trace)
 
-            # If the adapter generated events during this turn (e.g. from task updates),
-            # apply them into the agent immediately.
-            if generated_events:
-                agent.run_turn(generated_events, round_item.current_time)
-
         final_termination = (
             turn_traces[-1].termination_reason
             if turn_traces and turn_traces[-1].termination_reason

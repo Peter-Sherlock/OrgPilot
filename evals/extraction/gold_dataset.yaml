@@ -1,0 +1,227 @@
+schema_version: 1
+dataset_id: dev_team_chat_gold_dataset
+title: Developer chat messages gold dataset for claim extraction evaluation
+samples:
+  - sample_id: s01_explicit_delay_with_time
+    message: "支付 SDK 报错，排查需要到明天下午 5 点"
+    actor_id: alice
+    occurred_at: "2026-09-10T10:00:00+08:00"
+    expected_is_actionable: true
+    expected_claims:
+      - task_id: backend_api
+        health_status: delayed
+        expected_completion: "2026-09-11T17:00:00+08:00"
+        blocker: "支付 SDK 报错"
+        confidence: 0.95
+        source_quote: "支付 SDK 报错，排查需要到明天下午 5 点"
+
+  - sample_id: s02_ambiguous_risk_no_date
+    message: "数据库连接池有点问题，我还在排查，不太稳"
+    actor_id: alice
+    occurred_at: "2026-09-10T10:30:00+08:00"
+    expected_is_actionable: true
+    expected_claims:
+      - task_id: backend_api
+        health_status: at_risk
+        expected_completion: null
+        blocker: "数据库连接池有点问题"
+        confidence: 0.95
+        source_quote: "数据库连接池有点问题，我还在排查，不太稳"
+
+  - sample_id: s03_casual_chat_non_actionable_1
+    message: "今天好累啊，中午大家一起去吃火锅吗？"
+    actor_id: bob
+    occurred_at: "2026-09-10T11:45:00+08:00"
+    expected_is_actionable: false
+    expected_claims: []
+
+  - sample_id: s04_casual_chat_non_actionable_2
+    message: "早安，今天天气真好！"
+    actor_id: carol
+    occurred_at: "2026-09-10T09:00:00+08:00"
+    expected_is_actionable: false
+    expected_claims: []
+
+  - sample_id: s05_task_recovery_report
+    message: "之前报的 Redis 崩溃问题已解决，接口恢复正常运行"
+    actor_id: alice
+    occurred_at: "2026-09-10T14:00:00+08:00"
+    expected_is_actionable: true
+    expected_claims:
+      - task_id: backend_api
+        health_status: on_track
+        expected_completion: null
+        blocker: null
+        confidence: 0.98
+        source_quote: "之前报的 Redis 崩溃问题已解决，接口恢复正常运行"
+
+  - sample_id: s06_explicit_delay_day_after_tomorrow
+    message: "联调受阻，后天晚上 8 点才能把后端接口搞定"
+    actor_id: alice
+    occurred_at: "2026-09-10T15:00:00+08:00"
+    expected_is_actionable: true
+    expected_claims:
+      - task_id: backend_api
+        health_status: delayed
+        expected_completion: "2026-09-12T20:00:00+08:00"
+        blocker: "联调受阻"
+        confidence: 0.95
+        source_quote: "联调受阻，后天晚上 8 点才能把后端接口搞定"
+
+  - sample_id: s07_commitment_workflow_promise
+    message: "我承诺周四前把所有接口测试提 PR"
+    actor_id: alice
+    occurred_at: "2026-09-08T09:00:00+08:00"
+    expected_is_actionable: true
+    expected_commitments:
+      - target_id: backend_api
+        predicate: workflow_status
+        expected_value: review
+        due_at: "2026-09-10T18:00:00+08:00"
+        confidence: 0.92
+        source_quote: "我承诺周四前把所有接口测试提 PR"
+
+  - sample_id: s08_frontend_blocker_delay
+    message: "前端页面卡在表单验证组件报错，需要延期到明天下午 6 点"
+    actor_id: bob
+    occurred_at: "2026-09-10T16:00:00+08:00"
+    expected_is_actionable: true
+    expected_claims:
+      - task_id: frontend_integration
+        health_status: delayed
+        expected_completion: "2026-09-11T18:00:00+08:00"
+        blocker: "前端页面卡在表单验证组件报错"
+        confidence: 0.95
+        source_quote: "前端页面卡在表单验证组件报错，需要延期到明天下午 6 点"
+
+  - sample_id: s09_recovery_done
+    message: "前端所有集成测试已全部调通，搞定了！"
+    actor_id: bob
+    occurred_at: "2026-09-11T17:00:00+08:00"
+    expected_is_actionable: true
+    expected_claims:
+      - task_id: frontend_integration
+        health_status: on_track
+        expected_completion: null
+        blocker: null
+        confidence: 0.98
+        source_quote: "前端所有集成测试已全部调通，搞定了！"
+
+  - sample_id: s10_casual_greeting
+    message: "收到，赞！"
+    actor_id: carol
+    occurred_at: "2026-09-11T17:05:00+08:00"
+    expected_is_actionable: false
+    expected_claims: []
+
+  - sample_id: s11_relative_days_delay
+    message: "第三方网关挂了，估计需要 3 天后才能恢复"
+    actor_id: alice
+    occurred_at: "2026-09-10T10:00:00+08:00"
+    expected_is_actionable: true
+    expected_claims:
+      - task_id: backend_api
+        health_status: delayed
+        expected_completion: "2026-09-13T18:00:00+08:00"
+        blocker: "第三方网关挂了"
+        confidence: 0.95
+        source_quote: "第三方网关挂了，估计需要 3 天后才能恢复"
+
+  - sample_id: s12_tonight_recovery
+    message: "前端 CSS 兼容性问题已解决，今晚 9 点前恢复正常运行"
+    actor_id: bob
+    occurred_at: "2026-09-10T18:00:00+08:00"
+    expected_is_actionable: true
+    expected_claims:
+      - task_id: frontend_integration
+        health_status: on_track
+        expected_completion: null
+        blocker: null
+        confidence: 0.98
+        source_quote: "前端 CSS 兼容性问题已解决，今晚 9 点前恢复正常运行"
+
+  - sample_id: s13_casual_lunch_question
+    message: "大家中午吃饭了吗？"
+    actor_id: alice
+    occurred_at: "2026-09-10T12:00:00+08:00"
+    expected_is_actionable: false
+    expected_claims: []
+
+  - sample_id: s14_frontend_at_risk_ambiguous
+    message: "前端样式在移动端有点问题，还在排查兼容性"
+    actor_id: bob
+    occurred_at: "2026-09-10T14:30:00+08:00"
+    expected_is_actionable: true
+    expected_claims:
+      - task_id: frontend_integration
+        health_status: at_risk
+        expected_completion: null
+        blocker: "前端样式在移动端有点问题"
+        confidence: 0.95
+        source_quote: "前端样式在移动端有点问题，还在排查兼容性"
+
+  - sample_id: s15_commitment_backend_guarantee
+    message: "我保证明天前把后端接口做完并提 PR"
+    actor_id: alice
+    occurred_at: "2026-09-10T10:00:00+08:00"
+    expected_is_actionable: true
+    expected_commitments:
+      - target_id: backend_api
+        predicate: workflow_status
+        expected_value: review
+        due_at: "2026-09-11T18:00:00+08:00"
+        confidence: 0.92
+        source_quote: "我保证明天前把后端接口做完并提 PR"
+
+  - sample_id: s16_casual_night_chat
+    message: "今天辛苦了，晚安大家！"
+    actor_id: bob
+    occurred_at: "2026-09-10T22:30:00+08:00"
+    expected_is_actionable: false
+    expected_claims: []
+
+  - sample_id: s17_backend_blocker_with_am_hour
+    message: "数据库锁表卡住，排查需要到明天上午 10 点"
+    actor_id: alice
+    occurred_at: "2026-09-10T21:00:00+08:00"
+    expected_is_actionable: true
+    expected_claims:
+      - task_id: backend_api
+        health_status: delayed
+        expected_completion: "2026-09-11T10:00:00+08:00"
+        blocker: "数据库锁表卡住"
+        confidence: 0.95
+        source_quote: "数据库锁表卡住，排查需要到明天上午 10 点"
+
+  - sample_id: s18_backend_recovered_clean
+    message: "后端接口联调全部调通，已完成上线前测试"
+    actor_id: alice
+    occurred_at: "2026-09-11T11:00:00+08:00"
+    expected_is_actionable: true
+    expected_claims:
+      - task_id: backend_api
+        health_status: on_track
+        expected_completion: null
+        blocker: null
+        confidence: 0.98
+        source_quote: "后端接口联调全部调通，已完成上线前测试"
+
+  - sample_id: s19_casual_laugh
+    message: "哈哈哈哈哈哈太搞笑了"
+    actor_id: carol
+    occurred_at: "2026-09-11T12:30:00+08:00"
+    expected_is_actionable: false
+    expected_claims: []
+
+  - sample_id: s20_frontend_delay_friday
+    message: "前端组件库版本冲突受阻，周五下午 4 点前搞不定"
+    actor_id: bob
+    occurred_at: "2026-09-08T10:00:00+08:00"
+    expected_is_actionable: true
+    expected_claims:
+      - task_id: frontend_integration
+        health_status: delayed
+        expected_completion: "2026-09-11T16:00:00+08:00"
+        blocker: "前端组件库版本冲突受阻"
+        confidence: 0.95
+        source_quote: "前端组件库版本冲突受阻，周五下午 4 点前搞不定"

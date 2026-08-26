@@ -4,6 +4,7 @@ OrgPilot is a stateful organizational coordination agent kernel.
 
 - **P0**: Deterministic, replayable kernel (events → projection → dependency impacts → coordination cases).
 - **M1**: Mock closed-loop coordination agent (`CaseLedger` state machine, three-phase Action lifecycle, human approval gate, Mock adapter feedback, and bounded agent loop).
+- **M2**: LLM-assisted claim extraction and confidence evaluation (`ClaimExtractor`, `GroundingVerifier`, `TemporalResolver`, and Gold Dataset benchmark).
 
 ---
 
@@ -12,11 +13,14 @@ OrgPilot is a stateful organizational coordination agent kernel.
 ```powershell
 uv sync --dev
 uv run orgpilot replay --all
+uv run orgpilot eval-extraction
 uv run pytest
 uv run ruff check .
 ```
 
-The 9 ground-truth scenarios (4 P0 + 5 M1) live in `evals/scenarios/`. Development and architecture documents live in `docs/`.
+- Ground-truth replay scenarios (4 P0 + 5 M1) live in `evals/scenarios/`.
+- 20-sample natural language extraction gold dataset lives in `evals/extraction/gold_dataset.yaml`.
+- Architecture and design specifications live in `docs/`.
 
 ---
 
@@ -29,6 +33,7 @@ The 9 ground-truth scenarios (4 P0 + 5 M1) live in `evals/scenarios/`. Developme
 - `docs/development-log.md`: Verified implementation log and deferred scope
 - `docs/adr/0001-replayable-coordination-kernel.md`: ADR-0001: Replayable Coordination Kernel
 - `docs/adr/0002-coordination-case-lifecycle.md`: ADR-0002: Coordination Case Lifecycle & Closed Loop
+- `docs/adr/0003-llm-claim-extraction-boundary.md`: ADR-0003: LLM Claim Extraction & Security Boundary
 
 ---
 

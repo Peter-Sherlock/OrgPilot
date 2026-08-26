@@ -117,3 +117,22 @@ def test_assert_scenario_raises_on_mismatch() -> None:
     )
     with pytest.raises(GroundTruthMismatch, match="failed"):
         assert_scenario(bad_scenario, result)
+
+
+def test_cli_eval_extraction(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["orgpilot", "eval-extraction"])
+    assert cli.main() == 0
+    output = capsys.readouterr().out
+    assert "[PASS] Natural Language Extraction Benchmark (20 samples):" in output
+
+
+def test_cli_eval_extraction_missing_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        sys, "argv", ["orgpilot", "eval-extraction", "--dataset", "non_existent.yaml"]
+    )
+    with pytest.raises(SystemExit, match="dataset file not found"):
+        cli.main()
