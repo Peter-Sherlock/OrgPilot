@@ -1,6 +1,7 @@
 """Deterministic projection from organization events to current state."""
 
 from collections.abc import Iterable
+from typing import Any
 
 from orgpilot.domain.enums import ClaimStatus, CommitmentStatus, HealthStatus
 from orgpilot.domain.errors import DomainInvariantError
@@ -18,6 +19,7 @@ from orgpilot.events.models import (
     OrgEvent,
     TaskCreatedEvent,
     TaskHealthReportedEvent,
+    TaskUpdatedEvent,
     TaskWorkflowChangedEvent,
 )
 
@@ -50,6 +52,8 @@ class OrgProjector:
                 self._create_task(event)
             case TaskWorkflowChangedEvent():
                 self._change_workflow(event)
+            case TaskUpdatedEvent():
+                self._update_task(event)
             case TaskHealthReportedEvent():
                 self._report_health(event)
             case CommitmentMadeEvent():
@@ -113,6 +117,24 @@ class OrgProjector:
             }
         )
         self._fulfill_matching_commitments(payload.task_id, "workflow_status", payload.to_status)
+
+    def _update_task(self, event: TaskUpdatedEvent) -> None:
+        payload = event.payload
+        task = self._require_task(payload.task_id)
+        updates: dict[str, Any] = {
+            "source_event_ids": (*task.source_event_ids, event.event_id),
+            "last_update_at": event.occurred_at,
+        }
+        if payload.deadline is not None:
+            updates["deadline"] = payload.deadline
+        if payload.title is not None:
+            updates["title"] = payload.title
+        if payload.owner_id is not None:
+            if payload.owner_id not in self.state.members:
+                raise DomainInvariantError(f"unknown task owner {payload.owner_id!r}")
+            updates["owner_id"] = payload.owner_id
+
+        self.state.tasks[payload.task_id] = task.model_copy(update=updates)
 
     def _report_health(self, event: TaskHealthReportedEvent) -> None:
         task = self._require_task(event.payload.task_id)

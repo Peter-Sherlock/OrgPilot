@@ -1,0 +1,83 @@
+schema_version: 1
+scenario_id: m1_03_pm_rejects_reschedule
+title: Delay causes conflict, PM rejects reschedule proposal
+description: >-
+  Agent proposes a reschedule to PM Carol. Carol rejects the proposal in Round 2.
+  The Agent halts modification, preserves the original deadline, and escalates the case.
+project_id: m1-reschedule-rejected
+rounds:
+  - round_number: 1
+    current_time: "2026-09-08T10:00:00+08:00"
+    events:
+      - schema_version: 1
+        project_id: m1-reschedule-rejected
+        event_id: evt-m1-03-member-alice
+        event_type: member.registered
+        source: human
+        source_ref: setup:alice
+        occurred_at: "2026-09-08T09:00:00+08:00"
+        received_at: "2026-09-08T09:00:00+08:00"
+        payload:
+          member_id: alice
+          display_name: Alice
+          role: backend
+      - schema_version: 1
+        project_id: m1-reschedule-rejected
+        event_id: evt-m1-03-member-carol
+        event_type: member.registered
+        source: human
+        source_ref: setup:carol
+        occurred_at: "2026-09-08T09:00:01+08:00"
+        received_at: "2026-09-08T09:00:01+08:00"
+        payload:
+          member_id: carol
+          display_name: Carol
+          role: pm
+      - schema_version: 1
+        project_id: m1-reschedule-rejected
+        event_id: evt-m1-03-task-backend
+        event_type: task.created
+        source: task
+        source_ref: task-system:backend-api
+        occurred_at: "2026-09-08T09:05:00+08:00"
+        received_at: "2026-09-08T09:05:01+08:00"
+        payload:
+          task_id: backend_api
+          title: Backend API
+          owner_id: alice
+          workflow_status: doing
+          deadline: "2026-09-10T18:00:00+08:00"
+          dependencies: []
+      - schema_version: 1
+        project_id: m1-reschedule-rejected
+        event_id: evt-m1-03-alice-delay
+        event_type: task.health_reported
+        source: message
+        source_ref: message:mock-dm:alice:1
+        actor_id: alice
+        occurred_at: "2026-09-08T10:00:00+08:00"
+        received_at: "2026-09-08T10:00:01+08:00"
+        payload:
+          task_id: backend_api
+          health_status: delayed
+          expected_completion: "2026-09-15T18:00:00+08:00"
+          blocker: Third party API breaking changes
+          confidence: 0.95
+  - round_number: 2
+    current_time: "2026-09-08T11:00:00+08:00"
+    approvals:
+      - approver_id: carol
+        decision: rejected
+        reason: Launch date is fixed, bring in backup engineers
+interactive_ground_truth:
+  total_rounds: 2
+  final_termination_reason: escalated
+  final_cases:
+    case:task-health:backend_api: escalated
+  case_terminal_reasons:
+    case:task-health:backend_api: rejected
+  tasks:
+    backend_api:
+      workflow_status: doing
+      health_status: delayed
+      deadline: "2026-09-10T18:00:00+08:00"

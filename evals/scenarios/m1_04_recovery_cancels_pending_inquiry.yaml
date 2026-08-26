@@ -1,0 +1,79 @@
+schema_version: 1
+scenario_id: m1_04_recovery_cancels_pending_inquiry
+title: Task recovers while waiting for response, old inquiry cancelled
+description: >-
+  Agent sends private inquiry to Alice. Before Alice answers, task recovers to on_track.
+  The pending coordination case is automatically cancelled and no further reminders are sent.
+project_id: m1-auto-cancel
+rounds:
+  - round_number: 1
+    current_time: "2026-09-08T10:00:00+08:00"
+    events:
+      - schema_version: 1
+        project_id: m1-auto-cancel
+        event_id: evt-m1-04-member-alice
+        event_type: member.registered
+        source: human
+        source_ref: setup:alice
+        occurred_at: "2026-09-08T09:00:00+08:00"
+        received_at: "2026-09-08T09:00:00+08:00"
+        payload:
+          member_id: alice
+          display_name: Alice
+          role: backend
+      - schema_version: 1
+        project_id: m1-auto-cancel
+        event_id: evt-m1-04-task-backend
+        event_type: task.created
+        source: task
+        source_ref: task-system:backend-api
+        occurred_at: "2026-09-08T09:05:00+08:00"
+        received_at: "2026-09-08T09:05:01+08:00"
+        payload:
+          task_id: backend_api
+          title: Backend API
+          owner_id: alice
+          workflow_status: doing
+          deadline: "2026-09-10T18:00:00+08:00"
+          dependencies: []
+      - schema_version: 1
+        project_id: m1-auto-cancel
+        event_id: evt-m1-04-alice-delay
+        event_type: task.health_reported
+        source: message
+        source_ref: message:mock-dm:alice:1
+        actor_id: alice
+        occurred_at: "2026-09-08T10:00:00+08:00"
+        received_at: "2026-09-08T10:00:01+08:00"
+        payload:
+          task_id: backend_api
+          health_status: delayed
+          blocker: Redis connection pool exhaustion
+          confidence: 0.95
+  - round_number: 2
+    current_time: "2026-09-08T10:30:00+08:00"
+    events:
+      - schema_version: 1
+        project_id: m1-auto-cancel
+        event_id: evt-m1-04-alice-recovered
+        event_type: task.health_reported
+        source: message
+        source_ref: message:mock-dm:alice:2
+        actor_id: alice
+        occurred_at: "2026-09-08T10:30:00+08:00"
+        received_at: "2026-09-08T10:30:01+08:00"
+        payload:
+          task_id: backend_api
+          health_status: on_track
+          confidence: 0.99
+interactive_ground_truth:
+  total_rounds: 2
+  final_termination_reason: all_resolved
+  final_cases:
+    case:task-health:backend_api: cancelled
+  case_terminal_reasons:
+    case:task-health:backend_api: task recovered while waiting
+  tasks:
+    backend_api:
+      workflow_status: doing
+      health_status: on_track

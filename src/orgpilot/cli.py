@@ -3,7 +3,7 @@
 import argparse
 from pathlib import Path
 
-from orgpilot.scenarios.evaluator import evaluate_ground_truth
+from orgpilot.scenarios.evaluator import evaluate_scenario
 from orgpilot.scenarios.loader import discover_scenarios, load_scenario
 from orgpilot.scenarios.runner import ScenarioRunner
 
@@ -23,12 +23,18 @@ def _replay(paths: tuple[Path, ...]) -> int:
     for path in paths:
         scenario = load_scenario(path)
         result = runner.run(scenario)
-        report = evaluate_ground_truth(result, scenario.ground_truth)
+        report = evaluate_scenario(scenario, result)
         status = "PASS" if report.passed else "FAIL"
+        extra = ""
+        if result.agent_trace:
+            extra = (
+                f" rounds={len(result.agent_trace.turns)} "
+                f"termination={result.agent_trace.final_termination_reason.value}"
+            )
         print(
             f"[{status}] {scenario.scenario_id}: "
             f"events={result.event_count} impacts={len(result.impacts)} "
-            f"cases={len(result.cases)} actions={len(result.policy_decisions)}"
+            f"cases={len(result.cases)} actions={len(result.policy_decisions)}{extra}"
         )
         for assertion in report.assertions:
             if not assertion.passed:

@@ -1,4 +1,4 @@
-"""Closed domain vocabularies used by the P0 kernel."""
+"""Closed domain vocabularies used by the OrgPilot kernel."""
 
 from enum import StrEnum
 
@@ -37,7 +37,13 @@ class CommitmentStatus(StrEnum):
 
 class CoordinationCaseStatus(StrEnum):
     OPEN = "open"
+    WAITING_FOR_RESPONSE = "waiting_for_response"
+    WAITING_FOR_APPROVAL = "waiting_for_approval"
+    APPROVED = "approved"
+    EXECUTING = "executing"
     RESOLVED = "resolved"
+    CANCELLED = "cancelled"
+    ESCALATED = "escalated"
 
 
 class ActionType(StrEnum):
@@ -46,6 +52,30 @@ class ActionType(StrEnum):
     PROPOSE_RESCHEDULE = "propose_reschedule"
     NOTIFY_GROUP = "notify_group"
     UPDATE_TASK = "update_task"
+
+
+class CommandStatus(StrEnum):
+    SUCCESS = "success"
+    FAILED = "failed"
+    REJECTED = "rejected"
+    TIMEOUT = "timeout"
+
+
+class ApprovalStatus(StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+
+
+class AgentTerminationReason(StrEnum):
+    ALL_RESOLVED = "all_resolved"
+    WAITING_RESPONSE = "waiting_response"
+    WAITING_APPROVAL = "waiting_approval"
+    MAX_ROUNDS = "max_rounds"
+    DUPLICATE_BLOCKED = "duplicate_blocked"
+    ESCALATED = "escalated"
+    NO_ACTION = "no_action"
 
 
 class RiskLevel(StrEnum):

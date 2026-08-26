@@ -1,24 +1,13 @@
 # OrgPilot
 
-OrgPilot is a stateful organizational coordination agent. The current P0 is a
-deterministic, replayable coordination kernel that turns immutable organization
-events into source-backed task health, dependency impacts, and safe next-action
-candidates.
+OrgPilot is a stateful organizational coordination agent kernel.
 
-## P0 scope
+- **P0**: Deterministic, replayable kernel (events → projection → dependency impacts → coordination cases).
+- **M1**: Mock closed-loop coordination agent (`CaseLedger` state machine, three-phase Action lifecycle, human approval gate, Mock adapter feedback, and bounded agent loop).
 
-P0 intentionally contains no Feishu integration, database, web UI, or external
-message execution. It proves the following chain first:
+---
 
-```text
-OrgEvent -> projection -> task health -> dependency impact -> coordination case
-```
-
-Every derived result remains traceable to immutable source events. An LLM will
-later be allowed to propose structured claims, but it will not write official
-state or decide permissions.
-
-## Quick start
+## Quick Start
 
 ```powershell
 uv sync --dev
@@ -27,19 +16,22 @@ uv run pytest
 uv run ruff check .
 ```
 
-The four replayable scenarios live in `evals/scenarios`. Development and design
-documents live in `docs`.
+The 9 ground-truth scenarios (4 P0 + 5 M1) live in `evals/scenarios/`. Development and architecture documents live in `docs/`.
+
+---
 
 ## Documentation
 
-- `docs/architecture.md`: implemented P0 module boundaries and state flow
-- `docs/event-semantics.md`: event envelope, lifecycle, idempotency, and LLM boundary
-- `docs/ground-truth-scenarios.md`: executable scenario contract
-- `docs/development.md`: setup, Git workflow, checks, and Definition of Done
-- `docs/development-log.md`: verified implementation record and explicit deferrals
-- `docs/adr/0001-replayable-coordination-kernel.md`: first architecture decision
+- `docs/architecture.md`: Architecture specification, module boundaries, and state flow
+- `docs/event-semantics.md`: Event envelope, lifecycle, idempotency, and LLM boundary
+- `docs/ground-truth-scenarios.md`: Ground truth specifications for P0 and M1 scenarios
+- `docs/development.md`: Setup, Git workflow, checks, and Definition of Done
+- `docs/development-log.md`: Verified implementation log and deferred scope
+- `docs/adr/0001-replayable-coordination-kernel.md`: ADR-0001: Replayable Coordination Kernel
+- `docs/adr/0002-coordination-case-lifecycle.md`: ADR-0002: Coordination Case Lifecycle & Closed Loop
 
-## Project status
+---
 
-See `OrgPilot-Initial-Design.md` for the original project proposal and
-`docs/development-log.md` for implemented, verified, and deferred work.
+## Project Status
+
+See `docs/development-log.md` for implemented, verified, and deferred work.

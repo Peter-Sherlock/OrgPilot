@@ -1,12 +1,16 @@
-"""Domain state produced by replaying organization events."""
+"""Domain state produced by replaying organization events and managing coordination cases."""
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from orgpilot.domain.enums import (
     ActionType,
+    AgentTerminationReason,
+    ApprovalStatus,
     ClaimStatus,
+    CommandStatus,
     CommitmentStatus,
     CoordinationCaseStatus,
     HealthStatus,
@@ -85,6 +89,7 @@ class CoordinationAction(StrictModel):
     targets: tuple[str, ...]
     reason_refs: tuple[str, ...]
     expected_effect: str
+    payload: dict[str, Any] = Field(default_factory=dict)
 
 
 class PolicyDecision(StrictModel):
@@ -95,14 +100,88 @@ class PolicyDecision(StrictModel):
     reason: str
 
 
+class ActionCommand(StrictModel):
+    """Concrete command verified by policy and ready for adapter execution."""
+
+    command_id: str
+    action_id: str
+    action_type: ActionType
+    targets: tuple[str, ...]
+    reason_refs: tuple[str, ...] = ()
+    payload: dict[str, Any] = Field(default_factory=dict)
+    approved_by: str | None = None
+    idempotency_key: str
+    created_at: datetime
+
+
+class ActionResult(StrictModel):
+    """Execution result returned by collaboration adapter."""
+
+    command_id: str
+    action_id: str
+    status: CommandStatus
+    output: dict[str, Any] = Field(default_factory=dict)
+    error: str | None = None
+    executed_at: datetime
+
+
+class ApprovalRequest(StrictModel):
+    """Human approval lifecycle model."""
+
+    approval_id: str
+    case_id: str
+    action_id: str
+    action_type: ActionType
+    approver_id: str
+    proposed_command: ActionCommand
+    status: ApprovalStatus = ApprovalStatus.PENDING
+    rejection_reason: str | None = None
+    approved_at: datetime | None = None
+    expires_at: datetime | None = None
+    consumed: bool = False
+    consumed_at: datetime | None = None
+
+
 class CoordinationCase(StrictModel):
+    """Persistent case tracking organization risks and coordination rounds."""
+
     case_id: str
     source_task_id: str
     status: CoordinationCaseStatus
-    evidence_claim_ids: tuple[str, ...]
-    impacted_task_ids: tuple[str, ...]
-    missing_information: tuple[str, ...]
-    candidate_actions: tuple[CoordinationAction, ...]
+    evidence_claim_ids: tuple[str, ...] = ()
+    impacted_task_ids: tuple[str, ...] = ()
+    missing_information: tuple[str, ...] = ()
+    candidate_actions: tuple[CoordinationAction, ...] = ()
+    executed_commands: tuple[ActionCommand, ...] = ()
+    waiting_for: str | None = None
+    waiting_until: datetime | None = None
+    round_count: int = 0
+    terminal_reason: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class AgentTurnTrace(StrictModel):
+    """Execution record for a single turn of the agent loop."""
+
+    round_number: int
+    occurred_at: datetime
+    ingested_event_ids: tuple[str, ...]
+    active_case_ids: tuple[str, ...]
+    candidate_action_ids: tuple[str, ...]
+    policy_decision_ids: tuple[str, ...]
+    executed_command_ids: tuple[str, ...]
+    generated_event_ids: tuple[str, ...]
+    termination_reason: AgentTerminationReason | None = None
+
+
+class AgentExecutionTrace(StrictModel):
+    """Complete multi-turn deterministic trace for a scenario execution."""
+
+    scenario_id: str
+    turns: tuple[AgentTurnTrace, ...]
+    final_termination_reason: AgentTerminationReason
+    final_cases: tuple[CoordinationCase, ...]
 
 
 class OrgState(StrictModel):

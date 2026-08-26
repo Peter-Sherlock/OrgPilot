@@ -1,0 +1,80 @@
+schema_version: 1
+scenario_id: m1_01_delay_inquiry_and_recovery
+title: Delay reported without estimate, followed by recovery reply
+description: >-
+  Alice reports a backend delay without a recovery estimate. The Agent asks Alice
+  privately, waits for response, receives the recovery estimate in Round 2, and resolves the case.
+project_id: m1-delay-recovery
+rounds:
+  - round_number: 1
+    current_time: "2026-09-10T10:00:00+08:00"
+    events:
+      - schema_version: 1
+        project_id: m1-delay-recovery
+        event_id: evt-m1-01-member-alice
+        event_type: member.registered
+        source: human
+        source_ref: setup:alice
+        occurred_at: "2026-09-10T09:00:00+08:00"
+        received_at: "2026-09-10T09:00:00+08:00"
+        payload:
+          member_id: alice
+          display_name: Alice
+          role: backend
+      - schema_version: 1
+        project_id: m1-delay-recovery
+        event_id: evt-m1-01-task-backend
+        event_type: task.created
+        source: task
+        source_ref: task-system:backend-api
+        occurred_at: "2026-09-10T09:05:00+08:00"
+        received_at: "2026-09-10T09:05:01+08:00"
+        payload:
+          task_id: backend_api
+          title: Payment Backend API
+          owner_id: alice
+          workflow_status: doing
+          deadline: "2026-09-12T18:00:00+08:00"
+          dependencies: []
+      - schema_version: 1
+        project_id: m1-delay-recovery
+        event_id: evt-m1-01-alice-delay
+        event_type: task.health_reported
+        source: message
+        source_ref: message:mock-dm:alice:1
+        actor_id: alice
+        occurred_at: "2026-09-10T10:00:00+08:00"
+        received_at: "2026-09-10T10:00:01+08:00"
+        payload:
+          task_id: backend_api
+          health_status: delayed
+          blocker: Database migration issue
+          confidence: 0.95
+  - round_number: 2
+    current_time: "2026-09-10T11:00:00+08:00"
+    events:
+      - schema_version: 1
+        project_id: m1-delay-recovery
+        event_id: evt-m1-01-alice-recovery
+        event_type: task.health_reported
+        source: message
+        source_ref: message:mock-dm:alice:2
+        actor_id: alice
+        occurred_at: "2026-09-10T11:00:00+08:00"
+        received_at: "2026-09-10T11:00:01+08:00"
+        payload:
+          task_id: backend_api
+          health_status: at_risk
+          expected_completion: "2026-09-11T18:00:00+08:00"
+          confidence: 0.90
+interactive_ground_truth:
+  total_rounds: 2
+  final_termination_reason: all_resolved
+  final_cases:
+    case:task-health:backend_api: resolved
+  case_terminal_reasons:
+    case:task-health:backend_api: recovery estimate received
+  tasks:
+    backend_api:
+      workflow_status: doing
+      health_status: at_risk

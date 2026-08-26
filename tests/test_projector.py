@@ -280,3 +280,49 @@ def test_commitment_invariants_and_explicit_supersession() -> None:
                 {"commitment_id": "commitment-1", "reason": "again"},
             )
         )
+
+
+def test_task_updated_event_handling() -> None:
+    projector = OrgProjector("test-project")
+    _register(projector, "alice")
+    _register(projector, "bob", minute=1)
+    _create_task(projector, "api", owner_id="alice", minute=2)
+
+    # Update deadline, title, and owner to bob
+    update_evt = make_event(
+        "evt-update-api",
+        "task.updated",
+        {
+            "task_id": "api",
+            "deadline": "2026-09-20T18:00:00+08:00",
+            "title": "API v2",
+            "owner_id": "bob",
+        },
+        minute=3,
+        actor_id="carol",
+    )
+    projector.apply(update_evt)
+    task = projector.state.tasks["api"]
+    assert task.title == "API v2"
+    assert task.owner_id == "bob"
+    assert task.deadline is not None
+
+    # Unknown owner
+    bad_owner_evt = make_event(
+        "evt-bad-owner",
+        "task.updated",
+        {"task_id": "api", "owner_id": "unknown"},
+        minute=4,
+    )
+    with pytest.raises(DomainInvariantError, match="unknown task owner"):
+        projector.apply(bad_owner_evt)
+
+    # Unknown task
+    bad_task_evt = make_event(
+        "evt-bad-task",
+        "task.updated",
+        {"task_id": "missing", "title": "New"},
+        minute=5,
+    )
+    with pytest.raises(DomainInvariantError, match="unknown task"):
+        projector.apply(bad_task_evt)

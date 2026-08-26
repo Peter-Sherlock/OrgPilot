@@ -1,5 +1,29 @@
 # 开发记录
 
+## 2026-08-26：M1 Mock 闭环协调 Agent
+
+### 已实现
+
+- 完成 P0 代码审查并合并至 `main`，发布 `p0.1.0` 标签；
+- 创建分支 `m1/mock-coordination-loop` 并编写 `ADR-0002`；
+- 引入持久化 `CaseLedger`，支持 8 种生命周期状态及自动化对齐消除（Reconciliation）；
+- 规范三阶段 Action 生命周期（`CoordinationAction` 候选 → `ActionCommand` 指令 → `ActionResult` 执行结果）；
+- 实现 `ApprovalManager` 审批状态机，严格防范未授权修改、过期审批、拒绝执行及重复消费；
+- 实现 `MockCollaborationAdapter`，支持 4 种核心操作、调用审计与模拟反馈事件生成；
+- 实现有边界的 `CoordinationAgent`（Agent Loop），支持可重复验证的确定性轨迹；
+- 构建 5 个多轮交互场景（S1-S5），并通过 CLI 与自动化测试进行严格断言。
+
+### 当前验证结果
+
+```text
+orgpilot replay --all: 9/9 PASS (4 P0 + 5 M1)
+pytest: 83 passed in 1.82s
+coverage: 94.96% branch-aware total coverage (fail_under=90%)
+ruff: All checks passed (0 errors, 52 files formatted)
+```
+
+---
+
 ## 2026-08-26：P0 领域、事件与 Ground Truth
 
 ### 已实现
@@ -25,13 +49,10 @@ coverage: 95.75% branch-aware total coverage
 ruff: All checks passed
 ```
 
-以上是本地 Python 3.14.7 环境中的实际结果，不代表飞书、数据库或 LLM 能力完成。
-
 ### 明确未实现
 
 - 自然语言到结构化 Claim 的提取；
 - PostgreSQL 持久化和事务；
 - Webhook 乱序、并发与重试；
-- 飞书 Adapter、审批卡片和真实消息；
-- 主动 Agent Loop 与成员响应模拟；
-- 真实团队数据和生产安全验证。
+- 真实飞书/Slack 开放平台 API 接入与消息监听；
+- Web 控制台界面。

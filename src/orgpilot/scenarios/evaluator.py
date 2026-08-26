@@ -13,7 +13,9 @@ from orgpilot.scenarios.models import (
     ExpectedTaskState,
     GroundTruth,
     GroundTruthReport,
+    InteractiveGroundTruth,
     ReplayResult,
+    ScenarioDefinition,
 )
 
 
@@ -58,6 +60,7 @@ def evaluate_ground_truth(result: ReplayResult, truth: GroundTruth) -> GroundTru
     actual_cases = tuple(
         ExpectedCase(
             source_task_id=case.source_task_id,
+            status=case.status,
             impacted_task_ids=case.impacted_task_ids,
             missing_information=case.missing_information,
             action_types=tuple(action.action_type for action in case.candidate_actions),
@@ -76,6 +79,7 @@ def evaluate_ground_truth(result: ReplayResult, truth: GroundTruth) -> GroundTru
         )
         for case in result.cases
         for action in case.candidate_actions
+        if action.action_id in decision_by_action_id
     )
     check("expected_actions", truth.expected_actions, actual_actions)
 
@@ -100,8 +104,84 @@ def evaluate_ground_truth(result: ReplayResult, truth: GroundTruth) -> GroundTru
     )
 
 
+def evaluate_interactive_ground_truth(
+    result: ReplayResult, truth: InteractiveGroundTruth
+) -> GroundTruthReport:
+    assertions: list[AssertionResult] = []
+
+    def check(name: str, expected: Any, actual: Any) -> None:
+        assertions.append(
+            AssertionResult(
+                name=name,
+                passed=expected == actual,
+                expected=expected,
+                actual=actual,
+            )
+        )
+
+    if result.agent_trace is not None:
+        check("total_rounds", truth.total_rounds, len(result.agent_trace.turns))
+        check(
+            "final_termination_reason",
+            truth.final_termination_reason,
+            result.agent_trace.final_termination_reason,
+        )
+
+    actual_cases = {case.case_id: case.status for case in result.cases}
+    for case_id, expected_status in truth.final_cases.items():
+        check(f"case_status:{case_id}", expected_status, actual_cases.get(case_id))
+
+    actual_reasons = {case.case_id: (case.terminal_reason or "") for case in result.cases}
+    for case_id, expected_reason_keyword in truth.case_terminal_reasons.items():
+        actual_reason = actual_reasons.get(case_id, "")
+        check(
+            f"case_terminal_reason:{case_id}",
+            True,
+            expected_reason_keyword.lower() in actual_reason.lower(),
+        )
+
+    if truth.tasks:
+        actual_tasks = {}
+        for task_id, exp_task in truth.tasks.items():
+            task = result.state.tasks.get(task_id)
+            if task is not None:
+                actual_tasks[task_id] = ExpectedTaskState(
+                    workflow_status=task.workflow_status,
+                    health_status=task.health_status,
+                    health_conflict=task.health_conflict,
+                    deadline=task.deadline if exp_task.deadline is not None else None,
+                )
+            check(f"task:{task_id}", exp_task, actual_tasks.get(task_id))
+
+    return GroundTruthReport(
+        scenario_id=result.scenario_id,
+        passed=all(item.passed for item in assertions),
+        assertions=tuple(assertions),
+    )
+
+
+def evaluate_scenario(scenario: ScenarioDefinition, result: ReplayResult) -> GroundTruthReport:
+    if scenario.interactive_ground_truth is not None:
+        return evaluate_interactive_ground_truth(result, scenario.interactive_ground_truth)
+    if scenario.ground_truth is not None:
+        return evaluate_ground_truth(result, scenario.ground_truth)
+    raise ValueError(f"Scenario {scenario.scenario_id!r} has no declared ground truth")
+
+
 def assert_ground_truth(result: ReplayResult, truth: GroundTruth) -> None:
     report = evaluate_ground_truth(result, truth)
+    if report.passed:
+        return
+    failures = "\n".join(
+        f"- {item.name}: expected={item.expected!r}, actual={item.actual!r}"
+        for item in report.assertions
+        if not item.passed
+    )
+    raise GroundTruthMismatch(f"scenario {report.scenario_id!r} failed:\n{failures}")
+
+
+def assert_scenario(scenario: ScenarioDefinition, result: ReplayResult) -> None:
+    report = evaluate_scenario(scenario, result)
     if report.passed:
         return
     failures = "\n".join(

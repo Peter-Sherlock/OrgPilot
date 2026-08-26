@@ -217,9 +217,15 @@ class OrgEvent(BaseModel):
 ```python
 class CoordinationAction(BaseModel):
     action_type: Literal[
-        "ask", "remind", "summarize", "escalate",
-        "propose_reschedule", "propose_reassign",
-        "update_task", "schedule_meeting", "notify_group"
+        "ask",
+        "remind",
+        "summarize",
+        "escalate",
+        "propose_reschedule",
+        "propose_reassign",
+        "update_task",
+        "schedule_meeting",
+        "notify_group",
     ]
     targets: list[str]
     reason_refs: list[str]

@@ -67,6 +67,17 @@ class TaskWorkflowChangedPayload(FrozenModel):
     to_status: WorkflowStatus
 
 
+class TaskUpdatedPayload(FrozenModel):
+    task_id: str
+    deadline: datetime | None = None
+    title: str | None = None
+    owner_id: str | None = None
+
+    _deadline_timezone_required = field_validator("deadline")(
+        lambda value: _require_timezone(value) if value is not None else value
+    )
+
+
 class TaskHealthReportedPayload(FrozenModel):
     task_id: str
     health_status: HealthStatus
@@ -113,6 +124,11 @@ class TaskWorkflowChangedEvent(EventBase):
     payload: TaskWorkflowChangedPayload
 
 
+class TaskUpdatedEvent(EventBase):
+    event_type: Literal["task.updated"]
+    payload: TaskUpdatedPayload
+
+
 class TaskHealthReportedEvent(EventBase):
     event_type: Literal["task.health_reported"]
     payload: TaskHealthReportedPayload
@@ -132,6 +148,7 @@ type OrgEvent = Annotated[
     MemberRegisteredEvent
     | TaskCreatedEvent
     | TaskWorkflowChangedEvent
+    | TaskUpdatedEvent
     | TaskHealthReportedEvent
     | CommitmentMadeEvent
     | CommitmentSupersededEvent,

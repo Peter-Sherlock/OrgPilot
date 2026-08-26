@@ -1,0 +1,82 @@
+schema_version: 1
+scenario_id: m1_02_delay_reschedule_approved
+title: Delay causes deadline conflict, PM approves reschedule proposal
+description: >-
+  Backend task exceeds original deadline. Agent proposes a reschedule to PM Carol,
+  waits for approval, and applies task update upon approval in Round 2.
+project_id: m1-reschedule-approved
+rounds:
+  - round_number: 1
+    current_time: "2026-09-08T10:00:00+08:00"
+    events:
+      - schema_version: 1
+        project_id: m1-reschedule-approved
+        event_id: evt-m1-02-member-alice
+        event_type: member.registered
+        source: human
+        source_ref: setup:alice
+        occurred_at: "2026-09-08T09:00:00+08:00"
+        received_at: "2026-09-08T09:00:00+08:00"
+        payload:
+          member_id: alice
+          display_name: Alice
+          role: backend
+      - schema_version: 1
+        project_id: m1-reschedule-approved
+        event_id: evt-m1-02-member-carol
+        event_type: member.registered
+        source: human
+        source_ref: setup:carol
+        occurred_at: "2026-09-08T09:00:01+08:00"
+        received_at: "2026-09-08T09:00:01+08:00"
+        payload:
+          member_id: carol
+          display_name: Carol
+          role: pm
+      - schema_version: 1
+        project_id: m1-reschedule-approved
+        event_id: evt-m1-02-task-backend
+        event_type: task.created
+        source: task
+        source_ref: task-system:backend-api
+        occurred_at: "2026-09-08T09:05:00+08:00"
+        received_at: "2026-09-08T09:05:01+08:00"
+        payload:
+          task_id: backend_api
+          title: Backend API
+          owner_id: alice
+          workflow_status: doing
+          deadline: "2026-09-10T18:00:00+08:00"
+          dependencies: []
+      - schema_version: 1
+        project_id: m1-reschedule-approved
+        event_id: evt-m1-02-alice-delay
+        event_type: task.health_reported
+        source: message
+        source_ref: message:mock-dm:alice:1
+        actor_id: alice
+        occurred_at: "2026-09-08T10:00:00+08:00"
+        received_at: "2026-09-08T10:00:01+08:00"
+        payload:
+          task_id: backend_api
+          health_status: delayed
+          expected_completion: "2026-09-15T18:00:00+08:00"
+          blocker: Third party API breaking changes
+          confidence: 0.95
+  - round_number: 2
+    current_time: "2026-09-08T11:00:00+08:00"
+    approvals:
+      - approver_id: carol
+        decision: approved
+interactive_ground_truth:
+  total_rounds: 2
+  final_termination_reason: all_resolved
+  final_cases:
+    case:task-health:backend_api: resolved
+  case_terminal_reasons:
+    case:task-health:backend_api: reschedule approved
+  tasks:
+    backend_api:
+      workflow_status: doing
+      health_status: delayed
+      deadline: "2026-09-15T18:00:00+08:00"

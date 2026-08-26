@@ -1,4 +1,4 @@
-"""Build source-backed coordination cases from current state and graph impacts."""
+"""Build source-backed coordination cases and candidate actions from current state."""
 
 from collections import defaultdict
 
@@ -26,7 +26,7 @@ _HEALTH_SEVERITY = {
 
 
 class CoordinationService:
-    """Creates explainable open cases; it does not execute external actions."""
+    """Creates explainable open cases and plans candidate actions based on evidence."""
 
     def build_cases(
         self, state: OrgState, impacts: tuple[DependencyImpact, ...]
@@ -65,6 +65,36 @@ class CoordinationService:
                         expected_effect="obtain a source-backed recovery estimate",
                     ),
                 )
+            elif active_claims:
+                # Active claims have expected completion; check for schedule conflicts
+                primary_claim = max(
+                    active_claims,
+                    key=lambda claim: (
+                        _HEALTH_SEVERITY[claim.health_status],
+                        claim.occurred_at,
+                        claim.claim_id,
+                    ),
+                )
+                if (
+                    task.deadline is not None
+                    and primary_claim.expected_completion is not None
+                    and primary_claim.expected_completion > task.deadline
+                ):
+                    pm_targets = self._find_manager_targets(state) or (task.owner_id,)
+                    exp_iso = primary_claim.expected_completion.isoformat()
+                    actions = (
+                        CoordinationAction(
+                            action_id=f"action:{task.task_id}:propose_reschedule",
+                            action_type=ActionType.PROPOSE_RESCHEDULE,
+                            targets=pm_targets,
+                            reason_refs=(primary_claim.source_event_id,),
+                            expected_effect=f"propose new deadline {exp_iso}",
+                            payload={
+                                "task_id": task.task_id,
+                                "new_deadline": exp_iso,
+                            },
+                        ),
+                    )
 
             cases.append(
                 CoordinationCase(
@@ -79,6 +109,71 @@ class CoordinationService:
             )
 
         return tuple(cases)
+
+    def plan_actions_for_case(
+        self, case: CoordinationCase, state: OrgState
+    ) -> tuple[CoordinationAction, ...]:
+        task = state.tasks.get(case.source_task_id)
+        if task is None or not self._is_risky(task.workflow_status, task.health_status):
+            return ()
+
+        active_claims = self._active_risk_claims(state, task.task_id)
+        if not active_claims:
+            return ()
+
+        primary_claim = max(
+            active_claims,
+            key=lambda claim: (
+                _HEALTH_SEVERITY[claim.health_status],
+                claim.occurred_at,
+                claim.claim_id,
+            ),
+        )
+
+        if case.missing_information and "expected_completion" in case.missing_information:
+            target = primary_claim.stated_by or task.owner_id
+            return (
+                CoordinationAction(
+                    action_id=f"action:{task.task_id}:ask_recovery_estimate",
+                    action_type=ActionType.ASK_RECOVERY_ESTIMATE,
+                    targets=(target,),
+                    reason_refs=(primary_claim.source_event_id,),
+                    expected_effect="obtain a source-backed recovery estimate",
+                    payload={"task_id": task.task_id, "question": "When can this task recover?"},
+                ),
+            )
+
+        if (
+            task.deadline is not None
+            and primary_claim.expected_completion is not None
+            and primary_claim.expected_completion > task.deadline
+        ):
+            pm_targets = self._find_manager_targets(state) or (task.owner_id,)
+            exp_iso = primary_claim.expected_completion.isoformat()
+            return (
+                CoordinationAction(
+                    action_id=f"action:{task.task_id}:propose_reschedule",
+                    action_type=ActionType.PROPOSE_RESCHEDULE,
+                    targets=pm_targets,
+                    reason_refs=(primary_claim.source_event_id,),
+                    expected_effect=f"propose new deadline {exp_iso}",
+                    payload={
+                        "task_id": task.task_id,
+                        "new_deadline": exp_iso,
+                    },
+                ),
+            )
+
+        return ()
+
+    @staticmethod
+    def _find_manager_targets(state: OrgState) -> tuple[str, ...]:
+        managers = tuple(
+            member.member_id
+            for member in sorted(state.members.values(), key=lambda m: m.member_id)
+            if member.role in {"pm", "manager", "lead"}
+        )
+        return managers
 
     @staticmethod
     def _is_risky(workflow_status: WorkflowStatus, health_status: HealthStatus) -> bool:

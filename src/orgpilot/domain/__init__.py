@@ -2,7 +2,10 @@
 
 from orgpilot.domain.enums import (
     ActionType,
+    AgentTerminationReason,
+    ApprovalStatus,
     ClaimStatus,
+    CommandStatus,
     CommitmentStatus,
     CoordinationCaseStatus,
     HealthStatus,
@@ -11,6 +14,11 @@ from orgpilot.domain.enums import (
     WorkflowStatus,
 )
 from orgpilot.domain.models import (
+    ActionCommand,
+    ActionResult,
+    AgentExecutionTrace,
+    AgentTurnTrace,
+    ApprovalRequest,
     Commitment,
     CoordinationAction,
     CoordinationCase,
@@ -23,8 +31,16 @@ from orgpilot.domain.models import (
 )
 
 __all__ = [
+    "ActionCommand",
+    "ActionResult",
     "ActionType",
+    "AgentExecutionTrace",
+    "AgentTerminationReason",
+    "AgentTurnTrace",
+    "ApprovalRequest",
+    "ApprovalStatus",
     "ClaimStatus",
+    "CommandStatus",
     "Commitment",
     "CommitmentStatus",
     "CoordinationAction",
