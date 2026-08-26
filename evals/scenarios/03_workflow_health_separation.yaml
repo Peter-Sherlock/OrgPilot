@@ -1,0 +1,69 @@
+schema_version: 1
+scenario_id: workflow_health_separation
+title: A risk report does not overwrite official task workflow
+description: >-
+  The task system says doing while the owner reports at risk. These facts are
+  compatible dimensions and must remain visible instead of overwriting each other.
+project_id: payment-sdk
+events:
+  - schema_version: 1
+    project_id: payment-sdk
+    event_id: evt-201-member-alice
+    event_type: member.registered
+    source: human
+    source_ref: setup:alice
+    occurred_at: "2026-09-10T09:00:00+08:00"
+    received_at: "2026-09-10T09:00:00+08:00"
+    payload: {member_id: alice, display_name: Alice, role: backend}
+  - schema_version: 1
+    project_id: payment-sdk
+    event_id: evt-202-task-sdk
+    event_type: task.created
+    source: task
+    source_ref: task-system:payment-sdk
+    occurred_at: "2026-09-10T09:05:00+08:00"
+    received_at: "2026-09-10T09:05:01+08:00"
+    payload:
+      task_id: payment_sdk
+      title: Complete payment SDK
+      owner_id: alice
+      workflow_status: doing
+      deadline: "2026-09-10T18:00:00+08:00"
+  - schema_version: 1
+    project_id: payment-sdk
+    event_id: evt-203-owner-risk
+    event_type: task.health_reported
+    source: message
+    source_ref: message:mock-dm:alice:303
+    actor_id: alice
+    occurred_at: "2026-09-10T11:00:00+08:00"
+    received_at: "2026-09-10T11:00:01+08:00"
+    payload:
+      task_id: payment_sdk
+      health_status: at_risk
+      blocker: Integration tests are still failing
+      confidence: 0.9
+ground_truth:
+  event_count: 3
+  member_count: 1
+  task_count: 1
+  tasks:
+    payment_sdk:
+      workflow_status: doing
+      health_status: at_risk
+      health_conflict: false
+  impacts: []
+  open_cases:
+    - source_task_id: payment_sdk
+      impacted_task_ids: []
+      missing_information: [expected_completion]
+      action_types: [ask_recovery_estimate]
+  expected_actions:
+    - action_type: ask_recovery_estimate
+      targets: [alice]
+      disposition: allow
+      requires_approval: false
+  claims:
+    claim:evt-203-owner-risk:task_health:
+      status: active
+      health_status: at_risk

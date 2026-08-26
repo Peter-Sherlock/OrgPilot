@@ -1,0 +1,109 @@
+schema_version: 1
+scenario_id: recovery_supersedes_risk
+title: A recovery report supersedes stale risk and closes the case
+description: >-
+  Alice first reports risk and makes a delivery commitment. A later on-track
+  report from Alice supersedes the risk, and an explicit event supersedes the old commitment.
+project_id: recovery-demo
+events:
+  - schema_version: 1
+    project_id: recovery-demo
+    event_id: evt-301-member-alice
+    event_type: member.registered
+    source: human
+    source_ref: setup:alice
+    occurred_at: "2026-09-11T09:00:00+08:00"
+    received_at: "2026-09-11T09:00:00+08:00"
+    payload: {member_id: alice, display_name: Alice, role: backend}
+  - schema_version: 1
+    project_id: recovery-demo
+    event_id: evt-302-task-api
+    event_type: task.created
+    source: task
+    source_ref: task-system:backend-api
+    occurred_at: "2026-09-11T09:05:00+08:00"
+    received_at: "2026-09-11T09:05:01+08:00"
+    payload:
+      task_id: backend_api
+      title: Complete backend API
+      owner_id: alice
+      workflow_status: doing
+      deadline: "2026-09-12T18:00:00+08:00"
+  - schema_version: 1
+    project_id: recovery-demo
+    event_id: evt-303-risk
+    event_type: task.health_reported
+    source: message
+    source_ref: message:mock-dm:alice:401
+    actor_id: alice
+    occurred_at: "2026-09-11T10:00:00+08:00"
+    received_at: "2026-09-11T10:00:01+08:00"
+    payload:
+      task_id: backend_api
+      health_status: at_risk
+      blocker: Waiting for an SDK fix
+      confidence: 0.95
+  - schema_version: 1
+    project_id: recovery-demo
+    event_id: evt-304-commitment
+    event_type: commitment.made
+    source: message
+    source_ref: message:mock-dm:alice:402
+    actor_id: alice
+    occurred_at: "2026-09-11T10:05:00+08:00"
+    received_at: "2026-09-11T10:05:01+08:00"
+    payload:
+      commitment_id: commitment-backend-v1
+      target_type: task
+      target_id: backend_api
+      predicate: workflow_status
+      expected_value: done
+      due_at: "2026-09-12T18:00:00+08:00"
+  - schema_version: 1
+    project_id: recovery-demo
+    event_id: evt-305-recovered
+    event_type: task.health_reported
+    source: message
+    source_ref: message:mock-dm:alice:403
+    actor_id: alice
+    occurred_at: "2026-09-11T14:00:00+08:00"
+    received_at: "2026-09-11T14:00:02+08:00"
+    payload:
+      task_id: backend_api
+      health_status: on_track
+      expected_completion: "2026-09-12T16:00:00+08:00"
+      confidence: 0.9
+  - schema_version: 1
+    project_id: recovery-demo
+    event_id: evt-306-supersede-commitment
+    event_type: commitment.superseded
+    source: human
+    source_ref: decision:pm:501
+    actor_id: alice
+    occurred_at: "2026-09-11T14:05:00+08:00"
+    received_at: "2026-09-11T14:05:00+08:00"
+    payload:
+      commitment_id: commitment-backend-v1
+      reason: Recovery produced a newer delivery forecast
+ground_truth:
+  event_count: 6
+  member_count: 1
+  task_count: 1
+  tasks:
+    backend_api:
+      workflow_status: doing
+      health_status: on_track
+      health_conflict: false
+  impacts: []
+  open_cases: []
+  expected_actions: []
+  claims:
+    claim:evt-303-risk:task_health:
+      status: superseded
+      health_status: at_risk
+    claim:evt-305-recovered:task_health:
+      status: active
+      health_status: on_track
+  commitments:
+    commitment-backend-v1:
+      status: superseded

@@ -1,0 +1,94 @@
+schema_version: 1
+scenario_id: ambiguous_report_requires_question
+title: An uncertain risk report requires a private follow-up
+description: >-
+  Alice says the API probably will not finish today. P0 receives the already
+  structured claim and must request a recovery estimate without escalating publicly.
+project_id: sdk-integration
+events:
+  - schema_version: 1
+    project_id: sdk-integration
+    event_id: evt-101-member-alice
+    event_type: member.registered
+    source: human
+    source_ref: setup:alice
+    occurred_at: "2026-09-09T09:00:00+08:00"
+    received_at: "2026-09-09T09:00:00+08:00"
+    payload: {member_id: alice, display_name: Alice, role: backend}
+  - schema_version: 1
+    project_id: sdk-integration
+    event_id: evt-102-member-bob
+    event_type: member.registered
+    source: human
+    source_ref: setup:bob
+    occurred_at: "2026-09-09T09:00:01+08:00"
+    received_at: "2026-09-09T09:00:01+08:00"
+    payload: {member_id: bob, display_name: Bob, role: frontend}
+  - schema_version: 1
+    project_id: sdk-integration
+    event_id: evt-103-task-api
+    event_type: task.created
+    source: task
+    source_ref: task-system:api
+    occurred_at: "2026-09-09T09:05:00+08:00"
+    received_at: "2026-09-09T09:05:01+08:00"
+    payload:
+      task_id: api
+      title: Stabilize SDK API
+      owner_id: alice
+      workflow_status: doing
+      deadline: "2026-09-10T18:00:00+08:00"
+  - schema_version: 1
+    project_id: sdk-integration
+    event_id: evt-104-task-client
+    event_type: task.created
+    source: task
+    source_ref: task-system:client
+    occurred_at: "2026-09-09T09:06:00+08:00"
+    received_at: "2026-09-09T09:06:01+08:00"
+    payload:
+      task_id: client_integration
+      title: Integrate SDK client
+      owner_id: bob
+      workflow_status: todo
+      deadline: "2026-09-11T18:00:00+08:00"
+      dependencies: [api]
+  - schema_version: 1
+    project_id: sdk-integration
+    event_id: evt-105-ambiguous-risk
+    event_type: task.health_reported
+    source: message
+    source_ref: message:mock-dm:alice:202
+    actor_id: alice
+    occurred_at: "2026-09-09T10:20:00+08:00"
+    received_at: "2026-09-09T10:20:02+08:00"
+    payload:
+      task_id: api
+      health_status: at_risk
+      blocker: SDK behavior is still uncertain
+      confidence: 0.62
+ground_truth:
+  event_count: 5
+  member_count: 2
+  task_count: 2
+  tasks:
+    api: {workflow_status: doing, health_status: at_risk}
+    client_integration: {workflow_status: todo, health_status: unknown}
+  impacts:
+    - source_task_id: api
+      impacted_task_id: client_integration
+      path: [api, client_integration]
+  open_cases:
+    - source_task_id: api
+      impacted_task_ids: [client_integration]
+      missing_information: [expected_completion]
+      action_types: [ask_recovery_estimate]
+  expected_actions:
+    - action_type: ask_recovery_estimate
+      targets: [alice]
+      disposition: allow
+      requires_approval: false
+  claims:
+    claim:evt-105-ambiguous-risk:task_health:
+      status: active
+      health_status: at_risk

@@ -1,0 +1,138 @@
+schema_version: 1
+scenario_id: delay_propagation
+title: A delayed prerequisite affects two downstream tasks
+description: >-
+  Alice reports a backend delay without a recovery estimate. The kernel must
+  preserve the official workflow state, propagate impact, and ask Alice privately.
+project_id: checkout-launch
+events:
+  - schema_version: 1
+    project_id: checkout-launch
+    event_id: evt-001-member-alice
+    event_type: member.registered
+    source: human
+    source_ref: setup:alice
+    occurred_at: "2026-09-08T09:00:00+08:00"
+    received_at: "2026-09-08T09:00:00+08:00"
+    payload:
+      member_id: alice
+      display_name: Alice
+      role: backend
+  - schema_version: 1
+    project_id: checkout-launch
+    event_id: evt-002-member-bob
+    event_type: member.registered
+    source: human
+    source_ref: setup:bob
+    occurred_at: "2026-09-08T09:00:01+08:00"
+    received_at: "2026-09-08T09:00:01+08:00"
+    payload:
+      member_id: bob
+      display_name: Bob
+      role: frontend
+  - schema_version: 1
+    project_id: checkout-launch
+    event_id: evt-003-member-carol
+    event_type: member.registered
+    source: human
+    source_ref: setup:carol
+    occurred_at: "2026-09-08T09:00:02+08:00"
+    received_at: "2026-09-08T09:00:02+08:00"
+    payload:
+      member_id: carol
+      display_name: Carol
+      role: qa
+  - schema_version: 1
+    project_id: checkout-launch
+    event_id: evt-004-task-backend
+    event_type: task.created
+    source: task
+    source_ref: task-system:backend-api
+    occurred_at: "2026-09-08T09:05:00+08:00"
+    received_at: "2026-09-08T09:05:01+08:00"
+    payload:
+      task_id: backend_api
+      title: Complete payment backend API
+      owner_id: alice
+      workflow_status: doing
+      deadline: "2026-09-10T18:00:00+08:00"
+      dependencies: []
+  - schema_version: 1
+    project_id: checkout-launch
+    event_id: evt-005-task-frontend
+    event_type: task.created
+    source: task
+    source_ref: task-system:frontend-integration
+    occurred_at: "2026-09-08T09:06:00+08:00"
+    received_at: "2026-09-08T09:06:01+08:00"
+    payload:
+      task_id: frontend_integration
+      title: Integrate checkout frontend
+      owner_id: bob
+      workflow_status: doing
+      deadline: "2026-09-11T18:00:00+08:00"
+      dependencies: [backend_api]
+  - schema_version: 1
+    project_id: checkout-launch
+    event_id: evt-006-task-release
+    event_type: task.created
+    source: task
+    source_ref: task-system:release-review
+    occurred_at: "2026-09-08T09:07:00+08:00"
+    received_at: "2026-09-08T09:07:01+08:00"
+    payload:
+      task_id: release_review
+      title: Run release readiness review
+      owner_id: carol
+      workflow_status: doing
+      deadline: "2026-09-12T10:00:00+08:00"
+      dependencies: [frontend_integration]
+  - schema_version: 1
+    project_id: checkout-launch
+    event_id: evt-007-alice-delay
+    event_type: task.health_reported
+    source: message
+    source_ref: message:mock-dm:alice:101
+    actor_id: alice
+    occurred_at: "2026-09-08T10:00:00+08:00"
+    received_at: "2026-09-08T10:00:03+08:00"
+    payload:
+      task_id: backend_api
+      health_status: delayed
+      blocker: Payment SDK is not working
+      confidence: 0.98
+ground_truth:
+  event_count: 7
+  member_count: 3
+  task_count: 3
+  tasks:
+    backend_api:
+      workflow_status: doing
+      health_status: delayed
+    frontend_integration:
+      workflow_status: doing
+      health_status: unknown
+    release_review:
+      workflow_status: doing
+      health_status: unknown
+  impacts:
+    - source_task_id: backend_api
+      impacted_task_id: frontend_integration
+      path: [backend_api, frontend_integration]
+    - source_task_id: backend_api
+      impacted_task_id: release_review
+      path: [backend_api, frontend_integration, release_review]
+  open_cases:
+    - source_task_id: backend_api
+      impacted_task_ids: [frontend_integration, release_review]
+      missing_information: [expected_completion]
+      action_types: [ask_recovery_estimate]
+  expected_actions:
+    - action_type: ask_recovery_estimate
+      targets: [alice]
+      disposition: allow
+      requires_approval: false
+  claims:
+    claim:evt-007-alice-delay:task_health:
+      status: active
+      health_status: delayed

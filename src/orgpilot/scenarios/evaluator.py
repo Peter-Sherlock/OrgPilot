@@ -1,0 +1,112 @@
+"""Programmatic comparison between replay results and declared ground truth."""
+
+from typing import Any
+
+from orgpilot.domain.errors import GroundTruthMismatch
+from orgpilot.scenarios.models import (
+    AssertionResult,
+    ExpectedAction,
+    ExpectedCase,
+    ExpectedClaim,
+    ExpectedCommitment,
+    ExpectedImpact,
+    ExpectedTaskState,
+    GroundTruth,
+    GroundTruthReport,
+    ReplayResult,
+)
+
+
+def evaluate_ground_truth(result: ReplayResult, truth: GroundTruth) -> GroundTruthReport:
+    assertions: list[AssertionResult] = []
+
+    def check(name: str, expected: Any, actual: Any) -> None:
+        assertions.append(
+            AssertionResult(
+                name=name,
+                passed=expected == actual,
+                expected=expected,
+                actual=actual,
+            )
+        )
+
+    check("event_count", truth.event_count, result.event_count)
+    check("member_count", truth.member_count, len(result.state.members))
+    check("task_count", truth.task_count, len(result.state.tasks))
+
+    actual_tasks = {
+        task_id: ExpectedTaskState(
+            workflow_status=task.workflow_status,
+            health_status=task.health_status,
+            health_conflict=task.health_conflict,
+        )
+        for task_id, task in result.state.tasks.items()
+        if task_id in truth.tasks
+    }
+    check("tasks", truth.tasks, actual_tasks)
+
+    actual_impacts = tuple(
+        ExpectedImpact(
+            source_task_id=item.source_task_id,
+            impacted_task_id=item.impacted_task_id,
+            path=item.path,
+        )
+        for item in result.impacts
+    )
+    check("impacts", truth.impacts, actual_impacts)
+
+    actual_cases = tuple(
+        ExpectedCase(
+            source_task_id=case.source_task_id,
+            impacted_task_ids=case.impacted_task_ids,
+            missing_information=case.missing_information,
+            action_types=tuple(action.action_type for action in case.candidate_actions),
+        )
+        for case in result.cases
+    )
+    check("open_cases", truth.open_cases, actual_cases)
+
+    decision_by_action_id = {decision.action_id: decision for decision in result.policy_decisions}
+    actual_actions = tuple(
+        ExpectedAction(
+            action_type=action.action_type,
+            targets=action.targets,
+            disposition=decision_by_action_id[action.action_id].disposition,
+            requires_approval=decision_by_action_id[action.action_id].requires_approval,
+        )
+        for case in result.cases
+        for action in case.candidate_actions
+    )
+    check("expected_actions", truth.expected_actions, actual_actions)
+
+    actual_claims = {
+        claim_id: ExpectedClaim(status=claim.status, health_status=claim.health_status)
+        for claim_id, claim in result.state.health_claims.items()
+        if claim_id in truth.claims
+    }
+    check("claims", truth.claims, actual_claims)
+
+    actual_commitments = {
+        commitment_id: ExpectedCommitment(status=commitment.status)
+        for commitment_id, commitment in result.state.commitments.items()
+        if commitment_id in truth.commitments
+    }
+    check("commitments", truth.commitments, actual_commitments)
+
+    return GroundTruthReport(
+        scenario_id=result.scenario_id,
+        passed=all(item.passed for item in assertions),
+        assertions=tuple(assertions),
+    )
+
+
+def assert_ground_truth(result: ReplayResult, truth: GroundTruth) -> None:
+    report = evaluate_ground_truth(result, truth)
+    if report.passed:
+        return
+    failures = "\n".join(
+        f"- {item.name}: expected={item.expected!r}, actual={item.actual!r}"
+        for item in report.assertions
+        if not item.passed
+    )
+    raise GroundTruthMismatch(f"scenario {report.scenario_id!r} failed:\n{failures}")

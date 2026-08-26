@@ -1,0 +1,48 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "orgpilot"
+version = "0.1.0"
+description = "A replayable coordination kernel for stateful organizational agents."
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [{ name = "OrgPilot contributors" }]
+dependencies = [
+  "pydantic>=2.10,<3",
+  "PyYAML>=6.0,<7",
+]
+
+[project.scripts]
+orgpilot = "orgpilot.cli:main"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3,<10",
+  "pytest-cov>=6,<8",
+  "ruff>=0.9,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/orgpilot"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers --basetemp=.pytest-tmp"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["orgpilot"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+skip_covered = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["B", "C4", "E", "F", "I", "SIM", "UP"]
