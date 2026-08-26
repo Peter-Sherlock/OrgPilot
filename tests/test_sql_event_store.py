@@ -1,6 +1,6 @@
 """Tests for SqlEventStore idempotency, conflict rejection, and query operations."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -10,8 +10,6 @@ from orgpilot.events.models import (
     EventSource,
     MemberRegisteredEvent,
     MemberRegisteredPayload,
-    TaskHealthReportedEvent,
-    TaskHealthReportedPayload,
 )
 from orgpilot.storage.database import Database
 from orgpilot.storage.event_store import SqlEventStore
@@ -37,9 +35,7 @@ async def test_sql_event_store_append_and_duplicate(db: Database) -> None:
         source_ref="setup",
         occurred_at=NOW,
         received_at=NOW,
-        payload=MemberRegisteredPayload(
-            member_id="alice", display_name="Alice", role="backend"
-        ),
+        payload=MemberRegisteredPayload(member_id="alice", display_name="Alice", role="backend"),
     )
 
     # First append: SUCCESS
@@ -63,9 +59,7 @@ async def test_sql_event_store_rejects_conflict(db: Database) -> None:
         source_ref="setup",
         occurred_at=NOW,
         received_at=NOW,
-        payload=MemberRegisteredPayload(
-            member_id="alice", display_name="Alice", role="backend"
-        ),
+        payload=MemberRegisteredPayload(member_id="alice", display_name="Alice", role="backend"),
     )
     await store.append(event1)
 
@@ -78,9 +72,7 @@ async def test_sql_event_store_rejects_conflict(db: Database) -> None:
         source_ref="setup",
         occurred_at=NOW,
         received_at=NOW,
-        payload=MemberRegisteredPayload(
-            member_id="bob", display_name="Bob", role="frontend"
-        ),
+        payload=MemberRegisteredPayload(member_id="bob", display_name="Bob", role="frontend"),
     )
     with pytest.raises(DuplicateEventConflict, match="already exists with different payload"):
         await store.append(event2)
@@ -94,11 +86,9 @@ async def test_sql_event_store_query_and_ordering(db: Database) -> None:
         event_type="member.registered",
         source=EventSource.HUMAN,
         source_ref="setup",
-        occurred_at=datetime(2026, 9, 10, 9, 0, tzinfo=timezone.utc),
-        received_at=datetime(2026, 9, 10, 9, 0, tzinfo=timezone.utc),
-        payload=MemberRegisteredPayload(
-            member_id="alice", display_name="Alice", role="backend"
-        ),
+        occurred_at=datetime(2026, 9, 10, 9, 0, tzinfo=UTC),
+        received_at=datetime(2026, 9, 10, 9, 0, tzinfo=UTC),
+        payload=MemberRegisteredPayload(member_id="alice", display_name="Alice", role="backend"),
     )
     event2 = MemberRegisteredEvent(
         project_id="proj-2",
@@ -106,11 +96,9 @@ async def test_sql_event_store_query_and_ordering(db: Database) -> None:
         event_type="member.registered",
         source=EventSource.HUMAN,
         source_ref="setup",
-        occurred_at=datetime(2026, 9, 10, 10, 0, tzinfo=timezone.utc),
-        received_at=datetime(2026, 9, 10, 10, 0, tzinfo=timezone.utc),
-        payload=MemberRegisteredPayload(
-            member_id="bob", display_name="Bob", role="frontend"
-        ),
+        occurred_at=datetime(2026, 9, 10, 10, 0, tzinfo=UTC),
+        received_at=datetime(2026, 9, 10, 10, 0, tzinfo=UTC),
+        payload=MemberRegisteredPayload(member_id="bob", display_name="Bob", role="frontend"),
     )
     await store.append(event2)
     await store.append(event1)
@@ -122,8 +110,6 @@ async def test_sql_event_store_query_and_ordering(db: Database) -> None:
     assert events[1].event_id == "evt-2"
 
     # Filter with since
-    filtered = await store.get_events(
-        "proj-2", since=datetime(2026, 9, 10, 9, 30, tzinfo=timezone.utc)
-    )
+    filtered = await store.get_events("proj-2", since=datetime(2026, 9, 10, 9, 30, tzinfo=UTC))
     assert len(filtered) == 1
     assert filtered[0].event_id == "evt-2"

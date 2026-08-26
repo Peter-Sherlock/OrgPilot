@@ -1,9 +1,9 @@
 """Persistent state, case ledger, and approval store backed by SQL."""
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 
 from orgpilot.domain.models import ApprovalRequest, CoordinationCase, OrgState
 from orgpilot.storage.database import Database
@@ -18,7 +18,7 @@ class SqlStateStore:
 
     async def save_state(self, state: OrgState) -> None:
         """Persists a complete OrgState snapshot."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         state_dict = state.model_dump(mode="json")
         async with self.db.session() as session:
             stmt = select(StateSnapshotRecord).where(
@@ -40,9 +40,7 @@ class SqlStateStore:
     async def load_state(self, project_id: str) -> OrgState | None:
         """Loads an OrgState snapshot if one exists."""
         async with self.db.session() as session:
-            stmt = select(StateSnapshotRecord).where(
-                StateSnapshotRecord.project_id == project_id
-            )
+            stmt = select(StateSnapshotRecord).where(StateSnapshotRecord.project_id == project_id)
             res = await session.execute(stmt)
             rec = res.scalar_one_or_none()
             if rec is None:
@@ -51,7 +49,7 @@ class SqlStateStore:
 
     async def save_cases(self, project_id: str, cases: list[CoordinationCase]) -> None:
         """Saves a collection of CoordinationCase objects."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         async with self.db.session() as session:
             for case in cases:
                 stmt = select(CaseRecord).where(
@@ -94,7 +92,7 @@ class SqlStateStore:
 
     async def save_approvals(self, project_id: str, requests: list[ApprovalRequest]) -> None:
         """Saves a collection of ApprovalRequest objects."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         async with self.db.session() as session:
             for req in requests:
                 stmt = select(ApprovalRecord).where(

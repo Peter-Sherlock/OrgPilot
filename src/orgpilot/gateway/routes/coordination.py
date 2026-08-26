@@ -1,6 +1,6 @@
 """Agent coordination loop execution and state snapshot endpoints."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Request
 
@@ -25,9 +25,7 @@ async def run_turn(
     service: GatewayService = Depends(get_service),
 ) -> TurnRunResponse:
     """Explicitly triggers one turn of the CoordinationAgent loop."""
-    now = (body.current_time if body and body.current_time else None) or datetime.now(
-        timezone.utc
-    )
+    now = (body.current_time if body and body.current_time else None) or datetime.now(UTC)
     agent = await service.get_or_replay_agent(project_id)
     turn_trace, _ = agent.run_turn([], now)
     await service.save_agent_state(agent)
@@ -51,17 +49,10 @@ async def get_state(
 
     return ProjectStateResponse(
         project_id=project_id,
-        tasks={
-            t_id: t.model_dump(mode="json") for t_id, t in state.tasks.items()
-        },
-        members={
-            m_id: m.model_dump(mode="json") for m_id, m in state.members.items()
-        },
-        active_cases=[
-            c.model_dump(mode="json") for c in agent.case_ledger.get_active_cases()
-        ],
+        tasks={t_id: t.model_dump(mode="json") for t_id, t in state.tasks.items()},
+        members={m_id: m.model_dump(mode="json") for m_id, m in state.members.items()},
+        active_cases=[c.model_dump(mode="json") for c in agent.case_ledger.get_active_cases()],
         pending_approvals=[
-            r.model_dump(mode="json")
-            for r in agent.approval_manager.get_pending_requests()
+            r.model_dump(mode="json") for r in agent.approval_manager.get_pending_requests()
         ],
     )

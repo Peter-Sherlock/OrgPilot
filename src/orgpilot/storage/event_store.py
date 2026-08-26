@@ -2,7 +2,7 @@
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 
@@ -51,17 +51,15 @@ class SqlEventStore:
                 source=event.source.value if hasattr(event.source, "value") else str(event.source),
                 source_ref=event.source_ref,
                 actor_id=event.actor_id,
-                occurred_at=event.occurred_at,
-                received_at=event.received_at,
+                occurred_at=event.occurred_at.astimezone(UTC),
+                received_at=event.received_at.astimezone(UTC),
                 payload_json=json.dumps(payload_dict, default=str),
                 payload_hash=payload_hash,
             )
             session.add(record)
             return AppendResult.APPENDED
 
-    async def get_events(
-        self, project_id: str, since: datetime | None = None
-    ) -> list[OrgEvent]:
+    async def get_events(self, project_id: str, since: datetime | None = None) -> list[OrgEvent]:
         """Retrieves ordered immutable events for a project."""
         async with self.db.session() as session:
             stmt = select(EventRecord).where(EventRecord.project_id == project_id)
@@ -77,12 +75,12 @@ class SqlEventStore:
                 occ = (
                     rec.occurred_at
                     if rec.occurred_at.tzinfo is not None
-                    else rec.occurred_at.replace(tzinfo=timezone.utc)
+                    else rec.occurred_at.replace(tzinfo=UTC)
                 )
                 rec_at = (
                     rec.received_at
                     if rec.received_at.tzinfo is not None
-                    else rec.received_at.replace(tzinfo=timezone.utc)
+                    else rec.received_at.replace(tzinfo=UTC)
                 )
                 raw_event_dict = {
                     "schema_version": 1,

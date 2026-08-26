@@ -1,5 +1,32 @@
 # 开发记录
 
+## 2026-08-26：F1 飞书开放平台真实接入与交互式卡片
+
+### 已实现
+
+- 创建分支 `f1/feishu-integration` 并编写 `ADR-0005`；
+- 编写《飞书开放平台极速配置指南》（`docs/feishu-setup-guide.md`），提供 2 分钟极速建应用与权限配置文档；
+- 构建飞书 2.0 交互式卡片生成器（`src/orgpilot/feishu/cards.py`），支持延期追问卡片、带回调按钮的审批卡片、原地审批完成态卡片与群周知卡片；
+- 实现统一飞书 OpenAPI 客户端（`src/orgpilot/feishu/client.py`）：
+  - `AsyncFeishuClient`：管理 `tenant_access_token` 自动获取、TTL 提前刷新与消息/卡片/任务 API 调用；
+  - `MockFeishuClient`：实现离线调用审计与 100% 确定性自动化测试。
+- 实现 `FeishuCollaborationAdapter`（`src/orgpilot/feishu/adapter.py`），将 4 类 ActionCommand 转为飞书交互卡片与任务 API 更新；
+- 实现飞书 Webhook 与事件调度器（`src/orgpilot/feishu/webhook.py`），处理 URL Challenge 握手、自然语言消息摄入与卡片按钮回调；
+- 在 FastAPI 网关挂载 `/api/v1/feishu/events` 路由；
+- 编写完整的单元与端到端集成测试（`tests/test_feishu_cards.py`, `tests/test_feishu_client.py`, `tests/test_feishu_adapter.py`, `tests/test_feishu_webhook.py`）。
+
+### 当前验证结果
+
+```text
+orgpilot replay --all: 9/9 PASS (4 P0 + 5 M1)
+orgpilot eval-extraction: PASS (20 samples, 100% F1, 100% Grounding)
+pytest: 122 passed in 2.23s
+coverage: 94.76% branch-aware total coverage (fail_under=90%)
+ruff: All checks passed (0 errors, 93 files formatted)
+```
+
+---
+
 ## 2026-08-26：P1 SQL 异步持久化存储与 FastAPI 事件网关
 
 ### 已实现
@@ -110,8 +137,3 @@ pytest: 38 passed
 coverage: 95.75% branch-aware total coverage
 ruff: All checks passed
 ```
-
-### 明确未实现
-
-- 真实飞书/Slack 开放平台 API 接入与交互式卡片渲染（F1 阶段）；
-- Web 控制台界面。

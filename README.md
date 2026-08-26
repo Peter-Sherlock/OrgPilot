@@ -6,6 +6,7 @@ OrgPilot is a stateful organizational coordination agent kernel.
 - **M1**: Mock closed-loop coordination agent (`CaseLedger` state machine, three-phase Action lifecycle, human approval gate, Mock adapter feedback, and bounded agent loop).
 - **M2**: LLM-assisted claim extraction and confidence evaluation (`ClaimExtractor`, `GroundingVerifier`, `TemporalResolver`, and Gold Dataset benchmark).
 - **P1**: Production SQL async persistence & FastAPI event gateway (`SqlEventStore`, `SqlStateStore`, and REST/Webhook Event Gateway).
+- **F1**: Feishu (Lark) Open Platform integration & interactive cards (`FeishuClient`, `FeishuCollaborationAdapter`, and interactive approval cards).
 
 ---
 
@@ -19,11 +20,12 @@ uv run pytest
 uv run ruff check .
 ```
 
-To run the FastAPI event gateway locally:
+To run the FastAPI event gateway & Feishu Webhook receiver locally:
 ```powershell
 uv run uvicorn orgpilot.gateway.app:create_app --factory --port 8000
 ```
 
+- Feishu 2-minute quickstart guide lives in `docs/feishu-setup-guide.md`.
 - Ground-truth replay scenarios (4 P0 + 5 M1) live in `evals/scenarios/`.
 - 20-sample natural language extraction gold dataset lives in `evals/extraction/gold_dataset.yaml`.
 - Architecture and design specifications live in `docs/`.
@@ -33,6 +35,7 @@ uv run uvicorn orgpilot.gateway.app:create_app --factory --port 8000
 ## Documentation
 
 - `docs/architecture.md`: Architecture specification, module boundaries, and state flow
+- `docs/feishu-setup-guide.md`: 2-minute Feishu Custom App creation and permission guide
 - `docs/event-semantics.md`: Event envelope, lifecycle, idempotency, and LLM boundary
 - `docs/ground-truth-scenarios.md`: Ground truth specifications for P0 and M1 scenarios
 - `docs/development.md`: Setup, Git workflow, checks, and Definition of Done
@@ -41,6 +44,7 @@ uv run uvicorn orgpilot.gateway.app:create_app --factory --port 8000
 - `docs/adr/0002-coordination-case-lifecycle.md`: ADR-0002: Coordination Case Lifecycle & Closed Loop
 - `docs/adr/0003-llm-claim-extraction-boundary.md`: ADR-0003: LLM Claim Extraction & Security Boundary
 - `docs/adr/0004-postgresql-event-store-and-fastapi-gateway.md`: ADR-0004: SQL Persistence & FastAPI Gateway
+- `docs/adr/0005-feishu-adapter-and-interactive-cards.md`: ADR-0005: Feishu Adapter & Interactive Cards
 
 ---
 

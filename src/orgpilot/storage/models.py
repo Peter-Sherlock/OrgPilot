@@ -34,9 +34,7 @@ class EventRecord(Base):
     payload_json: Mapped[str] = mapped_column(Text, nullable=False)
     payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
 
-    __table_args__ = (
-        UniqueConstraint("project_id", "event_id", name="uq_project_event_id"),
-    )
+    __table_args__ = (UniqueConstraint("project_id", "event_id", name="uq_project_event_id"),)
 
 
 class CaseRecord(Base):

@@ -1,6 +1,6 @@
 """Human approval listing and decision endpoints."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
@@ -41,14 +41,12 @@ async def submit_approval_decision(
     service: GatewayService = Depends(get_service),
 ) -> ApprovalDecisionResponse:
     """Submits a human approval decision (approved / rejected) and runs next agent turn."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     agent = await service.get_or_replay_agent(project_id)
 
     req = agent.approval_manager.get_request(approval_id)
     if req is None:
-        raise HTTPException(
-            status_code=404, detail=f"Approval request {approval_id} not found"
-        )
+        raise HTTPException(status_code=404, detail=f"Approval request {approval_id} not found")
 
     try:
         if body.decision == "approved":

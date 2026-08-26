@@ -25,13 +25,9 @@ async def ingest_events(
 ) -> EventIngestResponse:
     """Ingests one or more raw OrgEvent dictionaries into persistent event log."""
     try:
-        appended, duplicates = await service.ingest_raw_events(
-            project_id, body.events
-        )
+        appended, duplicates = await service.ingest_raw_events(project_id, body.events)
         total = await service.event_store.count(project_id)
-        return EventIngestResponse(
-            appended=appended, duplicates=duplicates, total_events=total
-        )
+        return EventIngestResponse(appended=appended, duplicates=duplicates, total_events=total)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
@@ -54,14 +50,12 @@ async def ingest_message(
 ) -> MessageIngestResponse:
     """Ingests a natural language chat message, extracts claims, and optionally triggers a turn."""
     try:
-        is_act, ext_events, agent, reason, round_num = (
-            await service.ingest_message(
-                project_id=project_id,
-                message=body.message,
-                actor_id=body.actor_id,
-                occurred_at=body.occurred_at,
-                auto_run_turn=body.auto_run_turn,
-            )
+        is_act, ext_events, agent, reason, round_num = await service.ingest_message(
+            project_id=project_id,
+            message=body.message,
+            actor_id=body.actor_id,
+            occurred_at=body.occurred_at,
+            auto_run_turn=body.auto_run_turn,
         )
         return MessageIngestResponse(
             is_actionable=is_act,

@@ -1,6 +1,7 @@
 """Gateway coordination service orchestrating database persistence and Agent loop execution."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
 
 from orgpilot.agent.loop import CoordinationAgent
 from orgpilot.events.log import AppendResult
@@ -13,7 +14,9 @@ from orgpilot.storage.state_store import SqlStateStore
 
 
 class GatewayService:
-    """Coordinates event ingestion, natural language extraction, and agent execution with SQL persistence."""
+    """Coordinates event ingestion, natural language extraction, and agent execution with
+    SQL persistence.
+    """
 
     def __init__(self, db: Database) -> None:
         self.db = db
@@ -31,41 +34,39 @@ class GatewayService:
             agent.event_log.append(evt)
             agent.projector.apply(evt)
 
-        # Load persisted cases and approvals
-        saved_cases = await self.state_store.load_cases(project_id)
-        for case in saved_cases:
-            agent.case_ledger._cases[case.case_id] = case
+        # Restore cases and approvals
+        cases = await self.state_store.load_cases(project_id)
+        for c in cases:
+            agent.case_ledger._cases[c.case_id] = c
 
-        saved_approvals = await self.state_store.load_approvals(project_id)
-        for req in saved_approvals:
-            agent.approval_manager._requests[req.approval_id] = req
+        approvals = await self.state_store.load_approvals(project_id)
+        for r in approvals:
+            agent.approval_manager._requests[r.approval_id] = r
 
         return agent
 
     async def save_agent_state(self, agent: CoordinationAgent) -> None:
-        """Persists agent state, cases, and approvals to SQL."""
+        """Persists current state snapshot, active cases, and approvals."""
         await self.state_store.save_state(agent.projector.state)
-        await self.state_store.save_cases(
-            agent.project_id, agent.case_ledger.get_all_cases()
-        )
+        await self.state_store.save_cases(agent.project_id, agent.case_ledger.get_all_cases())
         await self.state_store.save_approvals(
             agent.project_id, agent.approval_manager.get_all_requests()
         )
 
     async def ingest_raw_events(
-        self, project_id: str, raw_event_dicts: list[dict]
+        self, project_id: str, raw_events: list[dict[str, Any]]
     ) -> tuple[int, int]:
-        """Parses and persists raw event dictionaries."""
-        appended = 0
-        duplicates = 0
-        for item in raw_event_dicts:
-            evt = parse_event(item)
-            res = await self.event_store.append(evt)
-            if res is AppendResult.APPENDED:
-                appended += 1
+        """Parses and appends raw JSON events into the persistent event log."""
+        appended_count = 0
+        duplicate_count = 0
+        for raw in raw_events:
+            event = parse_event(raw)
+            res = await self.event_store.append(event)
+            if res is AppendResult.DUPLICATE:
+                duplicate_count += 1
             else:
-                duplicates += 1
-        return appended, duplicates
+                appended_count += 1
+        return appended_count, duplicate_count
 
     async def ingest_message(
         self,
@@ -75,16 +76,14 @@ class GatewayService:
         occurred_at: datetime | None = None,
         auto_run_turn: bool = True,
     ) -> tuple[bool, list[OrgEvent], CoordinationAgent, str | None, int | None]:
-        """Extracts claims from natural language message, persists events, and optionally executes a turn."""
-        ts = occurred_at or datetime.now(timezone.utc)
+        """Extracts claims from natural language message, persists events, and optionally
+        executes a turn.
+        """
+        ts = occurred_at or datetime.now(UTC)
         agent = await self.get_or_replay_agent(project_id)
 
-        tasks_dict = {
-            t.task_id: t.title for t in agent.projector.state.tasks.values()
-        }
-        members_dict = {
-            m.member_id: m.role for m in agent.projector.state.members.values()
-        }
+        tasks_dict = {t.task_id: t.title for t in agent.projector.state.tasks.values()}
+        members_dict = {m.member_id: m.role for m in agent.projector.state.members.values()}
 
         context = MessageContext(
             project_id=project_id,
@@ -94,9 +93,7 @@ class GatewayService:
             known_members=members_dict,
         )
 
-        extraction_result, extracted_events = self.extractor.extract_from_message(
-            message, context
-        )
+        extraction_result, extracted_events = self.extractor.extract_from_message(message, context)
 
         # Persist extracted events
         for evt in extracted_events:

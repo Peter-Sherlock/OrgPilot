@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from orgpilot.gateway.routes import approvals, cases, coordination, events
+from orgpilot.gateway.routes import approvals, cases, coordination, events, feishu
 from orgpilot.storage.database import Database
 
 
@@ -33,5 +33,6 @@ def create_app(db: Database | None = None) -> FastAPI:
     app.include_router(cases.router)
     app.include_router(approvals.router)
     app.include_router(coordination.router)
+    app.include_router(feishu.router)
 
     return app

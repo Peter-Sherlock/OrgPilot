@@ -20,9 +20,7 @@ async def list_cases(
     """Lists all or active coordination cases for a project."""
     agent = await service.get_or_replay_agent(project_id)
     cases = (
-        agent.case_ledger.get_active_cases()
-        if active_only
-        else agent.case_ledger.get_all_cases()
+        agent.case_ledger.get_active_cases() if active_only else agent.case_ledger.get_all_cases()
     )
     return [c.model_dump(mode="json") for c in cases]
 
