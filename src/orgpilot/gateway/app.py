@@ -3,9 +3,10 @@
 import hmac
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from orgpilot.adapter.base import CollaborationAdapter
 from orgpilot.adapter.mock import MockCollaborationAdapter
@@ -14,7 +15,7 @@ from orgpilot.extraction.client import AnthropicCompatibleLLMClient, LLMClient
 from orgpilot.extraction.extractor import ClaimExtractor
 from orgpilot.feishu.adapter import FeishuCollaborationAdapter
 from orgpilot.feishu.client import AsyncFeishuClient
-from orgpilot.gateway.routes import approvals, cases, coordination, events, feishu
+from orgpilot.gateway.routes import approvals, cases, coordination, dag, events, feishu
 from orgpilot.gateway.service import GatewayService
 from orgpilot.storage.database import Database
 
@@ -88,11 +89,22 @@ def create_app(
                 return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
         return await call_next(request)
 
+    # Static Single-Page Dashboard routes
+    static_html_path = Path(__file__).parent / "static" / "index.html"
+
+    @app.get("/", response_class=HTMLResponse, include_in_schema=False)
+    @app.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
+    async def serve_dashboard():
+        if static_html_path.exists():
+            return HTMLResponse(content=static_html_path.read_text(encoding="utf-8"))
+        return HTMLResponse(content="<h1>OrgPilot Dashboard Not Found</h1>", status_code=404)
+
     # Include route modules
     app.include_router(events.router)
     app.include_router(cases.router)
     app.include_router(approvals.router)
     app.include_router(coordination.router)
     app.include_router(feishu.router)
+    app.include_router(dag.router)
 
     return app

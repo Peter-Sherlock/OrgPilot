@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OrgPilot - 组织风险发现与排期协调控制台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 50: '#eef2ff', 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca', 900: '#1e1b4b' },
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @keyframes pulse-slow {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    .animate-pulse-slow {
+      animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    .dag-edge {
+      transition: stroke 0.3s, stroke-width 0.3s;
+    }
+    .dag-node:hover {
+      filter: drop-shadow(0 0 8px rgba(99, 102, 241, 0.6));
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-brand-500 selection:text-white">
+
+  <!-- Top Navigation Header -->
+  <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-40 px-6 py-3.5 flex items-center justify-between shadow-lg">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-cyan-500 flex items-center justify-center font-bold text-white shadow-md shadow-brand-500/20 text-lg">
+        ⚡
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-lg font-bold tracking-tight text-white">OrgPilot Console</h1>
+          <span class="px-2 py-0.5 text-xs font-semibold rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/20">W1 Live</span>
+        </div>
+        <p class="text-xs text-slate-400">多智能体组织协调内核与实时 DAG 拓扑看板</p>
+      </div>
+    </div>
+
+    <!-- Project Selector & Live Controls -->
+    <div class="flex items-center gap-3">
+      <div class="flex items-center gap-1.5 bg-slate-800/80 border border-slate-700 px-3 py-1.5 rounded-lg text-xs">
+        <span class="text-slate-400">项目 ID:</span>
+        <input id="projectIdInput" type="text" value="feishu-project" class="bg-transparent text-slate-100 font-mono font-medium focus:outline-none w-32">
+        <button onclick="refreshData()" class="text-brand-400 hover:text-brand-300 font-semibold ml-1">切换</button>
+      </div>
+
+      <button id="refreshBtn" onclick="refreshData()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium flex items-center gap-1.5 transition">
+        <span id="refreshIcon" class="inline-block">🔄</span> 刷新
+      </button>
+
+      <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span id="connStatus">已就绪</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Metric KPI Cards -->
+  <section class="grid grid-cols-1 md:grid-cols-4 gap-4 px-6 pt-5">
+    <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
+      <div>
+        <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">总任务规模</p>
+        <h3 id="statTotalTasks" class="text-2xl font-bold text-slate-100 mt-1">0</h3>
+        <p id="statCompletedSub" class="text-xs text-slate-500 mt-1">已完成: 0</p>
+      </div>
+      <div class="w-11 h-11 rounded-lg bg-slate-800 flex items-center justify-center text-xl">📋</div>
+    </div>
+
+    <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
+      <div>
+        <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">健康度分布</p>
+        <div class="flex items-center gap-2 mt-1">
+          <span id="statOnTrack" class="text-xl font-bold text-emerald-400">0 🟢</span>
+          <span id="statAtRisk" class="text-xl font-bold text-amber-400">0 🟡</span>
+          <span id="statDelayed" class="text-xl font-bold text-rose-400">0 🔴</span>
+        </div>
+        <p class="text-xs text-slate-500 mt-1">正常 / 风险 / 延期</p>
+      </div>
+      <div class="w-11 h-11 rounded-lg bg-slate-800 flex items-center justify-center text-xl">🩺</div>
+    </div>
+
+    <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
+      <div>
+        <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">Active Cases (账本)</p>
+        <h3 id="statActiveCases" class="text-2xl font-bold text-cyan-400 mt-1">0</h3>
+        <p class="text-xs text-slate-500 mt-1">生命周期闭环追踪中</p>
+      </div>
+      <div class="w-11 h-11 rounded-lg bg-slate-800 flex items-center justify-center text-xl">💼</div>
+    </div>
+
+    <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
+      <div>
+        <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">待决审批请求</p>
+        <h3 id="statPendingApprovals" class="text-2xl font-bold text-amber-400 mt-1">0</h3>
+        <p class="text-xs text-slate-500 mt-1">PM 人工门禁拦截</p>
+      </div>
+      <div class="w-11 h-11 rounded-lg bg-slate-800 flex items-center justify-center text-xl">⚠️</div>
+    </div>
+  </section>
+
+  <!-- Navigation Tabs -->
+  <div class="px-6 mt-6 flex items-center justify-between border-b border-slate-800">
+    <div class="flex items-center gap-2">
+      <button id="tabDagBtn" onclick="switchTab('dag')" class="px-4 py-2.5 text-sm font-semibold border-b-2 border-brand-500 text-brand-400 transition flex items-center gap-2">
+        <span>🌐</span> 依赖拓扑 (DAG)
+      </button>
+      <button id="tabTimelineBtn" onclick="switchTab('timeline')" class="px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition flex items-center gap-2">
+        <span>📜</span> 可解释性时间线
+      </button>
+      <button id="tabSimulatorBtn" onclick="switchTab('simulator')" class="px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition flex items-center gap-2">
+        <span>⚡</span> 快速模拟与决策台
+      </button>
+    </div>
+    <div id="dagLegend" class="flex items-center gap-3 text-xs text-slate-400">
+      <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> 正常</span>
+      <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span> 风险/受阻</span>
+      <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span> 延误</span>
+      <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-purple-500"></span> 已完成</span>
+      <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-cyan-400"></span> 关键路径 (Critical Path)</span>
+    </div>
+  </div>
+
+  <!-- Main Content Areas -->
+  <main class="flex-1 px-6 py-4 relative flex flex-col">
+
+    <!-- View 1: Interactive DAG -->
+    <div id="viewDag" class="flex-1 min-h-[500px] bg-slate-900/40 border border-slate-800 rounded-xl relative overflow-hidden flex flex-col">
+      <!-- DAG Canvas Controls -->
+      <div class="absolute top-3 right-3 z-10 flex items-center gap-1.5 bg-slate-800/90 border border-slate-700 p-1 rounded-lg backdrop-blur">
+        <button onclick="zoomDag(1.15)" class="w-7 h-7 flex items-center justify-center rounded text-slate-300 hover:bg-slate-700 text-sm font-bold">+</button>
+        <button onclick="zoomDag(0.85)" class="w-7 h-7 flex items-center justify-center rounded text-slate-300 hover:bg-slate-700 text-sm font-bold">-</button>
+        <button onclick="resetDagZoom()" class="px-2 h-7 flex items-center justify-center rounded text-slate-300 hover:bg-slate-700 text-xs">重置</button>
+      </div>
+
+      <!-- Interactive SVG Container -->
+      <div id="dagContainer" class="w-full flex-1 overflow-auto cursor-grab active:cursor-grabbing p-4 flex items-center justify-center">
+        <svg id="dagSvg" class="w-full h-full min-h-[480px]">
+          <defs>
+            <marker id="arrowNormal" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L9,3 z" fill="#64748b" />
+            </marker>
+            <marker id="arrowCritical" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L9,3 z" fill="#38bdf8" />
+            </marker>
+            <marker id="arrowImpacted" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L9,3 z" fill="#f43f5e" />
+            </marker>
+          </defs>
+          <g id="dagRootGroup"></g>
+        </svg>
+      </div>
+    </div>
+
+    <!-- View 2: Timeline -->
+    <div id="viewTimeline" class="hidden flex-1 bg-slate-900/40 border border-slate-800 rounded-xl p-5 overflow-auto max-h-[650px]">
+      <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-4">项目事件与可解释性时间线 (Audit Log)</h3>
+      <div id="timelineContainer" class="space-y-4">
+        <!-- Injected via JS -->
+      </div>
+    </div>
+
+    <!-- View 3: Simulator -->
+    <div id="viewSimulator" class="hidden flex-1 grid grid-cols-1 md:grid-cols-2 gap-5">
+      <!-- Chat Ingest Panel -->
+      <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-5 flex flex-col justify-between">
+        <div>
+          <h3 class="text-sm font-semibold text-slate-200 flex items-center gap-2">
+            <span>💬</span> 自然语言消息摄入与抽取模拟
+          </h3>
+          <p class="text-xs text-slate-400 mt-1">模拟成员在飞书群/私聊发送消息，由 ClaimExtractor 结构化抽取并驱动 Agent</p>
+
+          <div class="mt-4 space-y-3">
+            <div>
+              <label class="text-xs text-slate-400 block mb-1">发言成员 ID (Actor)</label>
+              <input id="simActorInput" type="text" value="ou_alice" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 font-mono focus:border-brand-500 focus:outline-none">
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 block mb-1">聊天消息内容</label>
+              <textarea id="simMsgInput" rows="3" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:border-brand-500 focus:outline-none" placeholder="例如：支付 SDK 报错，排查需要到明天下午 5 点"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div class="pt-4 border-t border-slate-800 flex items-center justify-between">
+          <button onclick="runTurnExplicitly()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold rounded-lg text-slate-200 transition">
+            仅触发 1 轮协调 (Run Turn)
+          </button>
+          <button onclick="sendSimulatedMessage()" class="px-5 py-2 bg-brand-600 hover:bg-brand-500 text-xs font-bold rounded-lg text-white shadow-lg shadow-brand-500/20 transition">
+            发送消息并自动闭环 ➔
+          </button>
+        </div>
+      </div>
+
+      <!-- Pending Approvals Action Panel -->
+      <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-5 flex flex-col justify-between">
+        <div>
+          <h3 class="text-sm font-semibold text-slate-200 flex items-center gap-2">
+            <span>🛡️</span> PM 快速审批决策面板
+          </h3>
+          <p class="text-xs text-slate-400 mt-1">展示当前拦截等待 PM 审批的改期动作，可直接在 Web 上一键决策</p>
+
+          <div id="approvalsListContainer" class="mt-4 space-y-3 max-h-[300px] overflow-auto">
+            <!-- Injected via JS -->
+          </div>
+        </div>
+
+        <div class="pt-4 border-t border-slate-800 text-xs text-slate-500 text-right">
+          审批后将自动驱动 Agent 推进任务改期与群通知
+        </div>
+      </div>
+    </div>
+
+    <!-- Node Detail Drawer (Slide-Over) -->
+    <div id="nodeDrawer" class="fixed right-0 top-0 bottom-0 w-96 bg-slate-900 border-l border-slate-800 shadow-2xl z-50 transform translate-x-full transition-transform duration-300 p-6 overflow-auto flex flex-col justify-between">
+      <div>
+        <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+          <div class="flex items-center gap-2">
+            <span id="drawerStatusBadge" class="px-2.5 py-0.5 rounded-full text-xs font-bold"></span>
+            <h3 id="drawerTaskId" class="text-base font-bold text-white font-mono"></h3>
+          </div>
+          <button onclick="closeDrawer()" class="text-slate-400 hover:text-white text-lg font-bold">✕</button>
+        </div>
+
+        <div class="mt-4 space-y-4 text-xs">
+          <div>
+            <label class="text-slate-400 block uppercase font-medium tracking-wider">任务标题</label>
+            <p id="drawerTitle" class="text-slate-100 font-semibold text-sm mt-0.5"></p>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="text-slate-400 block uppercase font-medium tracking-wider">负责人</label>
+              <p id="drawerOwner" class="text-slate-200 font-mono mt-0.5"></p>
+            </div>
+            <div>
+              <label class="text-slate-400 block uppercase font-medium tracking-wider">工作流状态</label>
+              <p id="drawerWorkflow" class="text-slate-200 font-mono mt-0.5 uppercase"></p>
+            </div>
+          </div>
+          <div>
+            <label class="text-slate-400 block uppercase font-medium tracking-wider">截止时间 / 预计完成</label>
+            <p id="drawerDeadline" class="text-slate-200 font-mono mt-0.5"></p>
+          </div>
+          <div>
+            <label class="text-slate-400 block uppercase font-medium tracking-wider">风险与阻塞原因</label>
+            <div id="drawerBlockers" class="mt-1 p-2.5 bg-slate-800/80 rounded-lg text-slate-300 font-sans">
+              无阻塞风险
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pt-4 border-t border-slate-800">
+        <button onclick="closeDrawer()" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg transition">
+          关闭抽屉
+        </button>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Core JavaScript Logic -->
+  <script>
+    let currentZoom = 1.0;
+    let dagData = null;
+
+    function getProjectId() {
+      return document.getElementById('projectIdInput').value.trim() || 'feishu-project';
+    }
+
+    function switchTab(tabName) {
+      const tabs = ['dag', 'timeline', 'simulator'];
+      tabs.forEach(t => {
+        const view = document.getElementById(`view${t.charAt(0).toUpperCase() + t.slice(1)}`);
+        const btn = document.getElementById(`tab${t.charAt(0).toUpperCase() + t.slice(1)}Btn`);
+        if (t === tabName) {
+          view.classList.remove('hidden');
+          btn.className = "px-4 py-2.5 text-sm font-semibold border-b-2 border-brand-500 text-brand-400 transition flex items-center gap-2";
+        } else {
+          view.classList.add('hidden');
+          btn.className = "px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition flex items-center gap-2";
+        }
+      });
+      if (tabName === 'timeline') loadTimeline();
+      if (tabName === 'simulator') loadApprovals();
+    }
+
+    async function refreshData() {
+      const icon = document.getElementById('refreshIcon');
+      icon.classList.add('animate-spin');
+      try {
+        await Promise.all([loadDag(), loadState(), loadApprovals()]);
+        document.getElementById('connStatus').textContent = '已连接';
+      } catch (err) {
+        console.error("Refresh failed", err);
+        document.getElementById('connStatus').textContent = '连接异常';
+      } finally {
+        setTimeout(() => icon.classList.remove('animate-spin'), 400);
+      }
+    }
+
+    async function loadState() {
+      const pid = getProjectId();
+      const res = await fetch(`/api/v1/projects/${pid}/state`);
+      if (!res.ok) return;
+      const state = await res.json();
+      document.getElementById('statActiveCases').textContent = state.active_cases.length;
+      document.getElementById('statPendingApprovals').textContent = state.pending_approvals.length;
+    }
+
+    async function loadDag() {
+      const pid = getProjectId();
+      const res = await fetch(`/api/v1/projects/${pid}/dag`);
+      if (!res.ok) {
+        document.getElementById('dagRootGroup').innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="#94a3b8">暂无该项目 DAG 数据 (请先摄入任务或事件)</text>`;
+        return;
+      }
+      dagData = await res.json();
+      renderSummary(dagData.summary);
+      renderSvgDag(dagData);
+    }
+
+    function renderSummary(summary) {
+      document.getElementById('statTotalTasks').textContent = summary.total_tasks;
+      document.getElementById('statCompletedSub').textContent = `已完成: ${summary.completed_count}`;
+      document.getElementById('statOnTrack').textContent = `${summary.on_track_count} 🟢`;
+      document.getElementById('statAtRisk').textContent = `${summary.at_risk_count} 🟡`;
+      document.getElementById('statDelayed').textContent = `${summary.delayed_count} 🔴`;
+    }
+
+    function renderSvgDag(data) {
+      const nodes = data.nodes;
+      const edges = data.edges;
+      const svgGroup = document.getElementById('dagRootGroup');
+      svgGroup.innerHTML = '';
+
+      if (nodes.length === 0) {
+        svgGroup.innerHTML = `<text x="400" y="200" text-anchor="middle" fill="#64748b" font-size="14">项目尚无任务拓扑，可前往模拟台发送一条包含任务的消息！</text>`;
+        return;
+      }
+
+      // Layout algorithm: group by layer
+      const layerGroups = {};
+      nodes.forEach(n => {
+        const l = n.layer || 0;
+        if (!layerGroups[l]) layerGroups[l] = [];
+        layerGroups[l].push(n);
+      });
+
+      const layerWidth = 240;
+      const nodeWidth = 180;
+      const nodeHeight = 72;
+      const nodePositions = {};
+
+      const maxLayer = Math.max(...Object.keys(layerGroups).map(Number));
+
+      Object.entries(layerGroups).forEach(([layerStr, groupNodes]) => {
+        const layer = Number(layerStr);
+        const x = 60 + layer * layerWidth;
+        const totalHeight = groupNodes.length * 100;
+        const startY = Math.max(60, 240 - totalHeight / 2);
+
+        groupNodes.forEach((node, idx) => {
+          const y = startY + idx * 105;
+          nodePositions[node.task_id] = { x, y, cx: x + nodeWidth / 2, cy: y + nodeHeight / 2 };
+        });
+      });
+
+      // 1. Render Edges (Curves)
+      edges.forEach(edge => {
+        const fromPos = nodePositions[edge.from_task];
+        const toPos = nodePositions[edge.to_task];
+        if (!fromPos || !toPos) return;
+
+        const startX = fromPos.x + nodeWidth;
+        const startY = fromPos.cy;
+        const endX = toPos.x;
+        const endY = toPos.cy;
+        const midX = (startX + endX) / 2;
+
+        const pathD = `M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`;
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', pathD);
+        path.setAttribute('fill', 'none');
+
+        if (edge.is_impacted) {
+          path.setAttribute('stroke', '#f43f5e');
+          path.setAttribute('stroke-width', '2.5');
+          path.setAttribute('stroke-dasharray', '5,3');
+          path.setAttribute('marker-end', 'url(#arrowImpacted)');
+        } else if (edge.is_critical) {
+          path.setAttribute('stroke', '#38bdf8');
+          path.setAttribute('stroke-width', '2.5');
+          path.setAttribute('marker-end', 'url(#arrowCritical)');
+        } else {
+          path.setAttribute('stroke', '#475569');
+          path.setAttribute('stroke-width', '1.5');
+          path.setAttribute('marker-end', 'url(#arrowNormal)');
+        }
+        path.classList.add('dag-edge');
+        svgGroup.appendChild(path);
+      });
+
+      // 2. Render Nodes
+      nodes.forEach(node => {
+        const pos = nodePositions[node.task_id];
+        if (!pos) return;
+
+        let strokeColor = '#334155';
+        let bgColor = '#1e293b';
+        let statusBadgeColor = '#10b981';
+
+        if (node.workflow_status === 'done') {
+          strokeColor = '#a855f7';
+          statusBadgeColor = '#a855f7';
+        } else if (node.is_delayed) {
+          strokeColor = '#f43f5e';
+          bgColor = '#2a1215';
+          statusBadgeColor = '#f43f5e';
+        } else if (node.is_at_risk) {
+          strokeColor = '#f59e0b';
+          bgColor = '#261b0c';
+          statusBadgeColor = '#f59e0b';
+        }
+
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        g.setAttribute('transform', `translate(${pos.x}, ${pos.y})`);
+        g.setAttribute('class', 'dag-node cursor-pointer');
+        g.onclick = () => openDrawer(node);
+
+        g.innerHTML = `
+          <rect width="${nodeWidth}" height="${nodeHeight}" rx="10" fill="${bgColor}" stroke="${strokeColor}" stroke-width="${node.is_critical_path ? 2.5 : 1.5}" />
+          <circle cx="16" cy="20" r="5" fill="${statusBadgeColor}" />
+          <text x="28" y="24" fill="#f8fafc" font-size="12" font-weight="bold" font-family="monospace">${node.task_id}</text>
+          <text x="14" y="44" fill="#cbd5e1" font-size="11" font-weight="500">${node.title.substring(0, 14)}</text>
+          <text x="14" y="60" fill="#64748b" font-size="10">👤 ${node.owner_id}</text>
+          ${node.is_critical_path ? `<text x="${nodeWidth - 28}" y="20" font-size="10" fill="#38bdf8">★</text>` : ''}
+        `;
+        svgGroup.appendChild(g);
+      });
+    }
+
+    function zoomDag(factor) {
+      currentZoom *= factor;
+      document.getElementById('dagRootGroup').setAttribute('transform', `scale(${currentZoom})`);
+    }
+
+    function resetDagZoom() {
+      currentZoom = 1.0;
+      document.getElementById('dagRootGroup').setAttribute('transform', 'scale(1)');
+    }
+
+    function openDrawer(node) {
+      document.getElementById('drawerTaskId').textContent = node.task_id;
+      document.getElementById('drawerTitle').textContent = node.title;
+      document.getElementById('drawerOwner').textContent = node.owner_id;
+      document.getElementById('drawerWorkflow').textContent = `${node.workflow_status} / ${node.health_status}`;
+      document.getElementById('drawerDeadline').textContent = node.deadline ? new Date(node.deadline).toLocaleString() : '未设置';
+
+      const badge = document.getElementById('drawerStatusBadge');
+      if (node.is_delayed) {
+        badge.textContent = 'DELAYED';
+        badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30';
+      } else if (node.is_at_risk) {
+        badge.textContent = 'AT RISK';
+        badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30';
+      } else {
+        badge.textContent = 'ON TRACK';
+        badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+      }
+
+      const blockersContainer = document.getElementById('drawerBlockers');
+      if (node.blockers && node.blockers.length > 0) {
+        blockersContainer.innerHTML = node.blockers.map(b => `<div class="text-rose-300">⚠️ ${b}</div>`).join('');
+      } else {
+        blockersContainer.textContent = node.is_at_risk ? '上游依赖任务受阻延误波及' : '目前进展正常，无已知阻塞';
+      }
+
+      document.getElementById('nodeDrawer').classList.remove('translate-x-full');
+    }
+
+    function closeDrawer() {
+      document.getElementById('nodeDrawer').classList.add('translate-x-full');
+    }
+
+    async function loadTimeline() {
+      const pid = getProjectId();
+      const res = await fetch(`/api/v1/projects/${pid}/timeline`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const container = document.getElementById('timelineContainer');
+      container.innerHTML = '';
+
+      if (data.entries.length === 0) {
+        container.innerHTML = `<p class="text-slate-500 text-xs">暂无时间线记录</p>`;
+        return;
+      }
+
+      data.entries.forEach(entry => {
+        let catBadge = 'bg-slate-800 text-slate-300';
+        if (entry.category === 'approval') catBadge = 'bg-amber-500/20 text-amber-300 border border-amber-500/30';
+        if (entry.category === 'case') catBadge = 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30';
+
+        const item = document.createElement('div');
+        item.className = "p-3.5 bg-slate-900/80 border border-slate-800 rounded-xl flex items-start gap-3 text-xs";
+        item.innerHTML = `
+          <div class="mt-0.5 px-2 py-0.5 rounded uppercase font-bold text-[10px] ${catBadge}">${entry.category}</div>
+          <div class="flex-1">
+            <div class="flex items-center justify-between">
+              <h4 class="font-bold text-slate-200">${entry.title}</h4>
+              <span class="text-slate-500 font-mono">${new Date(entry.timestamp).toLocaleTimeString()}</span>
+            </div>
+            <p class="text-slate-400 mt-1">${entry.description}</p>
+          </div>
+        `;
+        container.appendChild(item);
+      });
+    }
+
+    async function loadApprovals() {
+      const pid = getProjectId();
+      const res = await fetch(`/api/v1/projects/${pid}/approvals`);
+      if (!res.ok) return;
+      const approvals = await res.json();
+      const container = document.getElementById('approvalsListContainer');
+      container.innerHTML = '';
+
+      if (approvals.length === 0) {
+        container.innerHTML = `<div class="p-4 bg-slate-800/40 rounded-lg text-slate-400 text-xs text-center">🎉 当前没有待审的改期请求</div>`;
+        return;
+      }
+
+      approvals.forEach(app => {
+        const item = document.createElement('div');
+        item.className = "p-3.5 bg-slate-800/90 border border-amber-500/30 rounded-xl space-y-2 text-xs";
+        item.innerHTML = `
+          <div class="flex items-center justify-between font-semibold">
+            <span class="text-amber-400">⚠️ 改期审批: ${app.proposed_command.payload.task_id || '任务'}</span>
+            <span class="text-slate-400">审批人: ${app.approver_id}</span>
+          </div>
+          <p class="text-slate-300">申请改期至：<span class="font-mono text-cyan-300 font-bold">${app.proposed_command.payload.proposed_deadline || '待定'}</span></p>
+          <div class="flex items-center gap-2 pt-1">
+            <button onclick="decideApproval('${app.approval_id}', 'approved')" class="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded">🟢 批准改期</button>
+            <button onclick="decideApproval('${app.approval_id}', 'rejected')" class="flex-1 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded">🔴 拒绝申请</button>
+          </div>
+        `;
+        container.appendChild(item);
+      });
+    }
+
+    async function decideApproval(approvalId, decision) {
+      const pid = getProjectId();
+      await fetch(`/api/v1/projects/${pid}/approvals/${approvalId}/decision`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decision: decision, approver_id: 'pm_web_operator', reason: 'Web Console Decision' })
+      });
+      await refreshData();
+    }
+
+    async function sendSimulatedMessage() {
+      const pid = getProjectId();
+      const actor = document.getElementById('simActorInput').value.trim();
+      const msg = document.getElementById('simMsgInput').value.trim();
+      if (!msg) return;
+
+      await fetch(`/api/v1/projects/${pid}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: msg, actor_id: actor, auto_run_turn: true })
+      });
+      document.getElementById('simMsgInput').value = '';
+      await refreshData();
+      switchTab('dag');
+    }
+
+    async function runTurnExplicitly() {
+      const pid = getProjectId();
+      await fetch(`/api/v1/projects/${pid}/run-turn`, { method: 'POST' });
+      await refreshData();
+    }
+
+    // Auto-load on page load
+    window.addEventListener('DOMContentLoaded', () => {
+      refreshData();
+      setInterval(refreshData, 5000); // 5s auto polling
+    });
+  </script>
+</body>
+</html>

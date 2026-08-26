@@ -75,3 +75,62 @@ class ProjectStateResponse(StrictSchema):
     members: dict[str, Any]
     active_cases: list[dict[str, Any]]
     pending_approvals: list[dict[str, Any]]
+
+
+class DagNode(StrictSchema):
+    task_id: str
+    title: str
+    owner_id: str
+    workflow_status: str
+    health_status: str
+    deadline: datetime | None = None
+    layer: int = 0
+    in_degree: int = 0
+    out_degree: int = 0
+    is_at_risk: bool = False
+    is_delayed: bool = False
+    is_critical_path: bool = False
+    blockers: list[str] = Field(default_factory=list)
+    expected_completion: datetime | None = None
+
+
+class DagEdge(StrictSchema):
+    from_task: str
+    to_task: str
+    is_impacted: bool = False
+    is_critical: bool = False
+
+
+class DagSummary(StrictSchema):
+    total_tasks: int
+    on_track_count: int
+    at_risk_count: int
+    delayed_count: int
+    completed_count: int
+    critical_path: list[str]
+    impacted_tasks: list[str]
+
+
+class DagResponse(StrictSchema):
+    project_id: str
+    nodes: list[DagNode]
+    edges: list[DagEdge]
+    summary: DagSummary
+
+
+class TimelineEntry(StrictSchema):
+    entry_id: str
+    timestamp: datetime
+    category: Literal["event", "case", "approval", "action"]
+    title: str
+    description: str
+    status: str | None = None
+    task_id: str | None = None
+    actor_id: str | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class TimelineResponse(StrictSchema):
+    project_id: str
+    total_entries: int
+    entries: list[TimelineEntry]

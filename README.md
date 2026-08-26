@@ -7,6 +7,7 @@ OrgPilot is a stateful organizational coordination agent kernel.
 - **M2 prototype**: Grounded claim extraction with an offline deterministic client and an opt-in AIHubMix Anthropic-compatible client.
 - **P1 prototype**: Async SQL persistence and a FastAPI event gateway. Local persistent SQLite is the default; PostgreSQL deployment still requires environment-specific integration validation.
 - **F1 integration layer**: Feishu OpenAPI client, HTTP Webhook handler, adapter, and interactive cards. A real-account smoke test is still required before calling this production-ready.
+- **W1 Web console**: Embedded Single-Page management console and real-time interactive DAG topology visualizer served directly at `http://localhost:8000/`.
 
 ---
 
@@ -20,10 +21,11 @@ uv run pytest
 uv run ruff check .
 ```
 
-To run the gateway locally with persistent SQLite and all external providers disabled:
+To run the gateway and open the Web Dashboard locally:
 ```powershell
 uv run uvicorn orgpilot.gateway.app:create_app --factory --port 8000
 ```
+Open `http://localhost:8000/` in your browser to explore the interactive DAG topology, Explainability Timeline, and PM Approval Console.
 
 External integrations are opt-in. For AIHubMix:
 
@@ -46,7 +48,7 @@ The offline 20-sample extraction result is a deterministic regression benchmark;
 ## Documentation
 
 - `docs/architecture.md`: Architecture specification, module boundaries, and state flow
-- `docs/feishu-setup-guide.md`: Feishu HTTP Webhook configuration and permission guide
+- `docs/feishu-setup-guide.md`: 2-minute Feishu Custom App creation and permission guide
 - `docs/event-semantics.md`: Event envelope, lifecycle, idempotency, and LLM boundary
 - `docs/ground-truth-scenarios.md`: Ground truth specifications for P0 and M1 scenarios
 - `docs/development.md`: Setup, Git workflow, checks, and Definition of Done
@@ -56,6 +58,7 @@ The offline 20-sample extraction result is a deterministic regression benchmark;
 - `docs/adr/0003-llm-claim-extraction-boundary.md`: ADR-0003: LLM Claim Extraction & Security Boundary
 - `docs/adr/0004-postgresql-event-store-and-fastapi-gateway.md`: ADR-0004: SQL Persistence & FastAPI Gateway
 - `docs/adr/0005-feishu-adapter-and-interactive-cards.md`: ADR-0005: Feishu Adapter & Interactive Cards
+- `docs/adr/0006-web-dashboard-and-dag-visualization.md`: ADR-0006: Web Dashboard & DAG Visualization
 
 ---
 

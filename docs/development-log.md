@@ -1,5 +1,32 @@
 # 开发记录
 
+## 2026-08-26：W1 Web 全局可视化控制台与实时 DAG 拓扑看板
+
+### 已实现
+
+- 创建分支 `w1/web-dashboard-and-dag` 并编写 `ADR-0006`；
+- 构建 DAG 拓扑计算引擎（`src/orgpilot/gateway/routes/dag.py`）：
+  - `GET /api/v1/projects/{project_id}/dag`：自动计算拓扑分层（Topological Layers）、入度/出度、关键路径（Critical Path）与多跳风险传播高亮（Impacted Tasks）；
+  - `GET /api/v1/projects/{project_id}/timeline`：聚合不可变事件、Case 状态转移、审批请求与执行审计，生成全链路可解释性时序时间线；
+- 编写 Single-Page 现代化控制台 UI（`src/orgpilot/gateway/static/index.html`）：
+  - 暗色现代化架构（Tailwind CSS），支持项目快速切换与 5s 自动轮询；
+  - 原生可交互 SVG 渲染自适应 DAG 拓扑图，支持缩放/拖拽与节点点击抽屉（Node Inspector Drawer）；
+  - 包含 PM 快速审批决策面板与自然语言消息摄入/轮次触发模拟台；
+- 在 FastAPI 网关挂载根路径静态控制台（访问 `http://localhost:8000/` 或 `/dashboard` 即开即用）；
+- 编写单元与端到端集成测试（`tests/test_gateway_dag_and_timeline.py`）。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS (4 P0 + 5 M1)
+orgpilot eval-extraction: PASS (20 samples, 100% F1, 100% Grounding)
+pytest: 144 passed in 5.58s
+coverage: 93.76% branch-aware total coverage (fail_under=90%)
+ruff: All checks passed (0 errors, 192 files formatted)
+```
+
+---
+
 ## 2026-08-26：集成硬化与完成度校正
 
 ### 已修复
