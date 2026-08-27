@@ -168,6 +168,10 @@ class FeishuWebhookHandler:
             for evt in bootstrap_events:
                 await self.service.event_store.append(evt)
 
+        chat_type = message.get("chat_type", "p2p")
+        chat_id = message.get("chat_id")
+        reply_target = chat_id if (chat_type == "group" and chat_id) else actor_id
+
         # 1. Check for PM proactive progress sync intent
         is_sync_intent = any(
             k in raw_text
@@ -183,7 +187,9 @@ class FeishuWebhookHandler:
             ]
         )
         if is_sync_intent:
-            session = await self.service.start_progress_sync(self.project_id, initiated_by=actor_id)
+            session = await self.service.start_progress_sync(
+                self.project_id, initiated_by=reply_target
+            )
             adapter = self.service.adapter_factory(self.project_id)
             client = getattr(adapter, "client", None)
             if client and hasattr(client, "send_message"):
@@ -196,7 +202,7 @@ class FeishuWebhookHandler:
                 )
                 try:
                     res = client.send_message(
-                        receive_id=actor_id, msg_type="text", content={"text": confirm_msg}
+                        receive_id=reply_target, msg_type="text", content={"text": confirm_msg}
                     )
                     if asyncio.iscoroutine(res):
                         await res
@@ -257,7 +263,7 @@ class FeishuWebhookHandler:
                 )
                 try:
                     res = client.send_message(
-                        receive_id=actor_id,
+                        receive_id=reply_target,
                         msg_type="text",
                         content={"text": greeting_text},
                     )

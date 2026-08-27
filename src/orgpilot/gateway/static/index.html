@@ -18,19 +18,10 @@
     }
   </script>
   <style>
-    @keyframes pulse-slow {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.4; }
-    }
-    .animate-pulse-slow {
-      animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-    }
-    .dag-edge {
-      transition: stroke 0.3s, stroke-width 0.3s;
-    }
-    .dag-node:hover {
-      filter: drop-shadow(0 0 8px rgba(99, 102, 241, 0.6));
-    }
+    .dag-edge { transition: stroke 0.3s, stroke-width 0.3s; }
+    .dag-node:hover { filter: drop-shadow(0 0 8px rgba(99, 102, 241, 0.6)); }
+    .chat-bubble-bot { background-color: #1e293b; border: 1px solid #334155; }
+    .chat-bubble-user { background-color: #4f46e5; }
   </style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-brand-500 selection:text-white">
@@ -44,9 +35,9 @@
       <div>
         <div class="flex items-center gap-2">
           <h1 class="text-lg font-bold tracking-tight text-white">OrgPilot Console</h1>
-          <span class="px-2 py-0.5 text-xs font-semibold rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/20">W1 Live</span>
+          <span class="px-2 py-0.5 text-xs font-semibold rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/20">W1 Multi-Agent Live</span>
         </div>
-        <p class="text-xs text-slate-400">多智能体组织协调内核与实时 DAG 拓扑看板</p>
+        <p class="text-xs text-slate-400">多智能体组织协同内核、分角色沙箱与实时 DAG 拓扑大盘</p>
       </div>
     </div>
 
@@ -115,7 +106,10 @@
   <!-- Navigation Tabs -->
   <div class="px-6 mt-6 flex items-center justify-between border-b border-slate-800">
     <div class="flex items-center gap-2">
-      <button id="tabDagBtn" onclick="switchTab('dag')" class="px-4 py-2.5 text-sm font-semibold border-b-2 border-brand-500 text-brand-400 transition flex items-center gap-2">
+      <button id="tabSandboxBtn" onclick="switchTab('sandbox')" class="px-4 py-2.5 text-sm font-semibold border-b-2 border-brand-500 text-brand-400 transition flex items-center gap-2">
+        <span>👥</span> 多角色分屏沙箱 (Sandbox)
+      </button>
+      <button id="tabDagBtn" onclick="switchTab('dag')" class="px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition flex items-center gap-2">
         <span>🌐</span> 依赖拓扑 (DAG)
       </button>
       <button id="tabTimelineBtn" onclick="switchTab('timeline')" class="px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition flex items-center gap-2">
@@ -130,35 +124,138 @@
       <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span> 风险/受阻</span>
       <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span> 延误</span>
       <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-purple-500"></span> 已完成</span>
-      <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-cyan-400"></span> 关键路径 (Critical Path)</span>
+      <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-cyan-400"></span> 关键路径</span>
     </div>
   </div>
 
   <!-- Main Content Areas -->
   <main class="flex-1 px-6 py-4 relative flex flex-col">
 
+    <!-- View 0: Multi-Role Split-Screen Sandbox (Default Focus) -->
+    <div id="viewSandbox" class="flex-1 flex flex-col gap-4">
+      <div class="bg-slate-900/70 border border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3 shadow-md">
+        <div class="flex items-center gap-3">
+          <span class="px-3 py-1 bg-brand-500/20 text-brand-300 border border-brand-500/30 rounded-lg text-xs font-bold">
+            🎭 一人分饰多角演练台
+          </span>
+          <p class="text-xs text-slate-300">在 3 个独立窗口中分别扮演 PM 与各研发角色，观察机器人主动探针、追问与 DAG 决策简报</p>
+        </div>
+        <div class="flex items-center gap-2.5">
+          <button onclick="bootstrapSandbox()" class="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold rounded-lg text-slate-200 transition flex items-center gap-1.5">
+            <span>🛠️</span> 一键重置沙箱数据
+          </button>
+          <button id="autoDemoBtn" onclick="runAutoDemo()" class="px-4 py-1.5 bg-gradient-to-r from-brand-600 to-cyan-600 hover:from-brand-500 hover:to-cyan-500 text-white text-xs font-bold rounded-lg shadow-lg shadow-brand-500/20 transition flex items-center gap-1.5">
+            <span>▶️</span> 一键全流程自动演练
+          </button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1 min-h-[550px]">
+        <!-- PM Window -->
+        <div class="bg-slate-900/60 border border-slate-800 rounded-xl flex flex-col overflow-hidden shadow-lg">
+          <div class="px-4 py-3 bg-slate-800/90 border-b border-slate-700 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              <h3 class="text-xs font-bold text-slate-100 flex items-center gap-1"><span>👔</span> 项目管理室 · PM 视角</h3>
+            </div>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900/80 text-brand-300">ou_pm</span>
+          </div>
+          <div class="p-2.5 bg-slate-900/80 border-b border-slate-800 flex flex-wrap gap-1.5">
+            <button onclick="sendRoleMsg('ou_pm', '我要知道当前的项目进度')" class="px-2.5 py-1 bg-brand-600/30 hover:bg-brand-600/50 text-brand-300 border border-brand-500/40 rounded text-[11px] font-semibold transition">
+              🚀 发起全员进度同步
+            </button>
+            <button onclick="refreshData()" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded text-[11px] transition">
+              🔄 刷新状态
+            </button>
+          </div>
+          <div id="chatStreamPM" class="flex-1 p-4 overflow-auto space-y-3 max-h-[380px] bg-slate-950/40 text-xs">
+            <div class="chat-bubble-bot p-3 rounded-xl text-slate-300 space-y-1">
+              <div class="font-bold text-brand-400 flex items-center gap-1"><span>🤖</span> OrgPilot 智能体</div>
+              <p>你好！我是项目协同智能体。点击上方「🚀 发起全员进度同步」可开始分布式主动探针！</p>
+            </div>
+          </div>
+          <div class="p-3 bg-slate-900/90 border-t border-slate-800 flex items-center gap-2">
+            <input id="inputPM" type="text" placeholder="以 PM 身份输入..." onkeydown="if(event.key==='Enter') sendInputMsg('ou_pm')" class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:border-brand-500 focus:outline-none">
+            <button onclick="sendInputMsg('ou_pm')" class="px-3.5 py-2 bg-brand-600 hover:bg-brand-500 text-white font-bold rounded-lg text-xs transition">发送</button>
+          </div>
+        </div>
+
+        <!-- Alice Window -->
+        <div class="bg-slate-900/60 border border-slate-800 rounded-xl flex flex-col overflow-hidden shadow-lg">
+          <div class="px-4 py-3 bg-slate-800/90 border-b border-slate-700 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse"></span>
+              <h3 class="text-xs font-bold text-slate-100 flex items-center gap-1"><span>💻</span> 支付SDK开发组 · Alice</h3>
+            </div>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900/80 text-cyan-300">ou_alice</span>
+          </div>
+          <div class="p-2.5 bg-slate-900/80 border-b border-slate-800 flex flex-wrap gap-1.5">
+            <button onclick="sendRoleMsg('ou_alice', '支付 SDK 报错卡住了，还在排查')" class="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/40 text-amber-300 border border-amber-500/40 rounded text-[11px] font-semibold transition">
+              ⚠️ 回复模糊阻塞 (触发追问)
+            </button>
+            <button onclick="sendRoleMsg('ou_alice', '预计排查需要到明天下午 5 点')" class="px-2.5 py-1 bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-300 border border-cyan-500/40 rounded text-[11px] font-semibold transition">
+              ⏱️ 补充具体排查时间
+            </button>
+            <button onclick="sendRoleMsg('ou_alice', '支付 SDK 阻塞已解决，按原计划推进')" class="px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 border border-emerald-500/40 rounded text-[11px] transition">
+              ✅ 报告已恢复
+            </button>
+          </div>
+          <div id="chatStreamAlice" class="flex-1 p-4 overflow-auto space-y-3 max-h-[380px] bg-slate-950/40 text-xs">
+            <div class="chat-bubble-bot p-3 rounded-xl text-slate-300 space-y-1">
+              <div class="font-bold text-cyan-400 flex items-center gap-1"><span>🤖</span> OrgPilot 智能体</div>
+              <p>你好 Alice！等待 PM 发起进度探针后，将在此接收探针提问与智能追问。</p>
+            </div>
+          </div>
+          <div class="p-3 bg-slate-900/90 border-t border-slate-800 flex items-center gap-2">
+            <input id="inputAlice" type="text" placeholder="以 Alice 身份输入..." onkeydown="if(event.key==='Enter') sendInputMsg('ou_alice')" class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:border-brand-500 focus:outline-none">
+            <button onclick="sendInputMsg('ou_alice')" class="px-3.5 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-lg text-xs transition">发送</button>
+          </div>
+        </div>
+
+        <!-- Bob Window -->
+        <div class="bg-slate-900/60 border border-slate-800 rounded-xl flex flex-col overflow-hidden shadow-lg">
+          <div class="px-4 py-3 bg-slate-800/90 border-b border-slate-700 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              <h3 class="text-xs font-bold text-slate-100 flex items-center gap-1"><span>🎨</span> 前端结账组 · Bob</h3>
+            </div>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900/80 text-emerald-300">ou_bob</span>
+          </div>
+          <div class="p-2.5 bg-slate-900/80 border-b border-slate-800 flex flex-wrap gap-1.5">
+            <button onclick="sendRoleMsg('ou_bob', '收银台前端一切正常，按原计划推进')" class="px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 border border-emerald-500/40 rounded text-[11px] font-semibold transition">
+              ✅ 报告正常推进
+            </button>
+            <button onclick="sendRoleMsg('ou_bob', '前端组件库升级受阻，需要延期到周五')" class="px-2.5 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 border border-rose-500/40 rounded text-[11px] transition">
+              ⚠️ 报告前端延期
+            </button>
+          </div>
+          <div id="chatStreamBob" class="flex-1 p-4 overflow-auto space-y-3 max-h-[380px] bg-slate-950/40 text-xs">
+            <div class="chat-bubble-bot p-3 rounded-xl text-slate-300 space-y-1">
+              <div class="font-bold text-emerald-400 flex items-center gap-1"><span>🤖</span> OrgPilot 智能体</div>
+              <p>你好 Bob！等待 PM 发起进度探针后，将在此接收探针提问。</p>
+            </div>
+          </div>
+          <div class="p-3 bg-slate-900/90 border-t border-slate-800 flex items-center gap-2">
+            <input id="inputBob" type="text" placeholder="以 Bob 身份输入..." onkeydown="if(event.key==='Enter') sendInputMsg('ou_bob')" class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:border-brand-500 focus:outline-none">
+            <button onclick="sendInputMsg('ou_bob')" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs transition">发送</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- View 1: Interactive DAG -->
-    <div id="viewDag" class="flex-1 min-h-[500px] bg-slate-900/40 border border-slate-800 rounded-xl relative overflow-hidden flex flex-col">
-      <!-- DAG Canvas Controls -->
+    <div id="viewDag" class="hidden flex-1 min-h-[500px] bg-slate-900/40 border border-slate-800 rounded-xl relative overflow-hidden flex flex-col">
       <div class="absolute top-3 right-3 z-10 flex items-center gap-1.5 bg-slate-800/90 border border-slate-700 p-1 rounded-lg backdrop-blur">
         <button onclick="zoomDag(1.15)" class="w-7 h-7 flex items-center justify-center rounded text-slate-300 hover:bg-slate-700 text-sm font-bold">+</button>
         <button onclick="zoomDag(0.85)" class="w-7 h-7 flex items-center justify-center rounded text-slate-300 hover:bg-slate-700 text-sm font-bold">-</button>
         <button onclick="resetDagZoom()" class="px-2 h-7 flex items-center justify-center rounded text-slate-300 hover:bg-slate-700 text-xs">重置</button>
       </div>
-
-      <!-- Interactive SVG Container -->
       <div id="dagContainer" class="w-full flex-1 overflow-auto cursor-grab active:cursor-grabbing p-4 flex items-center justify-center">
         <svg id="dagSvg" class="w-full h-full min-h-[480px]">
           <defs>
-            <marker id="arrowNormal" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
-              <path d="M0,0 L0,6 L9,3 z" fill="#64748b" />
-            </marker>
-            <marker id="arrowCritical" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
-              <path d="M0,0 L0,6 L9,3 z" fill="#38bdf8" />
-            </marker>
-            <marker id="arrowImpacted" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
-              <path d="M0,0 L0,6 L9,3 z" fill="#f43f5e" />
-            </marker>
+            <marker id="arrowNormal" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#64748b" /></marker>
+            <marker id="arrowCritical" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#38bdf8" /></marker>
+            <marker id="arrowImpacted" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#f43f5e" /></marker>
           </defs>
           <g id="dagRootGroup"></g>
         </svg>
@@ -168,21 +265,15 @@
     <!-- View 2: Timeline -->
     <div id="viewTimeline" class="hidden flex-1 bg-slate-900/40 border border-slate-800 rounded-xl p-5 overflow-auto max-h-[650px]">
       <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-4">项目事件与可解释性时间线 (Audit Log)</h3>
-      <div id="timelineContainer" class="space-y-4">
-        <!-- Injected via JS -->
-      </div>
+      <div id="timelineContainer" class="space-y-4"></div>
     </div>
 
     <!-- View 3: Simulator -->
     <div id="viewSimulator" class="hidden flex-1 grid grid-cols-1 md:grid-cols-2 gap-5">
-      <!-- Chat Ingest Panel -->
       <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-5 flex flex-col justify-between">
         <div>
-          <h3 class="text-sm font-semibold text-slate-200 flex items-center gap-2">
-            <span>💬</span> 自然语言消息摄入与抽取模拟
-          </h3>
+          <h3 class="text-sm font-semibold text-slate-200 flex items-center gap-2"><span>💬</span> 自然语言消息摄入与抽取模拟</h3>
           <p class="text-xs text-slate-400 mt-1">模拟成员在飞书群/私聊发送消息，由 ClaimExtractor 结构化抽取并驱动 Agent</p>
-
           <div class="mt-4 space-y-3">
             <div>
               <label class="text-xs text-slate-400 block mb-1">发言成员 ID (Actor)</label>
@@ -194,37 +285,21 @@
             </div>
           </div>
         </div>
-
         <div class="pt-4 border-t border-slate-800 flex items-center justify-between">
-          <button onclick="runTurnExplicitly()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold rounded-lg text-slate-200 transition">
-            仅触发 1 轮协调 (Run Turn)
-          </button>
-          <button onclick="sendSimulatedMessage()" class="px-5 py-2 bg-brand-600 hover:bg-brand-500 text-xs font-bold rounded-lg text-white shadow-lg shadow-brand-500/20 transition">
-            发送消息并自动闭环 ➔
-          </button>
+          <button onclick="runTurnExplicitly()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold rounded-lg text-slate-200 transition">仅触发 1 轮协调 (Run Turn)</button>
+          <button onclick="sendSimulatedMessage()" class="px-5 py-2 bg-brand-600 hover:bg-brand-500 text-xs font-bold rounded-lg text-white shadow-lg shadow-brand-500/20 transition">发送消息并自动闭环 ➔</button>
         </div>
       </div>
-
-      <!-- Pending Approvals Action Panel -->
       <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-5 flex flex-col justify-between">
         <div>
-          <h3 class="text-sm font-semibold text-slate-200 flex items-center gap-2">
-            <span>🛡️</span> PM 快速审批决策面板
-          </h3>
-          <p class="text-xs text-slate-400 mt-1">展示当前拦截等待 PM 审批的改期动作，可直接在 Web 上一键决策</p>
-
-          <div id="approvalsListContainer" class="mt-4 space-y-3 max-h-[300px] overflow-auto">
-            <!-- Injected via JS -->
-          </div>
+          <h3 class="text-sm font-semibold text-slate-200 flex items-center gap-2"><span>🛡️</span> PM 快速审批决策面板</h3>
+          <div id="approvalsListContainer" class="mt-4 space-y-3 max-h-[300px] overflow-auto"></div>
         </div>
-
-        <div class="pt-4 border-t border-slate-800 text-xs text-slate-500 text-right">
-          审批后将自动驱动 Agent 推进任务改期与群通知
-        </div>
+        <div class="pt-4 border-t border-slate-800 text-xs text-slate-500 text-right">审批后将自动驱动 Agent 推进任务改期与群通知</div>
       </div>
     </div>
 
-    <!-- Node Detail Drawer (Slide-Over) -->
+    <!-- Node Detail Drawer -->
     <div id="nodeDrawer" class="fixed right-0 top-0 bottom-0 w-96 bg-slate-900 border-l border-slate-800 shadow-2xl z-50 transform translate-x-full transition-transform duration-300 p-6 overflow-auto flex flex-col justify-between">
       <div>
         <div class="flex items-center justify-between border-b border-slate-800 pb-4">
@@ -234,58 +309,32 @@
           </div>
           <button onclick="closeDrawer()" class="text-slate-400 hover:text-white text-lg font-bold">✕</button>
         </div>
-
         <div class="mt-4 space-y-4 text-xs">
-          <div>
-            <label class="text-slate-400 block uppercase font-medium tracking-wider">任务标题</label>
-            <p id="drawerTitle" class="text-slate-100 font-semibold text-sm mt-0.5"></p>
-          </div>
+          <div><label class="text-slate-400 block uppercase font-medium tracking-wider">任务标题</label><p id="drawerTitle" class="text-slate-100 font-semibold text-sm mt-0.5"></p></div>
           <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="text-slate-400 block uppercase font-medium tracking-wider">负责人</label>
-              <p id="drawerOwner" class="text-slate-200 font-mono mt-0.5"></p>
-            </div>
-            <div>
-              <label class="text-slate-400 block uppercase font-medium tracking-wider">工作流状态</label>
-              <p id="drawerWorkflow" class="text-slate-200 font-mono mt-0.5 uppercase"></p>
-            </div>
+            <div><label class="text-slate-400 block uppercase font-medium tracking-wider">负责人</label><p id="drawerOwner" class="text-slate-200 font-mono mt-0.5"></p></div>
+            <div><label class="text-slate-400 block uppercase font-medium tracking-wider">工作流状态</label><p id="drawerWorkflow" class="text-slate-200 font-mono mt-0.5 uppercase"></p></div>
           </div>
-          <div>
-            <label class="text-slate-400 block uppercase font-medium tracking-wider">截止时间 / 预计完成</label>
-            <p id="drawerDeadline" class="text-slate-200 font-mono mt-0.5"></p>
-          </div>
-          <div>
-            <label class="text-slate-400 block uppercase font-medium tracking-wider">风险与阻塞原因</label>
-            <div id="drawerBlockers" class="mt-1 p-2.5 bg-slate-800/80 rounded-lg text-slate-300 font-sans">
-              无阻塞风险
-            </div>
-          </div>
+          <div><label class="text-slate-400 block uppercase font-medium tracking-wider">截止时间 / 预计完成</label><p id="drawerDeadline" class="text-slate-200 font-mono mt-0.5"></p></div>
+          <div><label class="text-slate-400 block uppercase font-medium tracking-wider">风险与阻塞原因</label><div id="drawerBlockers" class="mt-1 p-2.5 bg-slate-800/80 rounded-lg text-slate-300 font-sans">无阻塞风险</div></div>
         </div>
       </div>
-
-      <div class="pt-4 border-t border-slate-800">
-        <button onclick="closeDrawer()" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg transition">
-          关闭抽屉
-        </button>
-      </div>
+      <div class="pt-4 border-t border-slate-800"><button onclick="closeDrawer()" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-lg transition">关闭抽屉</button></div>
     </div>
-
   </main>
 
-  <!-- Core JavaScript Logic -->
   <script>
     let currentZoom = 1.0;
     let dagData = null;
 
-    function getProjectId() {
-      return document.getElementById('projectIdInput').value.trim() || 'feishu-project';
-    }
+    function getProjectId() { return document.getElementById('projectIdInput').value.trim() || 'feishu-project'; }
 
     function switchTab(tabName) {
-      const tabs = ['dag', 'timeline', 'simulator'];
+      const tabs = ['sandbox', 'dag', 'timeline', 'simulator'];
       tabs.forEach(t => {
         const view = document.getElementById(`view${t.charAt(0).toUpperCase() + t.slice(1)}`);
         const btn = document.getElementById(`tab${t.charAt(0).toUpperCase() + t.slice(1)}Btn`);
+        if (!view || !btn) return;
         if (t === tabName) {
           view.classList.remove('hidden');
           btn.className = "px-4 py-2.5 text-sm font-semibold border-b-2 border-brand-500 text-brand-400 transition flex items-center gap-2";
@@ -294,6 +343,7 @@
           btn.className = "px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition flex items-center gap-2";
         }
       });
+      if (tabName === 'dag') loadDag();
       if (tabName === 'timeline') loadTimeline();
       if (tabName === 'simulator') loadApprovals();
     }
@@ -304,11 +354,121 @@
       try {
         await Promise.all([loadDag(), loadState(), loadApprovals()]);
         document.getElementById('connStatus').textContent = '已连接';
-      } catch (err) {
-        console.error("Refresh failed", err);
-        document.getElementById('connStatus').textContent = '连接异常';
+      } catch (err) { console.error("Refresh failed", err); document.getElementById('connStatus').textContent = '连接异常'; }
+      finally { setTimeout(() => icon.classList.remove('animate-spin'), 400); }
+    }
+
+    async function bootstrapSandbox() {
+      const pid = getProjectId();
+      await fetch(`/api/v1/projects/${pid}/bootstrap-sandbox`, { method: 'POST' });
+      document.getElementById('chatStreamPM').innerHTML = `
+        <div class="chat-bubble-bot p-3 rounded-xl text-slate-300 space-y-1">
+          <div class="font-bold text-brand-400 flex items-center gap-1"><span>🤖</span> OrgPilot 智能体</div>
+          <p>沙箱已成功初始化！包含 4 位成员与 3 级依赖链（支付SDK ➔ 收银台前端 ➔ 压测验收）。点击上方「🚀 发起全员进度同步」即可体验！</p>
+        </div>`;
+      document.getElementById('chatStreamAlice').innerHTML = `
+        <div class="chat-bubble-bot p-3 rounded-xl text-slate-300 space-y-1">
+          <div class="font-bold text-cyan-400 flex items-center gap-1"><span>🤖</span> OrgPilot 智能体</div>
+          <p>已绑定任务【支付SDK接入】(DOING)。等待 PM 发起进度探针...</p>
+        </div>`;
+      document.getElementById('chatStreamBob').innerHTML = `
+        <div class="chat-bubble-bot p-3 rounded-xl text-slate-300 space-y-1">
+          <div class="font-bold text-emerald-400 flex items-center gap-1"><span>🤖</span> OrgPilot 智能体</div>
+          <p>已绑定任务【收银台前端结账】(TODO)。等待 PM 发起进度探针...</p>
+        </div>`;
+      await refreshData();
+    }
+
+    function appendChatBubble(containerId, isUser, senderTitle, text, isCard = false, cardData = null) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      const bubble = document.createElement('div');
+      if (isUser) {
+        bubble.className = "flex justify-end";
+        bubble.innerHTML = `<div class="chat-bubble-user p-2.5 px-3 rounded-xl text-white max-w-[85%] shadow"><div class="text-[10px] opacity-80 text-right mb-0.5">${senderTitle}</div><p class="whitespace-pre-wrap">${text}</p></div>`;
+      } else {
+        bubble.className = "flex justify-start";
+        if (isCard && cardData) {
+          bubble.innerHTML = `
+            <div class="p-3.5 bg-slate-900 border border-brand-500/40 rounded-xl text-slate-200 max-w-[95%] shadow-xl space-y-2">
+              <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                <span class="font-bold text-brand-400 flex items-center gap-1.5">📊 ${cardData.title || '项目全景决策简报'}</span>
+              </div>
+              <div class="grid grid-cols-3 gap-1.5 text-center text-[11px] py-1 bg-slate-800/60 rounded-lg">
+                <div><span class="text-emerald-400 font-bold">${cardData.on_track_count || 0}</span> 正常</div>
+                <div><span class="text-amber-400 font-bold">${cardData.at_risk_count || 0}</span> 风险</div>
+                <div><span class="text-rose-400 font-bold">${cardData.delayed_count || 0}</span> 延误</div>
+              </div>
+              <div class="text-[11px] text-slate-300 bg-rose-500/10 border border-rose-500/20 p-2 rounded">
+                <span class="font-bold text-rose-400">⚠️ 关键路径波及：</span>
+                ${cardData.topological_risks && cardData.topological_risks[0] ? `【${cardData.topological_risks[0].source_task_id}】延误直接阻碍下游【${cardData.topological_risks[0].cascading_impact_tasks.join('、')}】` : '无下游阻碍'}
+              </div>
+              <div class="text-[11px] text-slate-400 space-y-1">
+                <span class="font-semibold text-slate-300">💡 协同决策建议：</span>
+                ${(cardData.recommended_actions || []).map(r => `<div>• ${r}</div>`).join('')}
+              </div>
+            </div>`;
+        } else {
+          bubble.innerHTML = `<div class="chat-bubble-bot p-2.5 px-3 rounded-xl text-slate-200 max-w-[85%] shadow space-y-0.5"><div class="text-[10px] text-brand-400 font-semibold mb-0.5 flex items-center gap-1"><span>🤖</span> ${senderTitle}</div><p class="whitespace-pre-wrap">${text}</p></div>`;
+        }
+      }
+      container.appendChild(bubble);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    async function sendRoleMsg(actorId, message) {
+      const pid = getProjectId();
+      const streamMap = { 'ou_pm': { id: 'chatStreamPM', name: '项目负责人 PM' }, 'ou_alice': { id: 'chatStreamAlice', name: '支付工程师 Alice' }, 'ou_bob': { id: 'chatStreamBob', name: '前端工程师 Bob' } };
+      const cfg = streamMap[actorId] || { id: 'chatStreamPM', name: actorId };
+      appendChatBubble(cfg.id, true, cfg.name, message);
+      const res = await fetch(`/api/v1/projects/${pid}/sandbox-chat?actor_id=${actorId}&message=${encodeURIComponent(message)}`, { method: 'POST' });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.type === 'sync_started') {
+        appendChatBubble('chatStreamPM', false, 'OrgPilot 机器人', data.bot_reply);
+        setTimeout(() => {
+          appendChatBubble('chatStreamAlice', false, 'OrgPilot 机器人', 'Hi Alice！项目负责人正在同步当前项目进度。请问您负责的【支付SDK接入】目前进展如何？是否有遇到阻碍或需要协调的地方？');
+          appendChatBubble('chatStreamBob', false, 'OrgPilot 机器人', 'Hi Bob！项目负责人正在同步当前项目进度。请问您负责的【收银台前端结账】目前进展如何？是否有遇到阻碍或需要协调的地方？');
+        }, 300);
+      } else if (data.type === 'clarification_needed') {
+        appendChatBubble(cfg.id, false, 'OrgPilot 智能追问', data.bot_reply);
+      } else if (data.type === 'sync_completed') {
+        appendChatBubble(cfg.id, false, 'OrgPilot 机器人', data.bot_reply);
+        if (data.briefing) {
+          setTimeout(() => {
+            appendChatBubble('chatStreamPM', false, 'OrgPilot 简报递送', '', true, data.briefing);
+          }, 300);
+        }
+      } else {
+        appendChatBubble(cfg.id, false, 'OrgPilot 机器人', data.bot_reply || '消息已处理');
+      }
+      await refreshData();
+    }
+
+    function sendInputMsg(actorId) {
+      const inputMap = { 'ou_pm': 'inputPM', 'ou_alice': 'inputAlice', 'ou_bob': 'inputBob' };
+      const el = document.getElementById(inputMap[actorId]);
+      if (el && el.value.trim()) { const val = el.value.trim(); el.value = ''; sendRoleMsg(actorId, val); }
+    }
+
+    async function runAutoDemo() {
+      const btn = document.getElementById('autoDemoBtn');
+      btn.disabled = true;
+      btn.innerHTML = `<span>⏳</span> 正在自动演练中...`;
+      try {
+        await bootstrapSandbox();
+        await new Promise(r => setTimeout(r, 600));
+        await sendRoleMsg('ou_pm', '我要知道当前的项目进度');
+        await new Promise(r => setTimeout(r, 1200));
+        await sendRoleMsg('ou_bob', '收银台前端一切正常，按原计划推进');
+        await new Promise(r => setTimeout(r, 1000));
+        await sendRoleMsg('ou_alice', '支付 SDK 报错卡住了，还在排查');
+        await new Promise(r => setTimeout(r, 1500));
+        await sendRoleMsg('ou_alice', '预计排查需要到明天下午 5 点');
+        await new Promise(r => setTimeout(r, 1200));
       } finally {
-        setTimeout(() => icon.classList.remove('animate-spin'), 400);
+        btn.disabled = false;
+        btn.innerHTML = `<span>▶️</span> 一键全流程自动演练`;
       }
     }
 
@@ -324,177 +484,119 @@
     async function loadDag() {
       const pid = getProjectId();
       const res = await fetch(`/api/v1/projects/${pid}/dag`);
-      if (!res.ok) {
-        document.getElementById('dagRootGroup').innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="#94a3b8">暂无该项目 DAG 数据 (请先摄入任务或事件)</text>`;
-        return;
-      }
+      if (!res.ok) return;
       dagData = await res.json();
-      renderSummary(dagData.summary);
-      renderSvgDag(dagData);
+      document.getElementById('statTotalTasks').textContent = dagData.total_tasks;
+      document.getElementById('statCompletedSub').textContent = `已完成: ${dagData.completed_tasks}`;
+      document.getElementById('statOnTrack').textContent = `${dagData.health_distribution.ON_TRACK || 0} 🟢`;
+      document.getElementById('statAtRisk').textContent = `${dagData.health_distribution.AT_RISK || 0} 🟡`;
+      document.getElementById('statDelayed').textContent = `${dagData.health_distribution.DELAYED || 0} 🔴`;
+      renderDagSvg(dagData);
     }
 
-    function renderSummary(summary) {
-      document.getElementById('statTotalTasks').textContent = summary.total_tasks;
-      document.getElementById('statCompletedSub').textContent = `已完成: ${summary.completed_count}`;
-      document.getElementById('statOnTrack').textContent = `${summary.on_track_count} 🟢`;
-      document.getElementById('statAtRisk').textContent = `${summary.at_risk_count} 🟡`;
-      document.getElementById('statDelayed').textContent = `${summary.delayed_count} 🔴`;
-    }
-
-    function renderSvgDag(data) {
-      const nodes = data.nodes;
-      const edges = data.edges;
-      const svgGroup = document.getElementById('dagRootGroup');
-      svgGroup.innerHTML = '';
-
-      if (nodes.length === 0) {
-        svgGroup.innerHTML = `<text x="400" y="200" text-anchor="middle" fill="#64748b" font-size="14">项目尚无任务拓扑，可前往模拟台发送一条包含任务的消息！</text>`;
+    function renderDagSvg(data) {
+      const g = document.getElementById('dagRootGroup');
+      g.innerHTML = '';
+      if (!data.nodes || data.nodes.length === 0) {
+        g.innerHTML = `<text x="50%" y="50%" fill="#64748b" text-anchor="middle" dominant-baseline="middle" font-size="14">项目暂无任务节点，请点击「🛠️ 一键重置沙箱数据」</text>`;
         return;
       }
 
-      // Layout algorithm: group by layer
-      const layerGroups = {};
-      nodes.forEach(n => {
-        const l = n.layer || 0;
-        if (!layerGroups[l]) layerGroups[l] = [];
-        layerGroups[l].push(n);
+      const nodeMap = {};
+      const layers = {};
+      data.nodes.forEach(n => {
+        nodeMap[n.id] = n;
+        const l = n.level || 0;
+        layers[l] = layers[l] || [];
+        layers[l].push(n);
       });
 
-      const layerWidth = 240;
-      const nodeWidth = 180;
-      const nodeHeight = 72;
       const nodePositions = {};
+      const layerKeys = Object.keys(layers).sort((a, b) => a - b);
+      const layerWidth = 240;
+      const nodeHeight = 80;
+      const startX = 60;
 
-      const maxLayer = Math.max(...Object.keys(layerGroups).map(Number));
-
-      Object.entries(layerGroups).forEach(([layerStr, groupNodes]) => {
-        const layer = Number(layerStr);
-        const x = 60 + layer * layerWidth;
-        const totalHeight = groupNodes.length * 100;
-        const startY = Math.max(60, 240 - totalHeight / 2);
-
-        groupNodes.forEach((node, idx) => {
-          const y = startY + idx * 105;
-          nodePositions[node.task_id] = { x, y, cx: x + nodeWidth / 2, cy: y + nodeHeight / 2 };
+      layerKeys.forEach((lvl, colIdx) => {
+        const nodesInCol = layers[lvl];
+        const startY = 60;
+        nodesInCol.forEach((node, rowIdx) => {
+          nodePositions[node.id] = {
+            x: startX + colIdx * layerWidth,
+            y: startY + rowIdx * (nodeHeight + 40),
+            node: node
+          };
         });
       });
 
-      // 1. Render Edges (Curves)
-      edges.forEach(edge => {
-        const fromPos = nodePositions[edge.from_task];
-        const toPos = nodePositions[edge.to_task];
-        if (!fromPos || !toPos) return;
+      data.edges.forEach(edge => {
+        const from = nodePositions[edge.source];
+        const to = nodePositions[edge.target];
+        if (!from || !to) return;
+        const x1 = from.x + 160, y1 = from.y + 35, x2 = to.x, y2 = to.y + 35;
+        let strokeColor = edge.is_impacted ? '#f43f5e' : (edge.is_critical ? '#38bdf8' : '#475569');
+        let marker = edge.is_impacted ? 'url(#arrowImpacted)' : (edge.is_critical ? 'url(#arrowCritical)' : 'url(#arrowNormal)');
+        let strokeWidth = edge.is_critical || edge.is_impacted ? '3' : '2';
 
-        const startX = fromPos.x + nodeWidth;
-        const startY = fromPos.cy;
-        const endX = toPos.x;
-        const endY = toPos.cy;
-        const midX = (startX + endX) / 2;
-
-        const pathD = `M ${startX} ${startY} C ${midX} ${startY}, ${midX} ${endY}, ${endX} ${endY}`;
         const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        path.setAttribute('d', pathD);
+        const dx = (x2 - x1) / 2;
+        path.setAttribute('d', `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`);
         path.setAttribute('fill', 'none');
-
-        if (edge.is_impacted) {
-          path.setAttribute('stroke', '#f43f5e');
-          path.setAttribute('stroke-width', '2.5');
-          path.setAttribute('stroke-dasharray', '5,3');
-          path.setAttribute('marker-end', 'url(#arrowImpacted)');
-        } else if (edge.is_critical) {
-          path.setAttribute('stroke', '#38bdf8');
-          path.setAttribute('stroke-width', '2.5');
-          path.setAttribute('marker-end', 'url(#arrowCritical)');
-        } else {
-          path.setAttribute('stroke', '#475569');
-          path.setAttribute('stroke-width', '1.5');
-          path.setAttribute('marker-end', 'url(#arrowNormal)');
-        }
-        path.classList.add('dag-edge');
-        svgGroup.appendChild(path);
+        path.setAttribute('stroke', strokeColor);
+        path.setAttribute('stroke-width', strokeWidth);
+        path.setAttribute('marker-end', marker);
+        path.setAttribute('class', 'dag-edge');
+        g.appendChild(path);
       });
 
-      // 2. Render Nodes
-      nodes.forEach(node => {
-        const pos = nodePositions[node.task_id];
-        if (!pos) return;
+      Object.values(nodePositions).forEach(pos => {
+        const n = pos.node;
+        const gNode = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        gNode.setAttribute('transform', `translate(${pos.x}, ${pos.y})`);
+        gNode.setAttribute('class', 'dag-node cursor-pointer');
+        gNode.onclick = () => openDrawer(n);
 
-        let strokeColor = '#334155';
-        let bgColor = '#1e293b';
-        let statusBadgeColor = '#10b981';
+        let badgeBg = '#10b981';
+        if (n.health === 'AT_RISK') badgeBg = '#f59e0b';
+        if (n.health === 'DELAYED') badgeBg = '#f43f5e';
+        if (n.workflow_status === 'COMPLETED') badgeBg = '#a855f7';
 
-        if (node.workflow_status === 'done') {
-          strokeColor = '#a855f7';
-          statusBadgeColor = '#a855f7';
-        } else if (node.is_delayed) {
-          strokeColor = '#f43f5e';
-          bgColor = '#2a1215';
-          statusBadgeColor = '#f43f5e';
-        } else if (node.is_at_risk) {
-          strokeColor = '#f59e0b';
-          bgColor = '#261b0c';
-          statusBadgeColor = '#f59e0b';
-        }
+        let borderStroke = n.is_critical ? '#38bdf8' : '#334155';
+        let borderWidth = n.is_critical ? '2.5' : '1.5';
 
-        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        g.setAttribute('transform', `translate(${pos.x}, ${pos.y})`);
-        g.setAttribute('class', 'dag-node cursor-pointer');
-        g.onclick = () => openDrawer(node);
-
-        g.innerHTML = `
-          <rect width="${nodeWidth}" height="${nodeHeight}" rx="10" fill="${bgColor}" stroke="${strokeColor}" stroke-width="${node.is_critical_path ? 2.5 : 1.5}" />
-          <circle cx="16" cy="20" r="5" fill="${statusBadgeColor}" />
-          <text x="28" y="24" fill="#f8fafc" font-size="12" font-weight="bold" font-family="monospace">${node.task_id}</text>
-          <text x="14" y="44" fill="#cbd5e1" font-size="11" font-weight="500">${node.title.substring(0, 14)}</text>
-          <text x="14" y="60" fill="#64748b" font-size="10">👤 ${node.owner_id}</text>
-          ${node.is_critical_path ? `<text x="${nodeWidth - 28}" y="20" font-size="10" fill="#38bdf8">★</text>` : ''}
+        gNode.innerHTML = `
+          <rect width="160" height="70" rx="10" fill="#1e293b" stroke="${borderStroke}" stroke-width="${borderWidth}" />
+          <rect x="0" y="0" width="6" height="70" rx="3" fill="${badgeBg}" />
+          <text x="14" y="24" fill="#f8fafc" font-size="12" font-weight="bold">${n.title.length > 9 ? n.title.substring(0, 8) + '…' : n.title}</text>
+          <text x="14" y="44" fill="#94a3b8" font-size="10" font-family="monospace">👤 ${n.owner_id}</text>
+          <text x="14" y="60" fill="#64748b" font-size="9">${n.workflow_status}</text>
+          ${n.is_critical ? '<circle cx="145" cy="18" r="4" fill="#38bdf8" />' : ''}
         `;
-        svgGroup.appendChild(g);
+        g.appendChild(gNode);
       });
     }
 
-    function zoomDag(factor) {
-      currentZoom *= factor;
-      document.getElementById('dagRootGroup').setAttribute('transform', `scale(${currentZoom})`);
-    }
-
-    function resetDagZoom() {
-      currentZoom = 1.0;
-      document.getElementById('dagRootGroup').setAttribute('transform', 'scale(1)');
-    }
+    function zoomDag(factor) { currentZoom *= factor; document.getElementById('dagRootGroup').setAttribute('transform', `scale(${currentZoom})`); }
+    function resetDagZoom() { currentZoom = 1.0; document.getElementById('dagRootGroup').setAttribute('transform', 'scale(1.0)'); }
 
     function openDrawer(node) {
-      document.getElementById('drawerTaskId').textContent = node.task_id;
+      document.getElementById('drawerTaskId').textContent = node.id;
       document.getElementById('drawerTitle').textContent = node.title;
       document.getElementById('drawerOwner').textContent = node.owner_id;
-      document.getElementById('drawerWorkflow').textContent = `${node.workflow_status} / ${node.health_status}`;
+      document.getElementById('drawerWorkflow').textContent = node.workflow_status;
       document.getElementById('drawerDeadline').textContent = node.deadline ? new Date(node.deadline).toLocaleString() : '未设置';
-
+      
       const badge = document.getElementById('drawerStatusBadge');
-      if (node.is_delayed) {
-        badge.textContent = 'DELAYED';
-        badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30';
-      } else if (node.is_at_risk) {
-        badge.textContent = 'AT RISK';
-        badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30';
-      } else {
-        badge.textContent = 'ON TRACK';
-        badge.className = 'px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
-      }
+      badge.textContent = node.health;
+      if (node.health === 'ON_TRACK') badge.className = "px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300";
+      if (node.health === 'AT_RISK') badge.className = "px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300";
+      if (node.health === 'DELAYED') badge.className = "px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300";
 
-      const blockersContainer = document.getElementById('drawerBlockers');
-      if (node.blockers && node.blockers.length > 0) {
-        blockersContainer.innerHTML = node.blockers.map(b => `<div class="text-rose-300">⚠️ ${b}</div>`).join('');
-      } else {
-        blockersContainer.textContent = node.is_at_risk ? '上游依赖任务受阻延误波及' : '目前进展正常，无已知阻塞';
-      }
-
+      document.getElementById('drawerBlockers').textContent = node.blocker_reason || '暂无上报阻塞';
       document.getElementById('nodeDrawer').classList.remove('translate-x-full');
     }
 
-    function closeDrawer() {
-      document.getElementById('nodeDrawer').classList.add('translate-x-full');
-    }
+    function closeDrawer() { document.getElementById('nodeDrawer').classList.add('translate-x-full'); }
 
     async function loadTimeline() {
       const pid = getProjectId();
@@ -504,7 +606,7 @@
       const container = document.getElementById('timelineContainer');
       container.innerHTML = '';
 
-      if (data.entries.length === 0) {
+      if (!data.entries || data.entries.length === 0) {
         container.innerHTML = `<p class="text-slate-500 text-xs">暂无时间线记录</p>`;
         return;
       }
@@ -538,7 +640,7 @@
       const container = document.getElementById('approvalsListContainer');
       container.innerHTML = '';
 
-      if (approvals.length === 0) {
+      if (!approvals || approvals.length === 0) {
         container.innerHTML = `<div class="p-4 bg-slate-800/40 rounded-lg text-slate-400 text-xs text-center">🎉 当前没有待审的改期请求</div>`;
         return;
       }
@@ -593,10 +695,9 @@
       await refreshData();
     }
 
-    // Auto-load on page load
     window.addEventListener('DOMContentLoaded', () => {
       refreshData();
-      setInterval(refreshData, 5000); // 5s auto polling
+      setInterval(refreshData, 5000);
     });
   </script>
 </body>
