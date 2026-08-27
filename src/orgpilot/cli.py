@@ -28,6 +28,16 @@ def _build_parser() -> argparse.ArgumentParser:
         help="path to gold dataset YAML",
     )
 
+    ws_parser = subparsers.add_parser(
+        "start-feishu-ws", help="start Feishu WebSocket long connection listener"
+    )
+    ws_parser.add_argument(
+        "--project-id",
+        type=str,
+        default=None,
+        help="OrgPilot project ID (defaults to env ORGPILOT_FEISHU_PROJECT_ID)",
+    )
+
     return parser
 
 
@@ -79,6 +89,51 @@ def _eval_extraction(dataset_path: Path) -> int:
     return 0 if metrics.passed else 1
 
 
+def _start_feishu_ws(project_id: str | None = None) -> int:
+    import asyncio
+    import time
+
+    from orgpilot.config import OrgPilotSettings
+    from orgpilot.feishu.ws import FeishuWebSocketListener
+    from orgpilot.gateway.service import GatewayService
+    from orgpilot.storage.database import Database
+
+    settings = OrgPilotSettings.from_env()
+    app_id = settings.feishu_app_id
+    app_secret = settings.feishu_app_secret
+    if not app_id or not app_secret:
+        raise SystemExit(
+            "Error: FEISHU_APP_ID and FEISHU_APP_SECRET environment variables are required."
+        )
+
+    target_project = project_id or settings.feishu_project_id
+    db = Database(settings.database_url)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(db.init_db())
+
+    service = GatewayService(db)
+    listener = FeishuWebSocketListener(
+        app_id=app_id,
+        app_secret=app_secret,
+        gateway_service=service,
+        project_id=target_project,
+        loop=loop,
+    )
+    print(f"[*] Starting Feishu WebSocket Listener for project '{target_project}'...")
+    print(f"[*] App ID: {app_id}")
+    print("[*] WebSocket long-connection active. Listening for Feishu messages and card actions...")
+    print("[*] Press Ctrl+C to stop.")
+
+    listener.start()
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\n[*] Stopping Feishu WebSocket Listener...")
+        return 0
+
+
 def main() -> int:
     args = _build_parser().parse_args()
     if args.command == "replay":
@@ -95,6 +150,8 @@ def main() -> int:
         return _replay(paths)
     if args.command == "eval-extraction":
         return _eval_extraction(args.dataset)
+    if args.command == "start-feishu-ws":
+        return _start_feishu_ws(args.project_id)
     return 2
 
 

@@ -20,6 +20,7 @@ class OrgPilotSettings:
     aihubmix_base_url: str = "https://aihubmix.com"
     aihubmix_model: str = "gpt-5.6-luna"
     collaboration_adapter: str = "mock"
+    feishu_use_ws: bool = True
     feishu_app_id: str | None = None
     feishu_app_secret: str | None = field(default=None, repr=False)
     feishu_verification_token: str | None = field(default=None, repr=False)
@@ -27,6 +28,7 @@ class OrgPilotSettings:
 
     @classmethod
     def from_env(cls) -> "OrgPilotSettings":
+        use_ws_env = os.getenv("ORGPILOT_FEISHU_USE_WS", "true").strip().lower()
         settings = cls(
             database_url=os.getenv(
                 "ORGPILOT_DATABASE_URL",
@@ -40,6 +42,7 @@ class OrgPilotSettings:
             collaboration_adapter=os.getenv("ORGPILOT_COLLABORATION_ADAPTER", "mock")
             .strip()
             .lower(),
+            feishu_use_ws=use_ws_env in {"1", "true", "yes", "on"},
             feishu_app_id=_optional_env("FEISHU_APP_ID"),
             feishu_app_secret=_optional_env("FEISHU_APP_SECRET"),
             feishu_verification_token=_optional_env("FEISHU_VERIFICATION_TOKEN"),
@@ -57,14 +60,13 @@ class OrgPilotSettings:
         if self.collaboration_adapter not in {"mock", "feishu"}:
             raise ValueError("ORGPILOT_COLLABORATION_ADAPTER must be 'mock' or 'feishu'")
         if self.collaboration_adapter == "feishu":
-            missing = [
-                name
-                for name, value in (
-                    ("FEISHU_APP_ID", self.feishu_app_id),
-                    ("FEISHU_APP_SECRET", self.feishu_app_secret),
-                    ("FEISHU_VERIFICATION_TOKEN", self.feishu_verification_token),
-                )
-                if not value
+            required_items = [
+                ("FEISHU_APP_ID", self.feishu_app_id),
+                ("FEISHU_APP_SECRET", self.feishu_app_secret),
             ]
+            if not self.feishu_use_ws:
+                required_items.append(("FEISHU_VERIFICATION_TOKEN", self.feishu_verification_token))
+
+            missing = [name for name, value in required_items if not value]
             if missing:
                 raise ValueError("Missing required Feishu settings: " + ", ".join(missing))

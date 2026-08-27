@@ -9,12 +9,14 @@ from orgpilot.feishu.cards import (
 )
 from orgpilot.feishu.client import AsyncFeishuClient, FeishuClient, MockFeishuClient
 from orgpilot.feishu.webhook import FeishuWebhookHandler
+from orgpilot.feishu.ws import FeishuWebSocketListener
 
 __all__ = [
     "AsyncFeishuClient",
     "FeishuClient",
     "FeishuCollaborationAdapter",
     "FeishuWebhookHandler",
+    "FeishuWebSocketListener",
     "MockFeishuClient",
     "build_approval_card",
     "build_approval_updated_card",

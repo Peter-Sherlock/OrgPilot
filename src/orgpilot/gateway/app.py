@@ -1,5 +1,6 @@
 """FastAPI application factory and lifecycle management."""
 
+import contextlib
 import hmac
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -15,6 +16,7 @@ from orgpilot.extraction.client import AnthropicCompatibleLLMClient, LLMClient
 from orgpilot.extraction.extractor import ClaimExtractor
 from orgpilot.feishu.adapter import FeishuCollaborationAdapter
 from orgpilot.feishu.client import AsyncFeishuClient
+from orgpilot.feishu.ws import FeishuWebSocketListener
 from orgpilot.gateway.routes import approvals, cases, coordination, dag, events, feishu
 from orgpilot.gateway.service import GatewayService
 from orgpilot.storage.database import Database
@@ -61,6 +63,21 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await database.init_db()
+        if (
+            runtime_settings.collaboration_adapter == "feishu"
+            and runtime_settings.feishu_use_ws
+            and runtime_settings.feishu_app_id
+            and runtime_settings.feishu_app_secret
+        ):
+            ws_listener = FeishuWebSocketListener(
+                app_id=runtime_settings.feishu_app_id,
+                app_secret=runtime_settings.feishu_app_secret,
+                gateway_service=gateway_service,
+                project_id=runtime_settings.feishu_project_id,
+            )
+            with contextlib.suppress(Exception):
+                ws_listener.start()
+
         try:
             yield
         finally:
