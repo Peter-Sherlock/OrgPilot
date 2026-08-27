@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import httpx
 import pytest
 
+from orgpilot.config import OrgPilotSettings
 from orgpilot.gateway.app import create_app
 from orgpilot.storage.database import Database
 
@@ -15,7 +16,8 @@ NOW = datetime.fromisoformat("2026-09-10T10:00:00+08:00")
 async def client() -> httpx.AsyncClient:
     db = Database("sqlite+aiosqlite:///:memory:")
     await db.init_db()
-    app = create_app(db)
+    settings = OrgPilotSettings(collaboration_adapter="mock", feishu_use_ws=False)
+    app = create_app(db, settings=settings)
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
