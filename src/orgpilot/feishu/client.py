@@ -95,7 +95,8 @@ class AsyncFeishuClient:
         content: str | dict[str, Any],
         receive_id_type: str = "open_id",
     ) -> dict[str, Any]:
-        """Sends a message via Feishu OpenAPI."""
+        if receive_id_type == "open_id" and receive_id.startswith("oc_"):
+            receive_id_type = "chat_id"
         token = await self.get_tenant_access_token()
         url = f"{self.base_url}/open-apis/im/v1/messages?receive_id_type={receive_id_type}"
         headers = {"Authorization": f"Bearer {token}"}
