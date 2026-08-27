@@ -58,6 +58,10 @@ class FeishuWebhookHandler:
         if event_type == "card.action.trigger":
             return await self._handle_card_action(body.get("event", {}))
 
+        # 4. Handle direct unnested message payload
+        if "message" in body:
+            return await self._handle_message_received(body)
+
         return {"code": 0, "msg": "event ignored"}
 
     def _verify_callback(self, body: dict[str, Any]) -> None:
