@@ -8,7 +8,9 @@ from typing import Any
 from orgpilot.adapter.base import CollaborationAdapter
 from orgpilot.adapter.mock import MockCollaborationAdapter
 from orgpilot.agent.loop import CoordinationAgent
+from orgpilot.coordination.sync_coordinator import ProgressSyncCoordinator
 from orgpilot.domain.models import AgentTurnTrace
+from orgpilot.domain.sync_models import SyncSession
 from orgpilot.events.log import AppendResult
 from orgpilot.events.models import OrgEvent, parse_event
 from orgpilot.extraction.extractor import ClaimExtractor
@@ -36,6 +38,7 @@ class GatewayService:
         self.adapter_factory = adapter_factory or (
             lambda project_id: MockCollaborationAdapter(project_id=project_id)
         )
+        self._sync_coordinators: dict[str, ProgressSyncCoordinator] = {}
 
     async def get_or_replay_agent(self, project_id: str) -> CoordinationAgent:
         """Constructs an Agent with state restored from the persistent SQL event log and stores."""
@@ -158,3 +161,55 @@ class GatewayService:
             turn_reason,
             round_num,
         )
+
+    async def get_sync_coordinator(self, project_id: str) -> ProgressSyncCoordinator:
+        """Retrieves or creates a ProgressSyncCoordinator bound to the current project agent."""
+        if project_id not in self._sync_coordinators:
+            agent = await self.get_or_replay_agent(project_id)
+            self._sync_coordinators[project_id] = ProgressSyncCoordinator(
+                agent=agent,
+                adapter=agent.adapter,
+                extractor=self.extractor,
+            )
+        return self._sync_coordinators[project_id]
+
+    async def start_progress_sync(
+        self,
+        project_id: str,
+        initiated_by: str,
+        custom_intro: str | None = None,
+    ) -> SyncSession:
+        """Starts a distributed progress sync session with active task owners."""
+        coordinator = await self.get_sync_coordinator(project_id)
+        # Ensure latest state
+        agent = await self.get_or_replay_agent(project_id)
+        coordinator.agent = agent
+        coordinator.adapter = agent.adapter
+        return coordinator.start_sync_session(project_id, initiated_by, custom_intro)
+
+    async def handle_sync_member_reply(
+        self,
+        project_id: str,
+        member_id: str,
+        message: str,
+        occurred_at: datetime | None = None,
+    ) -> tuple[bool, str | None, SyncSession | None]:
+        """Handles reply from probed member, driving clarification or DAG briefing delivery."""
+        coordinator = await self.get_sync_coordinator(project_id)
+        active_session = coordinator.get_active_session(project_id)
+        if not active_session:
+            return True, None, None
+
+        converged, clarification_q = coordinator.handle_member_reply(
+            session_id=active_session.session_id,
+            member_id=member_id,
+            message=message,
+            occurred_at=occurred_at,
+        )
+
+        # Save any new events generated during the turn
+        for evt in coordinator.agent.event_log.events:
+            await self.event_store.append(evt)
+
+        await self.state_store.save_state(project_id, coordinator.agent.projector.state)
+        return converged, clarification_q, active_session

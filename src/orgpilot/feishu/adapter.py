@@ -16,6 +16,7 @@ from orgpilot.events.models import (
 )
 from orgpilot.feishu.cards import (
     build_approval_card,
+    build_executive_briefing_card,
     build_inquiry_card,
     build_notification_card,
 )
@@ -42,7 +43,7 @@ class FeishuCollaborationAdapter(CollaborationAdapter):
         return events
 
     def _run_async(self, coro: Any) -> Any:
-        """Helper to run async client calls inside sync adapter interface."""
+        """Helper to run async client methods synchronously from adapter interface."""
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -56,7 +57,24 @@ class FeishuCollaborationAdapter(CollaborationAdapter):
         return asyncio.run(coro)
 
     def send_private_message(self, command: ActionCommand) -> ActionResult:
-        """Sends a private inquiry card to the target team members."""
+        """Sends a private inquiry card or direct clarification message to team members."""
+        clarification_text = command.payload.get("clarification_text")
+        inquiry_text = command.payload.get("inquiry_text")
+
+        if clarification_text or inquiry_text:
+            msg_text = clarification_text or inquiry_text
+            for target in command.targets:
+                self._run_async(self.client.send_message(receive_id=target, content=msg_text))
+            result = ActionResult(
+                command_id=command.command_id,
+                action_id=command.action_id,
+                status=CommandStatus.SUCCESS,
+                output={"sent_to": command.targets, "text": msg_text},
+                executed_at=command.created_at,
+            )
+            self.audit_log.append((command, result))
+            return result
+
         task_id = command.payload.get("task_id", "unknown_task")
         title = command.payload.get("title", "")
         reason = command.payload.get("reason", "检测到排期延误或阻塞风险")
@@ -148,20 +166,26 @@ class FeishuCollaborationAdapter(CollaborationAdapter):
         return result
 
     def notify_group(self, command: ActionCommand) -> ActionResult:
-        """Sends a broadcast notification card to the target group or members."""
-        task_id = command.payload.get("task_id", "task")
-        task_title = command.payload.get("task_title", task_id)
-        new_deadline_str = str(command.payload.get("new_deadline", "待定"))
-        impacted_tasks = command.payload.get("impacted_tasks", [])
-        approver_name = command.payload.get("approved_by", "PM")
+        """Sends a broadcast notification card or executive briefing to target members."""
+        if command.payload.get("is_executive_briefing"):
+            card = build_executive_briefing_card(
+                briefing=command.payload.get("briefing", {}),
+                project_id=self.project_id,
+            )
+        else:
+            task_id = command.payload.get("task_id", "task")
+            task_title = command.payload.get("task_title", task_id)
+            new_deadline_str = str(command.payload.get("new_deadline", "待定"))
+            impacted_tasks = command.payload.get("impacted_tasks", [])
+            approver_name = command.payload.get("approved_by", "PM")
 
-        card = build_notification_card(
-            task_id=task_id,
-            task_title=task_title,
-            new_deadline_str=new_deadline_str,
-            impacted_tasks=impacted_tasks,
-            approver_name=approver_name,
-        )
+            card = build_notification_card(
+                task_id=task_id,
+                task_title=task_title,
+                new_deadline_str=new_deadline_str,
+                impacted_tasks=impacted_tasks,
+                approver_name=approver_name,
+            )
 
         for target in command.targets:
             self._run_async(self.client.send_card(receive_id=target, card=card))

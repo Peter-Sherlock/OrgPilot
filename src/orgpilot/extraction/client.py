@@ -144,7 +144,14 @@ class MockLLMClient(LLMClient):
                 break
             # Keyword indicator matching
             keywords_map = {
-                ("支付", "sdk", "pay", "payment"): ["pay", "payment", "支付", "sdk", "backend", "api"],
+                ("支付", "sdk", "pay", "payment"): [
+                    "pay",
+                    "payment",
+                    "支付",
+                    "sdk",
+                    "backend",
+                    "api",
+                ],
                 ("前端", "结账", "收银", "页面", "ui", "checkout"): [
                     "checkout",
                     "front",
@@ -203,7 +210,17 @@ class MockLLMClient(LLMClient):
         ]
         if any(phrase in message.lower() for phrase in casual_phrases) and not any(
             k in message
-            for k in ["延期", "卡住", "报错", "完成", "搞定", "block", "调通", "已解决", "按原计划推进"]
+            for k in [
+                "延期",
+                "卡住",
+                "报错",
+                "完成",
+                "搞定",
+                "block",
+                "调通",
+                "已解决",
+                "按原计划推进",
+            ]
         ):
             return ExtractionResult(
                 is_actionable=False, claims=[], commitments=[], reasoning="Casual chat"
@@ -233,7 +250,7 @@ class MockLLMClient(LLMClient):
                 is_actionable=True, claims=[], commitments=[commitment], reasoning="Commitment made"
             )
 
-        # 3. Check for resolved recovery ("已解决", "已修复", "恢复正常", "全部调通", "已完成", "按原计划推进")
+        # 3. Check for resolved recovery status
         is_recovery = any(
             k in message
             for k in [

@@ -70,3 +70,28 @@ def build_extraction_prompt(message: str, context: MessageContext) -> str:
 
 请严格按照 JSON Schema 格式输出提取结果。"""
     return prompt
+
+
+CLARIFICATION_SYSTEM_PROMPT = """你是一个高情商、专业的组织协同与项目管理助理。
+当团队成员在进度汇报中表达了模糊的风险、卡点或延误但缺少关键要素时，你的任务是生成一条简短、友好、得体且目标明确的追问消息。
+
+追问原则：
+1. 态度友好、支持性，避免机械生硬催问；
+2. 针对缺失的核心槽位（如：具体预计解决时间点、是否影响下游联调测试、需要哪些外部协助）；
+3. 字数控制在 40 字以内，清晰易懂。
+"""
+
+
+def build_clarification_prompt(
+    task_title: str,
+    member_name: str,
+    raw_reply: str,
+    missing_slots: list[str],
+) -> str:
+    """Builds prompt for generating contextual clarification follow-up question."""
+    slots_desc = "、".join(missing_slots)
+    return (
+        f"成员【{member_name}】负责任务【{task_title}】，最新回复是：“{raw_reply}”。\n"
+        f"当前评估缺少关键信息：【{slots_desc}】。\n"
+        "请生成一句得体、自然的追问回复，引导该成员提供缺失信息："
+    )

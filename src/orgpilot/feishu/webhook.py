@@ -168,6 +168,68 @@ class FeishuWebhookHandler:
             for evt in bootstrap_events:
                 await self.service.event_store.append(evt)
 
+        # 1. Check for PM proactive progress sync intent
+        is_sync_intent = any(
+            k in raw_text
+            for k in [
+                "跟进进度",
+                "同步进度",
+                "项目进度",
+                "进度汇总",
+                "检查进度",
+                "当前进度",
+                "我要知道当前的项目进度",
+                "看看进度",
+            ]
+        )
+        if is_sync_intent:
+            session = await self.service.start_progress_sync(self.project_id, initiated_by=actor_id)
+            adapter = self.service.adapter_factory(self.project_id)
+            client = getattr(adapter, "client", None)
+            if client and hasattr(client, "send_message"):
+                n_members = len(session.member_probes)
+                confirm_msg = (
+                    "🚀 **收到指令！已启动全员进度探针与协同工作流**\n\n"
+                    f"• **探测范围**：已向 {n_members} 位任务负责人发起 1 对 1 私聊探针\n"
+                    "• **智能追问**：若成员回复存在时间或阻塞模糊，系统将自主多轮追问收敛\n"
+                    "• **拓扑决策**：全员信息就绪后，将自动推演关键路径并呈送【决策简报】！"
+                )
+                try:
+                    res = client.send_message(
+                        receive_id=actor_id, msg_type="text", content={"text": confirm_msg}
+                    )
+                    if asyncio.iscoroutine(res):
+                        await res
+                except Exception:
+                    pass
+
+            return {
+                "code": 0,
+                "msg": "sync_session_started",
+                "data": {
+                    "session_id": session.session_id,
+                    "probed_members_count": len(session.member_probes),
+                },
+            }
+
+        # 2. Check if this is a reply to an active sync probe
+        coordinator = await self.service.get_sync_coordinator(self.project_id)
+        active_session = coordinator.get_active_session(self.project_id)
+        if active_session and actor_id in active_session.member_probes:
+            converged, clarify_q, _ = await self.service.handle_sync_member_reply(
+                project_id=self.project_id,
+                member_id=actor_id,
+                message=raw_text,
+                occurred_at=occurred_at,
+            )
+            if not converged and clarify_q:
+                return {
+                    "code": 0,
+                    "msg": "clarification_sent",
+                    "data": {"question": clarify_q},
+                }
+
+        # 3. Standard message ingestion and single-turn coordination
         is_act, ext_events, agent, reason, round_num = await self.service.ingest_message(
             project_id=self.project_id,
             message=raw_text,
@@ -186,9 +248,11 @@ class FeishuWebhookHandler:
                     "🎯 已为您自动初始化单人体验项目，您当前身兼「负责人」与「审批人 (PM)」角色：\n"
                     "• 关联任务链：[支付SDK接入] ➔ [收银台前端结账] ➔ [支付全链路压测与验收]\n\n"
                     "💬 您现在可以直接向我发送以下测试消息进行体验：\n"
-                    "1️⃣ 汇报阻塞与改期：「支付 SDK 报错，排查需要到明天下午 5 点」\n"
+                    "1️⃣ **发起全员主动协同**：「我要知道当前的项目进度」\n"
+                    "   （机器人将主动给相关负责人发私聊，多轮追问后为您汇总决策简报）\n"
+                    "2️⃣ **汇报阻塞与改期**：「支付 SDK 报错，排查需要到明天下午 5 点」\n"
                     "   （机器人将识别风险并向您发送交互式改期审批卡片）\n"
-                    "2️⃣ 汇报进度恢复：「支付 SDK 阻塞已解决，按原计划推进」\n\n"
+                    "3️⃣ **汇报进度恢复**：「支付 SDK 阻塞已解决，按原计划推进」\n\n"
                     "📊 浏览器访问 http://localhost:8000/ 可实时查看任务拓扑大盘与关键路径！"
                 )
                 try:
