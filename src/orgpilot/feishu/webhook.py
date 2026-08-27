@@ -3,9 +3,18 @@
 import asyncio
 import hmac
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+from orgpilot.domain.enums import WorkflowStatus
+from orgpilot.events.models import (
+    EventSource,
+    MemberRegisteredEvent,
+    MemberRegisteredPayload,
+    OrgEvent,
+    TaskCreatedEvent,
+    TaskCreatedPayload,
+)
 from orgpilot.feishu.cards import build_approval_updated_card
 
 if TYPE_CHECKING:
@@ -82,6 +91,79 @@ class FeishuWebhookHandler:
             else datetime.now(UTC)
         )
 
+        # Auto-bootstrap demo tasks for first-time solo tester
+        agent_init = await self.service.get_or_replay_agent(self.project_id)
+        if not agent_init.projector.state.tasks and actor_id:
+            now_ts = occurred_at
+            bootstrap_events: list[OrgEvent] = [
+                MemberRegisteredEvent(
+                    project_id=self.project_id,
+                    event_id=f"evt-boot-mem-{actor_id}",
+                    event_type="member.registered",
+                    source=EventSource.HUMAN,
+                    source_ref="auto-bootstrap",
+                    occurred_at=now_ts,
+                    received_at=now_ts,
+                    payload=MemberRegisteredPayload(
+                        member_id=actor_id,
+                        display_name="项目负责人(您)",
+                        role="pm",
+                    ),
+                ),
+                TaskCreatedEvent(
+                    project_id=self.project_id,
+                    event_id="evt-boot-task-pay",
+                    event_type="task.created",
+                    source=EventSource.TASK,
+                    source_ref="auto-bootstrap",
+                    occurred_at=now_ts,
+                    received_at=now_ts,
+                    payload=TaskCreatedPayload(
+                        task_id="task-payment",
+                        title="支付SDK接入",
+                        owner_id=actor_id,
+                        workflow_status=WorkflowStatus.DOING,
+                        deadline=now_ts + timedelta(days=2),
+                    ),
+                ),
+                TaskCreatedEvent(
+                    project_id=self.project_id,
+                    event_id="evt-boot-task-checkout",
+                    event_type="task.created",
+                    source=EventSource.TASK,
+                    source_ref="auto-bootstrap",
+                    occurred_at=now_ts,
+                    received_at=now_ts,
+                    payload=TaskCreatedPayload(
+                        task_id="task-checkout",
+                        title="收银台前端结账",
+                        owner_id=actor_id,
+                        workflow_status=WorkflowStatus.TODO,
+                        deadline=now_ts + timedelta(days=3),
+                        dependencies=("task-payment",),
+                    ),
+                ),
+                TaskCreatedEvent(
+                    project_id=self.project_id,
+                    event_id="evt-boot-task-qa",
+                    event_type="task.created",
+                    source=EventSource.TASK,
+                    source_ref="auto-bootstrap",
+                    occurred_at=now_ts,
+                    received_at=now_ts,
+                    payload=TaskCreatedPayload(
+                        task_id="task-qa",
+                        title="支付全链路压测与验收",
+                        owner_id=actor_id,
+                        workflow_status=WorkflowStatus.TODO,
+                        deadline=now_ts + timedelta(days=4),
+                        dependencies=("task-checkout",),
+                    ),
+                ),
+            ]
+            for evt in bootstrap_events:
+                await self.service.event_store.append(evt)
+
         is_act, ext_events, agent, reason, round_num = await self.service.ingest_message(
             project_id=self.project_id,
             message=raw_text,
@@ -97,11 +179,13 @@ class FeishuWebhookHandler:
             if client and hasattr(client, "send_message"):
                 greeting_text = (
                     "👋 你好！我是 OrgPilot 组织风险与排期协调智能体。\n\n"
-                    "💡 我可以自动识别任务进展与交付风险。您可以直接告诉我：\n"
-                    "• 风险汇报：「支付 SDK 报错，排查需要到明天下午 5 点」\n"
-                    "• 进度说明：「接口联调遇到阻塞，预计顺延 1 天」\n"
-                    "• 恢复正常：「阻塞已解决，按原计划推进」\n\n"
-                    "📊 实时 DAG 拓扑看板已在本地运行：http://localhost:8000/"
+                    "🎯 已为您自动初始化单人体验项目，您当前身兼「负责人」与「审批人 (PM)」角色：\n"
+                    "• 关联任务链：[支付SDK接入] ➔ [收银台前端结账] ➔ [支付全链路压测与验收]\n\n"
+                    "💬 您现在可以直接向我发送以下测试消息进行体验：\n"
+                    "1️⃣ 汇报阻塞与改期：「支付 SDK 报错，排查需要到明天下午 5 点」\n"
+                    "   （机器人将识别风险并向您发送交互式改期审批卡片）\n"
+                    "2️⃣ 汇报进度恢复：「支付 SDK 阻塞已解决，按原计划推进」\n\n"
+                    "📊 浏览器访问 http://localhost:8000/ 可实时查看任务拓扑大盘与关键路径！"
                 )
                 try:
                     res = client.send_message(
