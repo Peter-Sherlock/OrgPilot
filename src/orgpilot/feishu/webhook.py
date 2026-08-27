@@ -1,5 +1,6 @@
 """Feishu Webhook event parser and dispatcher for URL challenge, messages, and card actions."""
 
+import asyncio
 import hmac
 import json
 from datetime import UTC, datetime
@@ -89,6 +90,29 @@ class FeishuWebhookHandler:
             source_ref=message.get("message_id"),
             auto_run_turn=True,
         )
+
+        if not is_act and actor_id:
+            adapter = self.service.adapter_factory(self.project_id)
+            client = getattr(adapter, "client", None)
+            if client and hasattr(client, "send_message"):
+                greeting_text = (
+                    "👋 你好！我是 OrgPilot 组织风险与排期协调智能体。\n\n"
+                    "💡 我可以自动识别任务进展与交付风险。您可以直接告诉我：\n"
+                    "• 风险汇报：「支付 SDK 报错，排查需要到明天下午 5 点」\n"
+                    "• 进度说明：「接口联调遇到阻塞，预计顺延 1 天」\n"
+                    "• 恢复正常：「阻塞已解决，按原计划推进」\n\n"
+                    "📊 实时 DAG 拓扑看板已在本地运行：http://localhost:8000/"
+                )
+                try:
+                    res = client.send_message(
+                        receive_id=actor_id,
+                        msg_type="text",
+                        content={"text": greeting_text},
+                    )
+                    if asyncio.iscoroutine(res):
+                        await res
+                except Exception:
+                    pass
 
         return {
             "code": 0,
