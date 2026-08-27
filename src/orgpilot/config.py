@@ -2,6 +2,26 @@
 
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
+
+
+def _load_dotenv_if_exists(dotenv_path: str = ".env") -> None:
+    path = Path(dotenv_path)
+    if not path.exists():
+        return
+    try:
+        content = path.read_text(encoding="utf-8")
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            k = k.strip()
+            v = v.strip().strip("'\"")
+            if k and k not in os.environ:
+                os.environ[k] = v
+    except Exception:
+        pass
 
 
 def _optional_env(name: str) -> str | None:
@@ -28,6 +48,7 @@ class OrgPilotSettings:
 
     @classmethod
     def from_env(cls) -> "OrgPilotSettings":
+        _load_dotenv_if_exists()
         use_ws_env = os.getenv("ORGPILOT_FEISHU_USE_WS", "true").strip().lower()
         settings = cls(
             database_url=os.getenv(

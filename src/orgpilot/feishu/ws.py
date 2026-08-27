@@ -153,6 +153,8 @@ class FeishuWebSocketListener:
             event_handler=event_handler,
             log_level=lark.LogLevel.INFO,
         )
+        print(f"[*] [Feishu WS] Connecting to Feishu WebSocket stream (App ID: {self.app_id})...")
         self._ws_client.start()
+        print("[+] [Feishu WS] Connected to Feishu OpenAPI via WebSocket successfully!")
         logger.info("Feishu WebSocket long connection client started successfully!")
         return self._ws_client
