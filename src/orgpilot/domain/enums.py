@@ -88,3 +88,19 @@ class PolicyDisposition(StrEnum):
     ALLOW = "allow"
     REQUIRE_APPROVAL = "require_approval"
     DENY = "deny"
+
+
+class SyncSessionStatus(StrEnum):
+    INITIALIZED = "initialized"
+    PROBING = "probing"
+    CLARIFYING = "clarifying"
+    SYNTHESIZING = "synthesizing"
+    COMPLETED = "completed"
+    TIMEOUT = "timeout"
+
+
+class ProbeMemberStatus(StrEnum):
+    PENDING = "pending"
+    CLARIFYING = "clarifying"
+    COLLECTED = "collected"
+    TIMEOUT = "timeout"

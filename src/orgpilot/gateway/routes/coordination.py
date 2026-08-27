@@ -55,3 +55,33 @@ async def get_state(
             r.model_dump(mode="json") for r in agent.approval_manager.get_pending_requests()
         ],
     )
+
+
+@router.post("/sync")
+async def start_progress_sync_endpoint(
+    project_id: str,
+    initiated_by: str = "pm",
+    custom_intro: str | None = None,
+    service: GatewayService = Depends(get_service),
+) -> dict:
+    """Explicitly triggers a proactive progress sync probe across all active project members."""
+    session = await service.start_progress_sync(
+        project_id=project_id,
+        initiated_by=initiated_by,
+        custom_intro=custom_intro,
+    )
+    return session.model_dump(mode="json")
+
+
+@router.get("/sync-sessions/{session_id}")
+async def get_sync_session_endpoint(
+    project_id: str,
+    session_id: str,
+    service: GatewayService = Depends(get_service),
+) -> dict:
+    """Retrieves progress sync session status, member probe replies, and executive briefing."""
+    coordinator = await service.get_sync_coordinator(project_id)
+    session = coordinator.get_session(session_id)
+    if not session:
+        return {"error": "session not found", "session_id": session_id}
+    return session.model_dump(mode="json")

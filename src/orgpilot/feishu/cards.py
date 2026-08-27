@@ -212,3 +212,107 @@ def build_notification_card(
         },
         "elements": elements,
     }
+
+
+def build_executive_briefing_card(
+    briefing: dict[str, Any], project_id: str = "default"
+) -> dict[str, Any]:
+    """Generates an executive briefing card summarizing probe and DAG impact results."""
+    delayed = briefing.get("delayed_count", 0)
+    at_risk = briefing.get("at_risk_count", 0)
+    on_track = briefing.get("on_track_count", 0)
+    total = briefing.get("total_active_tasks", 0)
+
+    template_color = "red" if delayed > 0 else ("orange" if at_risk > 0 else "green")
+    status_emoji = (
+        "🔴 发现关键阻塞"
+        if delayed > 0
+        else ("🟡 存在潜在风险" if at_risk > 0 else "🟢 全线健康推进")
+    )
+
+    elements: list[dict[str, Any]] = [
+        {
+            "tag": "div",
+            "fields": [
+                {
+                    "is_short": True,
+                    "text": {"tag": "lark_md", "content": f"**整体健康度**\n{status_emoji}"},
+                },
+                {
+                    "is_short": True,
+                    "text": {"tag": "lark_md", "content": f"**活跃任务总数**\n`{total}` 项"},
+                },
+                {
+                    "is_short": True,
+                    "text": {"tag": "lark_md", "content": f"**🟢 正常推进**\n`{on_track}` 项"},
+                },
+                {
+                    "is_short": True,
+                    "text": {
+                        "tag": "lark_md",
+                        "content": f"**🔴 延误 / 🟡 风险**\n`{delayed}` 延误 / `{at_risk}` 风险",
+                    },
+                },
+            ],
+        },
+        {"tag": "hr"},
+    ]
+
+    # Topological risks section
+    risks = briefing.get("topological_risks", [])
+    if risks:
+        risk_md_lines = ["**⚠️ 关键拓扑阻塞与连锁影响**："]
+        for r in risks:
+            src_title = r.get("source_task_title") or r.get("source_task_id")
+            owner = r.get("owner_name", "负责人")
+            impacted = r.get("cascading_impact_tasks", [])
+            impacted_str = ", ".join(f"`{t}`" for t in impacted) if impacted else "无直接下游"
+            risk_md_lines.append(
+                f"• **`{src_title}`** (@{owner})：处于 `{r.get('health_status')}` 状态\n"
+                f"  ↳ **波及下游关键路径**：{impacted_str}"
+            )
+        elements.append(
+            {
+                "tag": "div",
+                "text": {"tag": "lark_md", "content": "\n".join(risk_md_lines)},
+            }
+        )
+        elements.append({"tag": "hr"})
+
+    # Recommendations
+    recs = briefing.get("recommended_actions", [])
+    if recs:
+        recs_md = "**💡 智能体协同建议**：\n" + "\n".join(
+            f"{idx + 1}. {act}" for idx, act in enumerate(recs)
+        )
+        elements.append(
+            {
+                "tag": "div",
+                "text": {"tag": "lark_md", "content": recs_md},
+            }
+        )
+        elements.append({"tag": "hr"})
+
+    # Action / Link buttons
+    elements.append(
+        {
+            "tag": "action",
+            "actions": [
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "📊 查看实时 DAG 拓扑看板"},
+                    "type": "primary",
+                    "url": "http://localhost:8000/",
+                }
+            ],
+        }
+    )
+
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"tag": "plain_text", "content": "📊 项目全景进度与拓扑风险简报"},
+            "template": template_color,
+        },
+        "elements": elements,
+    }
