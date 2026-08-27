@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import httpx
 import pytest
 
+from orgpilot.config import OrgPilotSettings
 from orgpilot.domain.enums import WorkflowStatus
 from orgpilot.events.models import (
     EventSource,
@@ -16,7 +17,6 @@ from orgpilot.events.models import (
     TaskHealthReportedEvent,
     TaskHealthReportedPayload,
 )
-from orgpilot.config import OrgPilotSettings
 from orgpilot.gateway.app import create_app
 from orgpilot.storage.database import Database
 
