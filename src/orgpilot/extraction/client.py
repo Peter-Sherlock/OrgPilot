@@ -135,19 +135,53 @@ class MockLLMClient(LLMClient):
     def _heuristic_extract(self, message: str, context: MessageContext) -> ExtractionResult:
         # Match task ID from context with bilingual alias support
         matched_task_id: str | None = None
+        msg_clean = message.lower().replace(" ", "")
         for task_id, title in context.known_tasks.items():
             t_id_lower = task_id.lower()
-            t_title_lower = title.lower()
-            if t_id_lower in message.lower() or t_title_lower in message.lower():
+            t_title_lower = title.lower().replace(" ", "")
+            if t_id_lower in message.lower() or t_title_lower in msg_clean:
                 matched_task_id = task_id
                 break
-            if "前端" in message and ("frontend" in t_id_lower or "frontend" in t_title_lower):
-                matched_task_id = task_id
-                break
-            if any(
-                w in message for w in ["后端", "支付", "sdk", "数据库", "redis", "接口", "网关"]
-            ) and ("backend" in t_id_lower or "api" in t_id_lower):
-                matched_task_id = task_id
+            # Keyword indicator matching
+            keywords_map = {
+                ("支付", "sdk", "pay", "payment"): ["pay", "payment", "支付", "sdk", "backend", "api"],
+                ("前端", "结账", "收银", "页面", "ui", "checkout"): [
+                    "checkout",
+                    "front",
+                    "frontend",
+                    "收银",
+                    "结账",
+                    "页面",
+                ],
+                ("压测", "验收", "测试", "qa", "test"): [
+                    "qa",
+                    "test",
+                    "压测",
+                    "验收",
+                    "测试",
+                    "联调",
+                ],
+                (
+                    "后端",
+                    "接口",
+                    "api",
+                    "网关",
+                    "服务端",
+                    "数据库",
+                    "redis",
+                    "死锁",
+                    "连接池",
+                ): ["backend", "api", "server", "后端", "接口", "db"],
+            }
+            matched = False
+            for trigger_kws, task_indicators in keywords_map.items():
+                if any(kw in message.lower() for kw in trigger_kws) and any(
+                    ind in t_id_lower or ind in t_title_lower for ind in task_indicators
+                ):
+                    matched_task_id = task_id
+                    matched = True
+                    break
+            if matched:
                 break
 
         if matched_task_id is None and len(context.known_tasks) == 1:
@@ -155,6 +189,9 @@ class MockLLMClient(LLMClient):
 
         # 1. Check for casual chat / non-actionable noise
         casual_phrases = [
+            "你好",
+            "hello",
+            "hi",
             "今天好累",
             "早安",
             "晚安",
@@ -164,9 +201,9 @@ class MockLLMClient(LLMClient):
             "收到，赞",
             "赞！",
         ]
-        if any(phrase in message for phrase in casual_phrases) and not any(
+        if any(phrase in message.lower() for phrase in casual_phrases) and not any(
             k in message
-            for k in ["延期", "卡住", "报错", "完成", "搞定", "block", "调通", "已解决"]
+            for k in ["延期", "卡住", "报错", "完成", "搞定", "block", "调通", "已解决", "按原计划推进"]
         ):
             return ExtractionResult(
                 is_actionable=False, claims=[], commitments=[], reasoning="Casual chat"
@@ -196,9 +233,18 @@ class MockLLMClient(LLMClient):
                 is_actionable=True, claims=[], commitments=[commitment], reasoning="Commitment made"
             )
 
-        # 3. Check for resolved recovery ("已解决", "已修复", "恢复正常", "全部调通", "已完成")
+        # 3. Check for resolved recovery ("已解决", "已修复", "恢复正常", "全部调通", "已完成", "按原计划推进")
         is_recovery = any(
-            k in message for k in ["已解决", "已修复", "恢复正常", "全部调通", "已完成", "搞定了"]
+            k in message
+            for k in [
+                "已解决",
+                "已修复",
+                "恢复正常",
+                "全部调通",
+                "已完成",
+                "搞定了",
+                "按原计划推进",
+            ]
         ) and not any(k in message for k in ["延期", "搞不定", "无法按时", "受阻", "才能把"])
         if is_recovery:
             claim = ExtractedHealthClaim(
