@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import threading
 from typing import TYPE_CHECKING, Any
 
 import lark_oapi as lark
@@ -40,8 +41,12 @@ class FeishuWebSocketListener:
             service=gateway_service,
             project_id=project_id,
         )
-        self._loop = loop
+        try:
+            self._loop = loop or asyncio.get_running_loop()
+        except RuntimeError:
+            self._loop = loop
         self._ws_client: lark.ws.Client | None = None
+        self._ws_thread: threading.Thread | None = None
 
     @property
     def loop(self) -> asyncio.AbstractEventLoop:
@@ -145,7 +150,7 @@ class FeishuWebSocketListener:
             return None
 
     def start(self) -> lark.ws.Client:
-        """Initializes and starts the background WebSocket connection."""
+        """Initializes and starts the background WebSocket connection in a daemon thread."""
         event_handler = self.build_event_handler()
         self._ws_client = lark.ws.Client(
             app_id=self.app_id,
@@ -153,8 +158,26 @@ class FeishuWebSocketListener:
             event_handler=event_handler,
             log_level=lark.LogLevel.INFO,
         )
-        print(f"[*] [Feishu WS] Connecting to Feishu WebSocket stream (App ID: {self.app_id})...")
-        self._ws_client.start()
-        print("[+] [Feishu WS] Connected to Feishu OpenAPI via WebSocket successfully!")
-        logger.info("Feishu WebSocket long connection client started successfully!")
+
+        def _ws_thread_worker() -> None:
+            thread_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(thread_loop)
+            import lark_oapi.ws.client as ws_module
+
+            ws_module.loop = thread_loop
+            print(
+                f"[*] [Feishu WS] Connecting to Feishu WebSocket stream (App ID: {self.app_id})..."
+            )
+            try:
+                self._ws_client.start()
+            except Exception as e:
+                logger.error("Feishu WS client encountered error: %s", e)
+
+        self._ws_thread = threading.Thread(
+            target=_ws_thread_worker,
+            name="FeishuWebSocketListenerThread",
+            daemon=True,
+        )
+        self._ws_thread.start()
+        logger.info("Feishu WebSocket long connection client thread launched successfully!")
         return self._ws_client
