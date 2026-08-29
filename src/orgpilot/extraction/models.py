@@ -28,6 +28,10 @@ class MessageContext(StrictModel):
     known_members: dict[str, str] = Field(
         default_factory=dict, description="Map of member_id to name and role"
     )
+    reference_timezone: str = Field(
+        default="Asia/Shanghai",
+        description="IANA timezone the team works in; relative times resolve against it",
+    )
     conversation_history: tuple[str, ...] = ()
 
 

@@ -125,7 +125,7 @@ def test_cli_eval_extraction(
     monkeypatch.setattr(sys, "argv", ["orgpilot", "eval-extraction"])
     assert cli.main() == 0
     output = capsys.readouterr().out
-    assert "[PASS] Natural Language Extraction Benchmark (20 samples):" in output
+    assert "[PASS] Natural Language Extraction Benchmark (mock, 20 samples):" in output
 
 
 def test_cli_eval_extraction_missing_file(

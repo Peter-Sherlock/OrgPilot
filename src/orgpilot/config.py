@@ -3,6 +3,7 @@
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 
 def _load_dotenv_if_exists(dotenv_path: str = ".env") -> None:
@@ -46,6 +47,7 @@ class OrgPilotSettings:
     feishu_app_secret: str | None = field(default=None, repr=False)
     feishu_verification_token: str | None = field(default=None, repr=False)
     feishu_project_id: str = "feishu-project"
+    reference_timezone: str = "Asia/Shanghai"
 
     @classmethod
     def from_env(cls) -> "OrgPilotSettings":
@@ -71,6 +73,7 @@ class OrgPilotSettings:
             feishu_app_secret=_optional_env("FEISHU_APP_SECRET"),
             feishu_verification_token=_optional_env("FEISHU_VERIFICATION_TOKEN"),
             feishu_project_id=os.getenv("ORGPILOT_FEISHU_PROJECT_ID", "feishu-project"),
+            reference_timezone=os.getenv("ORGPILOT_TIMEZONE", "Asia/Shanghai").strip(),
         )
         settings.validate()
         return settings
@@ -80,6 +83,12 @@ class OrgPilotSettings:
             raise ValueError("ORGPILOT_LLM_PROVIDER must be 'mock' or 'aihubmix'")
         if self.llm_provider == "aihubmix" and not self.aihubmix_api_key:
             raise ValueError("AIHUBMIX_API_KEY is required when ORGPILOT_LLM_PROVIDER=aihubmix")
+        try:
+            ZoneInfo(self.reference_timezone)
+        except Exception as exc:
+            raise ValueError(
+                f"ORGPILOT_TIMEZONE {self.reference_timezone!r} is not a valid IANA timezone"
+            ) from exc
 
         if self.collaboration_adapter not in {"mock", "feishu"}:
             raise ValueError("ORGPILOT_COLLABORATION_ADAPTER must be 'mock' or 'feishu'")

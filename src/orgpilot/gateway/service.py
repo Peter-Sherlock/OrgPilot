@@ -30,11 +30,13 @@ class GatewayService:
         db: Database,
         extractor: ClaimExtractor | None = None,
         adapter_factory: Callable[[str], CollaborationAdapter] | None = None,
+        reference_timezone: str = "Asia/Shanghai",
     ) -> None:
         self.db = db
         self.event_store = SqlEventStore(db)
         self.state_store = SqlStateStore(db)
         self.extractor = extractor or ClaimExtractor()
+        self.reference_timezone = reference_timezone
         self.adapter_factory = adapter_factory or (
             lambda project_id: MockCollaborationAdapter(project_id=project_id)
         )
@@ -169,6 +171,7 @@ class GatewayService:
             source_ref=source_ref,
             known_tasks=tasks_dict,
             known_members=members_dict,
+            reference_timezone=self.reference_timezone,
         )
 
         extraction_result, extracted_events = self.extractor.extract_from_message(message, context)
@@ -205,6 +208,7 @@ class GatewayService:
                 agent=agent,
                 adapter=agent.adapter,
                 extractor=self.extractor,
+                reference_timezone=self.reference_timezone,
             )
             coordinator.restore_sessions(await self.state_store.load_sync_sessions(project_id))
             self._sync_coordinators[project_id] = coordinator

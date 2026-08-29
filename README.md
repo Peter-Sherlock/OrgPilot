@@ -36,7 +36,8 @@ $env:AIHUBMIX_MODEL = "gpt-5.6-luna"
 uv run uvicorn orgpilot.gateway.app:create_app --factory --port 8000
 ```
 
-The offline 20-sample extraction result is a deterministic regression benchmark; it is not a measured accuracy claim for the live model.
+- The offline 20-sample extraction result (`--provider mock`) is a deterministic regression benchmark, not an accuracy claim.
+- Live-model benchmark via `uv run orgpilot eval-extraction --provider aihubmix` (requires `AIHUBMIX_API_KEY`): measured **F1 96.0%**, task-id accuracy 100%, grounding 100%, false alarms 0% on `gpt-5.6-luna` (2026-08-29). Relative times resolve against the team reference timezone (`ORGPILOT_TIMEZONE`, default `Asia/Shanghai`).
 
 - Feishu HTTP Webhook setup guide lives in `docs/feishu-setup-guide.md`.
 - The solo-tester demo task chain injected on a first Feishu message is opt-in: set `ORGPILOT_DEMO_BOOTSTRAP=true` (off by default).

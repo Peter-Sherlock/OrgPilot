@@ -45,6 +45,14 @@ def test_demo_bootstrap_env_parsing(monkeypatch: pytest.MonkeyPatch) -> None:
         assert OrgPilotSettings.from_env().demo_bootstrap is False
 
 
+def test_reference_timezone_validation(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ORGPILOT_TIMEZONE", "Asia/Shanghai")
+    assert OrgPilotSettings.from_env().reference_timezone == "Asia/Shanghai"
+    monkeypatch.setenv("ORGPILOT_TIMEZONE", "Not/AZone")
+    with pytest.raises(ValueError, match="ORGPILOT_TIMEZONE"):
+        OrgPilotSettings.from_env()
+
+
 def test_aihubmix_client_is_only_enabled_explicitly() -> None:
     db = Database("sqlite+aiosqlite:///:memory:")
     mock_app = create_app(db, settings=OrgPilotSettings())

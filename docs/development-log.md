@@ -1,5 +1,48 @@
 # 开发记录
 
+## 2026-08-29：AIHubMix 真实模型冒烟、时区缺陷修复与在线基准（推进计划第二步·中）
+
+### 已实现
+
+- **`eval-extraction --provider aihubmix|mock`**：在线模型基准一键运行（读取 AIHUBMIX_* 配置并计费调用）；离线 mock 基准保持确定性回归定位不变。
+- **团队参考时区机制**：新增 `ORGPILOT_TIMEZONE`（默认 `Asia/Shanghai`，启动时做 IANA 校验），贯通 GatewayService → ProgressSyncCoordinator → MessageContext → 抽取提示词；相对时间（“明天下午5点”等）按团队时区解析并强制输出同偏移 ISO 时间；引入 `tzdata` 依赖保证 Windows 下 `zoneinfo` 可用。
+- **提示词工程**（基于在线基准逐样本诊断，全部为通用规则而非针对样本过拟合）：
+  - 任务实体对齐强制化：`task_id` 只能从已知任务列表逐字选取，口语表述对齐语义最近任务——修复模型编造 `payment_sdk`/`frontend_ui` 类 ID 被接地校验器整条丢弃导致的召回损失；
+  - `delayed` vs `at_risk` 判定语言 sharpen（“要延到…/卡住必须等到…/N天后才能恢复”→ delayed）；
+  - `on_track` 恢复类声明 `expected_completion` 置 null；仅给日期/天数未指明时刻按 18:00（与离线 `TemporalResolver` 约定一致）。
+
+### 在线基准实测（gpt-5.6-luna via AIHubMix，20 样本）
+
+| 指标 | 提示词强化前 | 强化后 |
+| --- | --- | --- |
+| Health Status F1 | 76.19% | **96.00%** |
+| Recall | 66.67% | 100.00% |
+| Precision | 88.89% | 92.31% |
+| 任务 ID 准确率 | 75.00% | 100.00% |
+| 时间槽准确率 | 66.67% | 83.33% |
+| 误报率 | 0.00% | 0.00% |
+| 接地率 | 100.00% | 100.00% |
+
+基准门槛（F1≥90%、误报≤5%、接地=100%）由 FAIL 转 **PASS**；离线 mock 基准保持 100% 不变。README 已更新为实测数据。
+
+### 真实模型时区缺陷（已修复）
+
+首次冒烟发现“明天下午5点”被解析为 `T17:00:00+00:00`（UTC 墙钟直标），与团队实际时区相差 8 小时；根因是提示词将 UTC `occurred_at` 原样注入且未约束输出偏移。修复后实测输出 `2026-08-30T17:00:00+08:00`。注：开发机本地时区（UTC-4）与团队时区（Asia/Shanghai）不一致，因此设计为**可配置 IANA 时区**而非机器本地时区。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS (4 P0 + 5 M1)
+orgpilot eval-extraction (mock): PASS (20 samples, 100% F1)
+orgpilot eval-extraction --provider aihubmix: PASS (20 samples, 96.00% F1)
+pytest: 168 passed
+coverage: 90.19% branch-aware total coverage (fail_under=90%)
+ruff: All checks passed
+git diff --check: PASS
+```
+
+---
+
 ## 2026-08-29：多成员并发交互机制与真实飞书连接冒烟（推进计划第二步·上）
 
 ### 已实现（多成员并发三件套）

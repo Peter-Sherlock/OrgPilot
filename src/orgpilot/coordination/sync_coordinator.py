@@ -40,12 +40,14 @@ class ProgressSyncCoordinator:
         adapter: CollaborationAdapter | None = None,
         extractor: ClaimExtractor | None = None,
         max_clarification_turns: int = 2,
+        reference_timezone: str = "Asia/Shanghai",
     ) -> None:
         self.agent = agent
         self.adapter = adapter or agent.adapter
         self.extractor = extractor or ClaimExtractor()
         self.analyzer = DependencyAnalyzer()
         self.max_clarification_turns = max_clarification_turns
+        self.reference_timezone = reference_timezone
         self._sessions: dict[str, SyncSession] = {}
 
     def get_session(self, session_id: str) -> SyncSession | None:
@@ -203,6 +205,7 @@ class ProgressSyncCoordinator:
                 m.member_id: m.role for m in self.agent.projector.state.members.values()
             },
             conversation_history=probe.raw_replies[:-1],
+            reference_timezone=self.reference_timezone,
         )
         result, events = self.extractor.extract_from_message(message, context)
 

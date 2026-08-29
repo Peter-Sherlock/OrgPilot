@@ -58,6 +58,7 @@ def create_app(
         database,
         extractor=extractor,
         adapter_factory=adapter_factory,
+        reference_timezone=runtime_settings.reference_timezone,
     )
 
     @asynccontextmanager

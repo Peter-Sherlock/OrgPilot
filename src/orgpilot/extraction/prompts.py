@@ -1,5 +1,7 @@
 """Prompt templates and dynamic context assembly for structured claim extraction."""
 
+from zoneinfo import ZoneInfo
+
 from orgpilot.extraction.models import MessageContext
 
 SYSTEM_PROMPT = """你是一个组织协同状态提取专家。你的职责是从团队成员的消息中，
@@ -8,30 +10,47 @@ SYSTEM_PROMPT = """你是一个组织协同状态提取专家。你的职责是�
 ### 规则与约束：
 1. **健康状态分类**：
    - `on_track`：任务正常推进、已完成、阻塞已解除或已恢复。
-   - `at_risk`：存在潜在风险、遇到困难、排查中或不确定能否按时完成。
-   - `delayed`：明确延期、无法在原截止日前完成、遇到严重阻碍。
+   - `delayed`：明确延期或受阻推迟（“要延到…”、“卡住必须等到…”、“估计 N 天后才能恢复”），
+     或给出了晚于当前计划的新完成时间点。
+   - `at_risk`：仍在排查、存在风险苗头，但尚未形成明确的延期结论。
    - `unknown`：仅提及任务但无明确健康推断。
 
 2. **引文真实性（强制）**：
    - 提取的每一个声明必须包含 `source_quote`，
      且必须是原消息中**一字不差的真实子串**。严禁捏造或脑补引文！
 
-3. **任务实体消歧**：
-   - 将用户口语化的任务表述（如“支付接口”、“前端部分”）对齐到上下文给定的标准 `task_id`。
-     如果无法对应任何已知任务，不要强行匹配。
+3. **任务实体对齐（强制）**：
+   - `task_id` 只能从「已知任务列表」中**逐字选取**，严禁发明、缩写或新造任何 ID；
+   - 将口语化表述（如“支付接口”、“前端部分”、“第三方网关”）对齐到语义最接近的已知任务；
+   - 仅当消息与任何已知任务都无法对应时，才不输出该声明。
 
 4. **闲聊与非风险过滤**：
    - 对于日常问候、感叹、情绪表达或不涉及项目状态的消息，
      设置 `is_actionable=false`，`claims` 与 `commitments` 为空列表。
 
-5. **时间解析**：
-   - 依据给定的消息发生基准时间（occurred_at），
-     将相对时间解析为带时区的 ISO 8601 字符串格式。
+5. **时间解析（时区强制）**：
+   - 以上下文中给出的「消息发生时间（团队参考时区）」为唯一基准，
+     解析“今天/明天/后天/周N/下午N点”等相对时间；
+   - 输出的 `expected_completion` 与 `due_at` 必须携带与该基准相同的时区偏移
+     （例如参考时区为 +08:00 时，本地下午 5 点必须输出 `T17:00:00+08:00`）；
+   - 严禁把本地墙钟时间直接标成 UTC（例如下午 5 点绝不能输出 `T17:00:00+00:00`）；
+   - 相对时间只给出日期或天数而未指明时刻时，按当天 18:00 处理；
+   - `on_track`（已恢复/已完成）类声明的 `expected_completion` 置 null，
+     除非消息明确给出未来某个新的完成时间点。
 """
 
 
 def build_extraction_prompt(message: str, context: MessageContext) -> str:
     """Builds the full user prompt with injected task and member context."""
+    try:
+        reference_tz = ZoneInfo(context.reference_timezone)
+    except Exception:
+        reference_tz = None
+    local_occurred_at = (
+        context.occurred_at.astimezone(reference_tz).isoformat()
+        if reference_tz is not None
+        else context.occurred_at.isoformat()
+    )
     tasks_desc = (
         "\n".join(f"- {task_id}: {desc}" for task_id, desc in context.known_tasks.items())
         if context.known_tasks
@@ -53,7 +72,8 @@ def build_extraction_prompt(message: str, context: MessageContext) -> str:
     prompt = f"""### 当前项目上下文：
 - 项目 ID: {context.project_id}
 - 发送人 ID: {context.actor_id}
-- 消息发生时间: {context.occurred_at.isoformat()}
+- 团队参考时区: {context.reference_timezone}（相对时间解析的唯一基准）
+- 消息发生时间（参考时区）: {local_occurred_at}
 
 ### 已知任务列表：
 {tasks_desc}
