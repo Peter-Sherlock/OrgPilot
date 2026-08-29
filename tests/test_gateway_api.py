@@ -420,6 +420,33 @@ async def test_new_sync_supersedes_previous_active_session(client: httpx.AsyncCl
     assert alive["member_probes"]["ou_alice"]["status"] == "collected"
 
 
+async def test_pm_directive_message_is_routed_as_directive(client: httpx.AsyncClient) -> None:
+    """Regression for the live-test failure: a PM directive used to fall into
+    'no task state change' silence; it must now be recognized as an directive."""
+    base = "/api/v1/projects/proj-intent"
+    await client.post(f"{base}/bootstrap-sandbox")
+
+    resp = await client.post(
+        f"{base}/sandbox-chat",
+        params={"actor_id": "ou_pm", "message": "告诉Alice，必须在明天上午12点之前完成"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["type"] == "normal_turn"
+    assert data["intent"] == "directive"
+    assert "指令" in data["bot_reply"]
+
+    # A plain status report keeps flowing through the health pipeline.
+    report = await client.post(
+        f"{base}/sandbox-chat",
+        params={"actor_id": "ou_alice", "message": "支付SDK接入一切正常，按原计划推进"},
+    )
+    assert report.status_code == 200
+    report_data = report.json()
+    assert report_data["intent"] == "health_report"
+    assert report_data["is_actionable"] is True
+
+
 async def test_sync_session_survives_gateway_restart(tmp_path) -> None:
     """A restart mid-collection must restore the active sync session so member
     replies are not orphaned and the scatter-gather cycle can complete."""

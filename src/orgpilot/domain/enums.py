@@ -99,3 +99,16 @@ class ProbeMemberStatus(StrEnum):
     CLARIFYING = "clarifying"
     COLLECTED = "collected"
     NO_RESPONSE = "no_response"
+
+
+class MessageIntent(StrEnum):
+    """Routing-level intent classes recognized before claim extraction."""
+
+    HEALTH_REPORT = "health_report"
+    DIRECTIVE = "directive"
+    TASK_CREATE = "task_create"
+    TASK_REASSIGN = "task_reassign"
+    DEADLINE_CHANGE = "deadline_change"
+    QUESTION = "question"
+    CHIT_CHAT = "chit_chat"
+    UNCERTAIN = "uncertain"

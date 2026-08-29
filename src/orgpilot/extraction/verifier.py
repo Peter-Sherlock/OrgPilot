@@ -48,6 +48,7 @@ class GroundingVerifier:
             is_actionable=is_act,
             claims=valid_claims,
             commitments=valid_commitments,
+            intent=result.intent,
             reasoning=result.reasoning,
         )
 

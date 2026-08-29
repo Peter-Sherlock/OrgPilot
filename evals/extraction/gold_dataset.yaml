@@ -225,3 +225,110 @@ samples:
         blocker: "前端组件库版本冲突受阻"
         confidence: 0.95
         source_quote: "前端组件库版本冲突受阻，周五下午 4 点前搞不定"
+
+  # ---- Intent routing samples (M3: role-aware directive / lifecycle / question) ----
+
+  - sample_id: s21_pm_directive_regression_live_case
+    message: "告诉Alice，必须在明天上午12点之前完成"
+    actor_id: carol
+    occurred_at: "2026-09-10T15:00:00+08:00"
+    expected_is_actionable: false
+    expected_intent: directive
+
+  - sample_id: s22_member_directive_attempt
+    message: "让Bob帮忙看看收银台的报错"
+    actor_id: alice
+    occurred_at: "2026-09-10T15:10:00+08:00"
+    expected_is_actionable: false
+    expected_intent: directive
+
+  - sample_id: s23_task_create_by_pm
+    message: "新增一个任务：网关压测脚本，由David负责，周五前完成"
+    actor_id: carol
+    occurred_at: "2026-09-10T15:20:00+08:00"
+    expected_is_actionable: false
+    expected_intent: task_create
+
+  - sample_id: s24_task_reassign_to_member
+    message: "把后端接口的联调交给bob负责"
+    actor_id: carol
+    occurred_at: "2026-09-10T15:30:00+08:00"
+    expected_is_actionable: false
+    expected_intent: task_reassign
+
+  - sample_id: s25_pm_deadline_change
+    message: "后端接口的截止时间改到下周五"
+    actor_id: carol
+    occurred_at: "2026-09-10T15:40:00+08:00"
+    expected_is_actionable: false
+    expected_intent: deadline_change
+
+  - sample_id: s26_member_delay_stays_health_report
+    message: "收银台前端要延期到明天下午 6 点，组件报错"
+    actor_id: bob
+    occurred_at: "2026-09-10T16:00:00+08:00"
+    expected_is_actionable: true
+    expected_intent: health_report
+    expected_claims:
+      - task_id: frontend_integration
+        health_status: delayed
+        expected_completion: "2026-09-11T18:00:00+08:00"
+        blocker: "收银台前端要延期到明天下午 6 点"
+        confidence: 0.95
+        source_quote: "收银台前端要延期到明天下午 6 点，组件报错"
+
+  - sample_id: s27_question_about_schedule
+    message: "网关压测什么时候可以开始？"
+    actor_id: bob
+    occurred_at: "2026-09-10T16:10:00+08:00"
+    expected_is_actionable: false
+    expected_intent: question
+
+  - sample_id: s28_chit_chat_thanks
+    message: "收到，辛苦了！"
+    actor_id: alice
+    occurred_at: "2026-09-10T16:20:00+08:00"
+    expected_is_actionable: false
+    expected_intent: chit_chat
+
+  - sample_id: s29_uncertain_falls_to_llm
+    message: "这个方案我持保留意见，先这样吧"
+    actor_id: bob
+    occurred_at: "2026-09-10T16:30:00+08:00"
+    expected_is_actionable: false
+    expected_intent: uncertain
+
+  - sample_id: s30_pm_mandate_directive_without_verb
+    message: "Alice必须明天上午12点之前完成支付接入"
+    actor_id: carol
+    occurred_at: "2026-09-10T16:40:00+08:00"
+    expected_is_actionable: false
+    expected_intent: directive
+
+  - sample_id: s31_question_progress_check
+    message: "后端接口现在进展怎么样了？"
+    actor_id: carol
+    occurred_at: "2026-09-10T16:50:00+08:00"
+    expected_is_actionable: false
+    expected_intent: question
+
+  - sample_id: s32_task_create_english
+    message: "Let's create a new task for the gateway load test"
+    actor_id: carol
+    occurred_at: "2026-09-10T17:00:00+08:00"
+    expected_is_actionable: false
+    expected_intent: task_create
+
+  - sample_id: s33_reassign_via_owner_change
+    message: "前端联调的负责人换成bob"
+    actor_id: carol
+    occurred_at: "2026-09-10T17:10:00+08:00"
+    expected_is_actionable: false
+    expected_intent: task_reassign
+
+  - sample_id: s34_chit_chat_encouragement
+    message: "早上好！新的一天加油"
+    actor_id: alice
+    occurred_at: "2026-09-10T09:00:00+08:00"
+    expected_is_actionable: false
+    expected_intent: chit_chat

@@ -115,6 +115,7 @@ def _eval_extraction(dataset_path: Path, provider: str = "mock") -> int:
     print(f"  - Slot DateTime Accuracy: {metrics.slot_datetime_accuracy:.2%}")
     print(f"  - False Alarm Rate: {metrics.false_alarm_rate:.2%}")
     print(f"  - Grounding Valid Rate: {metrics.grounding_valid_rate:.2%}")
+    print(f"  - Intent Accuracy: {metrics.intent_accuracy:.2%}")
     return 0 if metrics.passed else 1
 
 

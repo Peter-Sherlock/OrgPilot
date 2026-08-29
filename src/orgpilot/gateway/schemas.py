@@ -43,6 +43,7 @@ class MessageIngestResponse(StrictSchema):
     extracted_events: list[dict[str, Any]]
     turn_termination_reason: str | None = None
     turn_round_number: int | None = None
+    intent: str | None = None
 
 
 class ApprovalDecisionRequest(StrictSchema):

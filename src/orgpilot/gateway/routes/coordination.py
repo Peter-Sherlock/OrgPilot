@@ -302,20 +302,44 @@ async def sandbox_chat_endpoint(
         }
 
     # Normal message
-    is_act, ext_events, agent, reason, round_num = await service.ingest_message(
+    is_act, ext_events, agent, reason, round_num, intent = await service.ingest_message(
         project_id=project_id,
         message=message,
         actor_id=actor_id,
         occurred_at=now,
         auto_run_turn=True,
     )
+    intent_notices = {
+        "directive": (
+            "已识别为一条执行指令（含目标成员/时间要求）。"
+            "指令下达与执行跟踪链路将在下一里程碑启用，本期已准确识别并记录。"
+        ),
+        "task_create": (
+            "已识别为任务创建请求。任务创建需经审批门禁，该链路将在下一里程碑启用，本期已准确识别。"
+        ),
+        "task_reassign": (
+            "已识别为任务改派请求。改派需经审批门禁，该链路将在下一里程碑启用，本期已准确识别。"
+        ),
+        "deadline_change": (
+            "已识别为截止期变更请求。变更需结合依赖拓扑冲突分析后审批，"
+            "该链路将在下一里程碑启用，本期已准确识别。"
+        ),
+        "question": (
+            "已识别为提问。智能问答链路将在后续版本启用；"
+            "当前可由 PM 发起全员进度同步获取最新状态。"
+        ),
+    }
+    bot_reply = (
+        "已识别任务状态变更并更新项目账本"
+        if is_act
+        else intent_notices.get(intent, "收到消息，当前无需要变更的任务状态")
+    )
     return {
         "type": "normal_turn",
         "is_actionable": is_act,
+        "intent": intent,
         "extracted_events_count": len(ext_events),
-        "bot_reply": (
-            "已识别任务状态变更并更新项目账本" if is_act else "收到消息，当前无需要变更的任务状态"
-        ),
+        "bot_reply": bot_reply,
         "turn_reason": reason,
     }
 

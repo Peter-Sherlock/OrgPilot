@@ -50,7 +50,7 @@ async def ingest_message(
 ) -> MessageIngestResponse:
     """Ingests a natural language chat message, extracts claims, and optionally triggers a turn."""
     try:
-        is_act, ext_events, agent, reason, round_num = await service.ingest_message(
+        is_act, ext_events, agent, reason, round_num, intent = await service.ingest_message(
             project_id=project_id,
             message=body.message,
             actor_id=body.actor_id,
@@ -64,6 +64,7 @@ async def ingest_message(
             extracted_events=[e.model_dump(mode="json") for e in ext_events],
             turn_termination_reason=reason,
             turn_round_number=round_num,
+            intent=intent,
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

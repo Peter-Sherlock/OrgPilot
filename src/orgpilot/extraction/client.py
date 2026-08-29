@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 
-from orgpilot.domain.enums import HealthStatus
+from orgpilot.domain.enums import HealthStatus, MessageIntent
 from orgpilot.extraction.models import (
     ExtractedCommitment,
     ExtractedHealthClaim,
@@ -65,6 +65,8 @@ class AnthropicCompatibleLLMClient(LLMClient):
                 }
             ],
             "max_tokens": self.max_tokens,
+            # Greedy decoding keeps the extraction benchmark reproducible.
+            "temperature": 0,
             "stream": False,
         }
         response = self._client.post(
@@ -223,7 +225,11 @@ class MockLLMClient(LLMClient):
             ]
         ):
             return ExtractionResult(
-                is_actionable=False, claims=[], commitments=[], reasoning="Casual chat"
+                is_actionable=False,
+                claims=[],
+                commitments=[],
+                intent=MessageIntent.CHIT_CHAT,
+                reasoning="Casual chat",
             )
 
         if matched_task_id is None:
@@ -231,6 +237,7 @@ class MockLLMClient(LLMClient):
                 is_actionable=False,
                 claims=[],
                 commitments=[],
+                intent=MessageIntent.UNCERTAIN,
                 reasoning="No unambiguous task reference found",
             )
 
@@ -247,7 +254,11 @@ class MockLLMClient(LLMClient):
                 source_quote=message,
             )
             return ExtractionResult(
-                is_actionable=True, claims=[], commitments=[commitment], reasoning="Commitment made"
+                is_actionable=True,
+                claims=[],
+                commitments=[commitment],
+                intent=MessageIntent.HEALTH_REPORT,
+                reasoning="Commitment made",
             )
 
         # 3. Check for resolved recovery status
@@ -273,7 +284,11 @@ class MockLLMClient(LLMClient):
                 source_quote=message,
             )
             return ExtractionResult(
-                is_actionable=True, claims=[claim], commitments=[], reasoning="Task recovered"
+                is_actionable=True,
+                claims=[claim],
+                commitments=[],
+                intent=MessageIntent.HEALTH_REPORT,
+                reasoning="Task recovered",
             )
 
         # 4. Check for delayed / at_risk
@@ -308,11 +323,19 @@ class MockLLMClient(LLMClient):
                 source_quote=message,
             )
             return ExtractionResult(
-                is_actionable=True, claims=[claim], commitments=[], reasoning="Risk/delay reported"
+                is_actionable=True,
+                claims=[claim],
+                commitments=[],
+                intent=MessageIntent.HEALTH_REPORT,
+                reasoning="Risk/delay reported",
             )
 
         return ExtractionResult(
-            is_actionable=False, claims=[], commitments=[], reasoning="No actionable state found"
+            is_actionable=False,
+            claims=[],
+            commitments=[],
+            intent=MessageIntent.UNCERTAIN,
+            reasoning="No actionable state found",
         )
 
 

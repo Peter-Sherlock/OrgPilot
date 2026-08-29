@@ -250,7 +250,7 @@ class FeishuWebhookHandler:
                 }
 
         # 3. Standard message ingestion and single-turn coordination
-        is_act, ext_events, agent, reason, round_num = await self.service.ingest_message(
+        is_act, ext_events, agent, reason, round_num, _intent = await self.service.ingest_message(
             project_id=self.project_id,
             message=raw_text,
             actor_id=actor_id,

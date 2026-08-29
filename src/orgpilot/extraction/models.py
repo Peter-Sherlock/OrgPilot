@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from orgpilot.domain.enums import HealthStatus
+from orgpilot.domain.enums import HealthStatus, MessageIntent
 
 
 class StrictModel(BaseModel):
@@ -60,12 +60,47 @@ class ExtractedCommitment(StrictModel):
     source_quote: str = Field(description="Exact verbatim substring from message")
 
 
+class IntentHint(StrictModel):
+    """Loose entity hints captured during intent routing for downstream slot extraction."""
+
+    mentioned_member_ids: tuple[str, ...] = Field(
+        default_factory=tuple,
+        description="Known member ids referenced by the message (e.g. directive targets)",
+    )
+    mentioned_task_ids: tuple[str, ...] = Field(
+        default_factory=tuple,
+        description="Known task ids referenced by the message",
+    )
+    raw_time_expr: str | None = Field(
+        default=None,
+        description="Verbatim deadline-ish time expression, e.g. '明天上午12点' (unresolved)",
+    )
+
+
+class IntentResult(StrictModel):
+    """Outcome of the pre-extraction intent routing pass."""
+
+    intent: MessageIntent
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    method: Literal["rule", "llm"] = "rule"
+    authority_ok: bool | None = Field(
+        default=None,
+        description="Whether the actor's role may exercise this intent (None = role-insensitive)",
+    )
+    reasoning: str = ""
+    hints: IntentHint = Field(default_factory=IntentHint)
+
+
 class ExtractionResult(StrictModel):
     """Structured LLM extraction outcome."""
 
     is_actionable: bool
     claims: list[ExtractedHealthClaim] = Field(default_factory=list)
     commitments: list[ExtractedCommitment] = Field(default_factory=list)
+    intent: MessageIntent | None = Field(
+        default=None,
+        description="Routing-level intent; None on results produced before intent routing",
+    )
     reasoning: str = Field(default="", description="Brief extraction decision summary")
 
 
@@ -79,6 +114,7 @@ class EvaluationSample(StrictModel):
     expected_is_actionable: bool
     expected_claims: list[ExtractedHealthClaim] = Field(default_factory=list)
     expected_commitments: list[ExtractedCommitment] = Field(default_factory=list)
+    expected_intent: MessageIntent | None = None
 
 
 class ExtractionMetrics(StrictModel):
@@ -92,4 +128,5 @@ class ExtractionMetrics(StrictModel):
     slot_datetime_accuracy: float
     false_alarm_rate: float
     grounding_valid_rate: float
+    intent_accuracy: float = 1.0
     passed: bool

@@ -4,6 +4,7 @@ from pathlib import Path
 
 import yaml
 
+from orgpilot.domain.enums import MessageIntent
 from orgpilot.extraction.extractor import ClaimExtractor
 from orgpilot.extraction.models import (
     EvaluationSample,
@@ -24,6 +25,7 @@ def load_gold_dataset(path: Path) -> list[EvaluationSample]:
         commitments = [
             ExtractedCommitment.model_validate(c) for c in item.get("expected_commitments", [])
         ]
+        expected_intent = item.get("expected_intent")
         samples.append(
             EvaluationSample(
                 sample_id=item["sample_id"],
@@ -33,6 +35,7 @@ def load_gold_dataset(path: Path) -> list[EvaluationSample]:
                 expected_is_actionable=item.get("expected_is_actionable", True),
                 expected_claims=claims,
                 expected_commitments=commitments,
+                expected_intent=MessageIntent(expected_intent) if expected_intent else None,
             )
         )
     return samples
@@ -64,6 +67,9 @@ def evaluate_extractor(
     grounded_quotes = 0
     total_extracted_quotes = 0
 
+    intent_matches = 0
+    total_intent_samples = 0
+
     for sample in samples:
         context = MessageContext(
             project_id="eval-proj",
@@ -74,6 +80,12 @@ def evaluate_extractor(
         )
 
         result, _ = extractor.extract_from_message(sample.message, context)
+
+        # Intent accuracy on samples that declare an expected intent
+        if sample.expected_intent is not None:
+            total_intent_samples += 1
+            if result.intent == sample.expected_intent:
+                intent_matches += 1
 
         # Check false alarms on non-actionable samples
         if not sample.expected_is_actionable:
@@ -122,8 +134,14 @@ def evaluate_extractor(
     dt_acc = datetime_matches / total_expected_datetimes if total_expected_datetimes > 0 else 1.0
     fa_rate = false_alarms / total_non_actionable if total_non_actionable > 0 else 0.0
     grounding_rate = grounded_quotes / total_extracted_quotes if total_extracted_quotes > 0 else 1.0
+    intent_acc = intent_matches / total_intent_samples if total_intent_samples > 0 else 1.0
 
-    passed = f1 >= 0.90 and fa_rate <= 0.05 and grounding_rate == 1.0
+    passed = (
+        f1 >= 0.90
+        and fa_rate <= 0.05
+        and grounding_rate == 1.0
+        and (intent_acc >= 0.90 or total_intent_samples == 0)
+    )
 
     return ExtractionMetrics(
         total_samples=len(samples),
@@ -134,5 +152,6 @@ def evaluate_extractor(
         slot_datetime_accuracy=round(dt_acc, 4),
         false_alarm_rate=round(fa_rate, 4),
         grounding_valid_rate=round(grounding_rate, 4),
+        intent_accuracy=round(intent_acc, 4),
         passed=passed,
     )

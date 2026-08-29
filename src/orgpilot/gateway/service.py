@@ -160,7 +160,7 @@ class GatewayService:
         occurred_at: datetime | None = None,
         source_ref: str | None = None,
         auto_run_turn: bool = True,
-    ) -> tuple[bool, list[OrgEvent], CoordinationAgent, str | None, int | None]:
+    ) -> tuple[bool, list[OrgEvent], CoordinationAgent, str | None, int | None, str | None]:
         """Extracts claims from natural language message, persists events, and optionally
         executes a turn.
 
@@ -168,6 +168,9 @@ class GatewayService:
         anything (and unknown senders are auto-registered, so it normally should not),
         the persistent event log stays replayable instead of being bricked by an
         event that can never be projected.
+
+        Returns ``(is_actionable, events, agent, turn_reason, round_num, intent)``
+        where ``intent`` is the routing-level classification of the message.
         """
         ts = occurred_at or datetime.now(UTC)
         agent = await self.get_or_replay_agent(project_id)
@@ -230,6 +233,7 @@ class GatewayService:
             agent,
             turn_reason,
             round_num,
+            extraction_result.intent.value if extraction_result.intent else None,
         )
 
     async def get_sync_coordinator(self, project_id: str) -> ProgressSyncCoordinator:
