@@ -222,6 +222,25 @@ async def get_project_timeline(
         elif evt.event_type == "task.updated":
             title = f"排期更新: {task_id}"
             desc = f"最新截止时间: {getattr(evt.payload, 'deadline', '')}"
+        elif evt.event_type.startswith("directive."):
+            action = evt.event_type.split(".", 1)[1]
+            action_labels = {
+                "issued": "📩 指令下达",
+                "acknowledged": "✅ 指令确认",
+                "completed": "🏁 指令完成",
+                "reminded": "⏰ 指令催办",
+                "escalated": "🚨 指令升级",
+            }
+            payload = evt.payload
+            dir_id = getattr(payload, "directive_id", "")
+            title = f"{action_labels.get(action, evt.event_type)}: {dir_id}"
+            if action == "issued":
+                desc = (
+                    f"{getattr(payload, 'issuer_id', '')} → {getattr(payload, 'target_id', '')}"
+                    f"，截止: {getattr(payload, 'deadline', '未指定')}"
+                )
+            else:
+                desc = f"指令 {dir_id} 状态变更由 {evt.actor_id} 触发"
 
         entries.append(
             TimelineEntry(

@@ -48,12 +48,24 @@ class OrgPilotSettings:
     feishu_verification_token: str | None = field(default=None, repr=False)
     feishu_project_id: str = "feishu-project"
     reference_timezone: str = "Asia/Shanghai"
+    directive_reminder_minutes: int = 60
+    directive_escalation_minutes: int = 1440
 
     @classmethod
     def from_env(cls) -> "OrgPilotSettings":
         _load_dotenv_if_exists()
         use_ws_env = os.getenv("ORGPILOT_FEISHU_USE_WS", "true").strip().lower()
         demo_bootstrap_env = os.getenv("ORGPILOT_DEMO_BOOTSTRAP", "false").strip().lower()
+
+        def _int_env(name: str, default: int) -> int:
+            raw = os.getenv(name, "").strip()
+            if not raw:
+                return default
+            try:
+                return int(raw)
+            except ValueError:
+                return default
+
         settings = cls(
             database_url=os.getenv(
                 "ORGPILOT_DATABASE_URL",
@@ -74,6 +86,8 @@ class OrgPilotSettings:
             feishu_verification_token=_optional_env("FEISHU_VERIFICATION_TOKEN"),
             feishu_project_id=os.getenv("ORGPILOT_FEISHU_PROJECT_ID", "feishu-project"),
             reference_timezone=os.getenv("ORGPILOT_TIMEZONE", "Asia/Shanghai").strip(),
+            directive_reminder_minutes=_int_env("ORGPILOT_DIRECTIVE_REMINDER_MINUTES", 60),
+            directive_escalation_minutes=_int_env("ORGPILOT_DIRECTIVE_ESCALATION_MINUTES", 1440),
         )
         settings.validate()
         return settings

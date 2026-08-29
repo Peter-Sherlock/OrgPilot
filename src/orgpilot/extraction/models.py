@@ -101,6 +101,10 @@ class ExtractionResult(StrictModel):
         default=None,
         description="Routing-level intent; None on results produced before intent routing",
     )
+    hints: IntentHint | None = Field(
+        default=None,
+        description="Entity hints from intent routing (targets, tasks, raw time expression)",
+    )
     reasoning: str = Field(default="", description="Brief extraction decision summary")
 
 

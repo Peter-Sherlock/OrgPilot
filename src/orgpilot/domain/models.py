@@ -13,6 +13,7 @@ from orgpilot.domain.enums import (
     CommandStatus,
     CommitmentStatus,
     CoordinationCaseStatus,
+    DirectiveStatus,
     HealthStatus,
     PolicyDisposition,
     RiskLevel,
@@ -31,6 +32,25 @@ class MemberState(StrictModel):
     display_name: str
     role: str
     source_event_id: str
+    last_update_at: datetime
+
+
+class DirectiveState(StrictModel):
+    """A relayed work directive from an issuer (usually PM) to a target member."""
+
+    directive_id: str
+    text: str
+    issuer_id: str
+    target_id: str
+    task_id: str | None = None
+    deadline: datetime | None = None
+    status: DirectiveStatus = DirectiveStatus.ISSUED
+    issued_at: datetime
+    acknowledged_at: datetime | None = None
+    completed_at: datetime | None = None
+    reminder_count: int = 0
+    escalated: bool = False
+    source_event_ids: tuple[str, ...] = ()
     last_update_at: datetime
 
 
@@ -190,5 +210,6 @@ class OrgState(StrictModel):
     tasks: dict[str, TaskState] = Field(default_factory=dict)
     health_claims: dict[str, TaskHealthClaim] = Field(default_factory=dict)
     commitments: dict[str, Commitment] = Field(default_factory=dict)
+    directives: dict[str, DirectiveState] = Field(default_factory=dict)
     processed_event_ids: set[str] = Field(default_factory=set)
     last_event_id: str | None = None

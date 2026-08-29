@@ -44,6 +44,8 @@ class MessageIngestResponse(StrictSchema):
     turn_termination_reason: str | None = None
     turn_round_number: int | None = None
     intent: str | None = None
+    directive_kind: str | None = None
+    notices: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ApprovalDecisionRequest(StrictSchema):

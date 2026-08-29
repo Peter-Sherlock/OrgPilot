@@ -164,6 +164,9 @@
             <button onclick="forceCompleteSync()" class="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/40 text-amber-300 border border-amber-500/40 rounded text-[11px] font-semibold transition">
               ⏭️ 未响应成员直接出简报
             </button>
+            <button onclick="remindDirectives()" class="px-2.5 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 border border-rose-500/40 rounded text-[11px] font-semibold transition">
+              📣 催办未确认指令
+            </button>
             <button onclick="refreshData()" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded text-[11px] transition">
               🔄 刷新状态
             </button>
@@ -205,6 +208,9 @@
             <button onclick="sendRoleMsg('ou_alice', '支付 SDK 阻塞已解决，按原计划推进')" class="px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 border border-emerald-500/40 rounded text-[11px] transition">
               ✅ 报告已恢复
             </button>
+            <button onclick="sendRoleMsg('ou_alice', '收到，马上处理')" class="px-2.5 py-1 bg-violet-500/20 hover:bg-violet-500/40 text-violet-300 border border-violet-500/40 rounded text-[11px] font-semibold transition">
+              📩 确认收到指令
+            </button>
           </div>
           <div id="chatStreamAlice" class="flex-1 p-4 overflow-auto space-y-3 max-h-[380px] bg-slate-950/40 text-xs">
             <div class="chat-bubble-bot p-3 rounded-xl text-slate-300 space-y-1">
@@ -234,6 +240,9 @@
             <button onclick="sendRoleMsg('ou_bob', '前端组件库升级受阻，需要延期到周五')" class="px-2.5 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 border border-rose-500/40 rounded text-[11px] transition">
               ⚠️ 报告前端延期
             </button>
+            <button onclick="sendRoleMsg('ou_bob', '收到，马上处理')" class="px-2.5 py-1 bg-violet-500/20 hover:bg-violet-500/40 text-violet-300 border border-violet-500/40 rounded text-[11px] font-semibold transition">
+              📩 确认收到指令
+            </button>
           </div>
           <div id="chatStreamBob" class="flex-1 p-4 overflow-auto space-y-3 max-h-[380px] bg-slate-950/40 text-xs">
             <div class="chat-bubble-bot p-3 rounded-xl text-slate-300 space-y-1">
@@ -262,6 +271,9 @@
             </button>
             <button onclick="sendRoleMsg('ou_david', '压测环境搭建卡住了，联调至少要延到周五才能开测')" class="px-2.5 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 border border-rose-500/40 rounded text-[11px] transition">
               ⚠️ 报告验收延期
+            </button>
+            <button onclick="sendRoleMsg('ou_david', '收到，马上处理')" class="px-2.5 py-1 bg-violet-500/20 hover:bg-violet-500/40 text-violet-300 border border-violet-500/40 rounded text-[11px] font-semibold transition">
+              📩 确认收到指令
             </button>
           </div>
           <div id="chatStreamDavid" class="flex-1 p-4 overflow-auto space-y-3 max-h-[380px] bg-slate-950/40 text-xs">
@@ -436,9 +448,11 @@
       container.scrollTop = container.scrollHeight;
     }
 
+    const ROLE_STREAMS = { 'ou_pm': { id: 'chatStreamPM', name: '项目负责人 PM' }, 'ou_alice': { id: 'chatStreamAlice', name: '支付工程师 Alice' }, 'ou_bob': { id: 'chatStreamBob', name: '前端工程师 Bob' }, 'ou_david': { id: 'chatStreamDavid', name: 'QA 测试 David' } };
+
     async function sendRoleMsg(actorId, message) {
       const pid = getProjectId();
-      const streamMap = { 'ou_pm': { id: 'chatStreamPM', name: '项目负责人 PM' }, 'ou_alice': { id: 'chatStreamAlice', name: '支付工程师 Alice' }, 'ou_bob': { id: 'chatStreamBob', name: '前端工程师 Bob' }, 'ou_david': { id: 'chatStreamDavid', name: 'QA 测试 David' } };
+      const streamMap = ROLE_STREAMS;
       const cfg = streamMap[actorId] || { id: 'chatStreamPM', name: actorId };
       appendChatBubble(cfg.id, true, cfg.name, message);
       const res = await fetch(`/api/v1/projects/${pid}/sandbox-chat?actor_id=${actorId}&message=${encodeURIComponent(message)}`, { method: 'POST' });
@@ -467,7 +481,26 @@
       } else {
         appendChatBubble(cfg.id, false, 'OrgPilot 机器人', data.bot_reply || '消息已处理');
       }
+      (data.notices || []).forEach(n => {
+        const target = streamMap[n.actor_id] || { id: 'chatStreamPM', name: n.actor_id };
+        setTimeout(() => appendChatBubble(target.id, false, '📩 指令送达', n.text), 250);
+      });
       await refreshData();
+    }
+
+    async function remindDirectives() {
+      const pid = getProjectId();
+      const res = await fetch(`/api/v1/projects/${pid}/directives/remind`, { method: 'POST' });
+      if (!res.ok) {
+        appendChatBubble('chatStreamPM', false, '系统错误', `催办失败（HTTP ${res.status}），请查看网关日志。`);
+        return;
+      }
+      const data = await res.json();
+      appendChatBubble('chatStreamPM', false, 'OrgPilot 机器人', data.bot_reply);
+      (data.notices || []).forEach(n => {
+        const target = ROLE_STREAMS[n.actor_id] || { id: 'chatStreamPM', name: n.actor_id };
+        setTimeout(() => appendChatBubble(target.id, false, '📩 指令送达', n.text), 250);
+      });
     }
 
     async function forceCompleteSync() {

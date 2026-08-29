@@ -43,6 +43,7 @@ class ClaimExtractor:
                 ExtractionResult(
                     is_actionable=False,
                     intent=routed.intent,
+                    hints=routed.hints,
                     reasoning=(
                         f"intent={routed.intent.value} via {routed.method} "
                         f"(conf={routed.confidence:.2f}): {routed.reasoning}"
@@ -57,7 +58,7 @@ class ClaimExtractor:
         # Enforce grounding and filter hallucinated claims
         verified_result = self.verifier.filter_and_verify(raw_result, message, context)
         verified_result = verified_result.model_copy(
-            update={"intent": raw_result.intent or routed.intent}
+            update={"intent": raw_result.intent or routed.intent, "hints": routed.hints}
         )
 
         events: list[OrgEvent] = []

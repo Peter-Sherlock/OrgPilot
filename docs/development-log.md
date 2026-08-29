@@ -1,5 +1,41 @@
 # 开发记录
 
+## 2026-08-29：M3 第二项——指令执行链路（升级方案·柱 2）
+
+### 定位
+
+ADR-0007 解决了指令「识别」，本项补上「执行与传达」：PM 指令从聊天话语变成事件溯源的工作项——送达、确认、完成、催办、升级全链路闭环。
+
+### 已交付
+
+- **五个指令事件**：`directive.issued / acknowledged / completed / reminded / escalated`，投影到 `OrgState.directives`——重启恢复、审计回放、幂等去重复用既有事件账本，零新增存储表。
+- **DirectiveManager**（独立于 CaseLedger，理由见 ADR-0008）：下达前槽位收敛（目标缺失/不存在 → 追问；唯一任务自动绑定、多任务 → 追问；「上午12点」歧义 → 追问正午/午夜；非特权角色 → 拒绝并引导走 PM）；回复拦截语义克制（仅显式"收到"确认、仅明确"完成"表述，其余回复原样走抽取管线）。
+- **传达与升级**：adapter 新增 `SEND_DIRECTIVE` 动作（沙箱跨窗格通知与真实飞书私聊同路径）；每条消息摄入顺带超时清扫（默认 60 分钟自动提醒、1440 分钟向发布者升级，均可用 `ORGPILOT_DIRECTIVE_*_MINUTES` 配置）；PM 一键催办端点 `POST /directives/remind`。
+- **可视化**：时间线新增指令事件解读（📩 下达 / ✅ 确认 / 🏁 完成 / ⏰ 催办 / 🚨 升级）；沙箱成员窗格新增「📩 确认收到指令」快捷按钮，PM 窗格新增「📣 催办未确认指令」。
+- **修复**：指令相对时间解析锚点先转团队参考时区（UTC 存储时间戳不得作锚点，否则「明天下午5点」漂移 8 小时）——与抽取管线时区裁定对齐，附回归测试。
+- **事故记录**：插入指令事件类时误截断 `CommitmentSupersededPayload` 的 `reason/replacement_commitment_id` 尾部字段，导致 replay 场景 9→3——被验证门当场逮住并修复；教训：在既有类后插入代码时 old_string 必须匹配完整类体。
+
+### 真机验证（gpt-5.6-luna，gpt 路由 + 规则槽位）
+
+下达（截止 08-30 17:00 正确、任务自动绑定【支付SDK接入】、Alice 窗格收到指令卡）→ Alice「收到，马上处理」确认（PM 窗格收到回执）→ 「支付SDK已经完成」完成（PM 收到 🏁）→ 催办空态报"没有待确认"；给 David 下达不确认 → 催办送达 David 窗格；时间线五类指令事件全部正确解读。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS
+orgpilot eval-extraction (mock): PASS (34 samples)
+pytest: 202 passed (+15: 指令单测 12 + e2e/重启恢复/时区回归 3)
+coverage: 90.15% branch-aware total coverage (fail_under=90%)
+ruff: All checks passed
+git diff --check: PASS
+```
+
+### 已知边界
+
+确认/完成判定基于关键词（否定/受阻词有否决保护）；同步会话进行中目标成员回复优先走探针路径，指令确认延迟（记录于 ADR-0008）；任务创建/改派的 NL 执行链（需审批门禁）为下一项。
+
+---
+
 ## 2026-08-29：M3 第一项——角色感知意图路由层（升级方案·柱 1/柱 4）
 
 ### 背景与定位

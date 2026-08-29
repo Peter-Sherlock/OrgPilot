@@ -302,7 +302,7 @@ async def sandbox_chat_endpoint(
         }
 
     # Normal message
-    is_act, ext_events, agent, reason, round_num, intent = await service.ingest_message(
+    result = await service.ingest_message(
         project_id=project_id,
         message=message,
         actor_id=actor_id,
@@ -310,10 +310,6 @@ async def sandbox_chat_endpoint(
         auto_run_turn=True,
     )
     intent_notices = {
-        "directive": (
-            "已识别为一条执行指令（含目标成员/时间要求）。"
-            "指令下达与执行跟踪链路将在下一里程碑启用，本期已准确识别并记录。"
-        ),
         "task_create": (
             "已识别为任务创建请求。任务创建需经审批门禁，该链路将在下一里程碑启用，本期已准确识别。"
         ),
@@ -329,19 +325,43 @@ async def sandbox_chat_endpoint(
             "当前可由 PM 发起全员进度同步获取最新状态。"
         ),
     }
-    bot_reply = (
+    bot_reply = result.bot_reply or (
         "已识别任务状态变更并更新项目账本"
-        if is_act
-        else intent_notices.get(intent, "收到消息，当前无需要变更的任务状态")
+        if result.is_actionable
+        else intent_notices.get(result.intent or "", "收到消息，当前无需要变更的任务状态")
     )
-    return {
+    response: dict = {
         "type": "normal_turn",
-        "is_actionable": is_act,
-        "intent": intent,
-        "extracted_events_count": len(ext_events),
+        "is_actionable": result.is_actionable,
+        "intent": result.intent,
+        "directive": result.directive_kind,
+        "extracted_events_count": len(result.events),
         "bot_reply": bot_reply,
-        "turn_reason": reason,
+        "turn_reason": result.turn_reason,
     }
+    if result.notices:
+        response["notices"] = [
+            {"actor_id": notice.actor_id, "text": notice.text} for notice in result.notices
+        ]
+    return response
+
+
+@router.post("/directives/remind")
+async def remind_directives_endpoint(
+    project_id: str,
+    service: GatewayService = Depends(get_service),
+) -> dict:
+    """Nudges every still-unacknowledged directive (manual escalation button)."""
+    result = await service.remind_directives(project_id, operator_id="pm_web_operator")
+    response: dict = {
+        "type": result.directive_kind or "none",
+        "bot_reply": result.bot_reply or "当前没有待确认的指令。",
+    }
+    if result.notices:
+        response["notices"] = [
+            {"actor_id": notice.actor_id, "text": notice.text} for notice in result.notices
+        ]
+    return response
 
 
 @router.post("/sync/complete")

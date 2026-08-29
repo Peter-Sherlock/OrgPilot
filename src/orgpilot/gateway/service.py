@@ -1,15 +1,19 @@
 """Gateway coordination service orchestrating persistence and Agent execution."""
 
 import asyncio
+import logging
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
 from orgpilot.adapter.base import CollaborationAdapter
 from orgpilot.adapter.mock import MockCollaborationAdapter
 from orgpilot.agent.loop import CoordinationAgent
+from orgpilot.coordination.directives import DirectiveManager, DirectiveNotice
 from orgpilot.coordination.sync_coordinator import ProgressSyncCoordinator
-from orgpilot.domain.models import AgentTurnTrace
+from orgpilot.domain.enums import MessageIntent
+from orgpilot.domain.models import ActionCommand, AgentTurnTrace
 from orgpilot.domain.sync_models import SyncSession
 from orgpilot.events.log import AppendResult
 from orgpilot.events.models import (
@@ -25,6 +29,23 @@ from orgpilot.storage.database import Database
 from orgpilot.storage.event_store import SqlEventStore
 from orgpilot.storage.state_store import SqlStateStore
 
+logger = logging.getLogger("orgpilot.gateway.service")
+
+
+@dataclass
+class MessageIngestResult:
+    """Full outcome of ingesting one natural-language message."""
+
+    is_actionable: bool
+    events: list[OrgEvent]
+    agent: CoordinationAgent
+    turn_reason: str | None = None
+    round_num: int | None = None
+    intent: str | None = None
+    directive_kind: str | None = None
+    bot_reply: str | None = None
+    notices: list[DirectiveNotice] = field(default_factory=list)
+
 
 class GatewayService:
     """Coordinates event ingestion, natural language extraction, and agent execution with
@@ -37,12 +58,16 @@ class GatewayService:
         extractor: ClaimExtractor | None = None,
         adapter_factory: Callable[[str], CollaborationAdapter] | None = None,
         reference_timezone: str = "Asia/Shanghai",
+        directive_reminder_minutes: int = 60,
+        directive_escalation_minutes: int = 1440,
     ) -> None:
         self.db = db
         self.event_store = SqlEventStore(db)
         self.state_store = SqlStateStore(db)
         self.extractor = extractor or ClaimExtractor()
         self.reference_timezone = reference_timezone
+        self.directive_reminder_minutes = directive_reminder_minutes
+        self.directive_escalation_minutes = directive_escalation_minutes
         self.adapter_factory = adapter_factory or (
             lambda project_id: MockCollaborationAdapter(project_id=project_id)
         )
@@ -160,7 +185,7 @@ class GatewayService:
         occurred_at: datetime | None = None,
         source_ref: str | None = None,
         auto_run_turn: bool = True,
-    ) -> tuple[bool, list[OrgEvent], CoordinationAgent, str | None, int | None, str | None]:
+    ) -> MessageIngestResult:
         """Extracts claims from natural language message, persists events, and optionally
         executes a turn.
 
@@ -169,8 +194,10 @@ class GatewayService:
         the persistent event log stays replayable instead of being bricked by an
         event that can never be projected.
 
-        Returns ``(is_actionable, events, agent, turn_reason, round_num, intent)``
-        where ``intent`` is the routing-level classification of the message.
+        Directive intents drive the directive lifecycle (issue/relay, clarify,
+        authority decline); replies from directive targets are intercepted for
+        acknowledge/complete transitions; unanswered directives auto-remind and
+        escalate by age.
         """
         ts = occurred_at or datetime.now(UTC)
         agent = await self.get_or_replay_agent(project_id)
@@ -212,12 +239,58 @@ class GatewayService:
         extraction_result, extracted_events = self.extractor.extract_from_message(message, context)
         ingest_events.extend(extracted_events)
 
+        directive_kind: str | None = None
+        directive_reply: str | None = None
+        directive_notices: list[DirectiveNotice] = []
+        directive_outbound: list[ActionCommand] = []
+        manager = self._directive_manager_for(agent)
+
+        if extraction_result.intent is MessageIntent.DIRECTIVE:
+            outcome = manager.handle_directive_intent(
+                message=message,
+                actor_id=actor_id,
+                hints=extraction_result.hints,
+                state=agent.projector.state,
+                occurred_at=ts,
+            )
+            directive_kind = outcome.kind
+            directive_reply = outcome.bot_reply
+            directive_notices = list(outcome.notices)
+            directive_outbound = list(outcome.outbound)
+            if outcome.events:
+                ingest_events.extend(outcome.events)
+        else:
+            # Timeout sweep first, then reply interception for open directives.
+            sweep = manager.sweep_timeouts(agent.projector.state, ts)
+            if sweep.events:
+                ingest_events.extend(sweep.events)
+                directive_notices.extend(sweep.notices)
+                directive_outbound.extend(sweep.outbound)
+                directive_kind = "swept"
+            reply_outcome = manager.handle_member_reply(
+                actor_id, message, agent.projector.state, ts
+            )
+            if reply_outcome is not None and reply_outcome.kind != "none":
+                directive_kind = reply_outcome.kind
+                directive_reply = reply_outcome.bot_reply
+                directive_notices.extend(reply_outcome.notices)
+                ingest_events.extend(reply_outcome.events)
+            elif reply_outcome is not None:
+                directive_reply = reply_outcome.bot_reply
+
         # Project in memory first; a domain rejection here leaves the SQL log untouched.
         for evt in ingest_events:
             if agent.event_log.append(evt) is AppendResult.APPENDED:
                 agent.projector.apply(evt)
         for evt in ingest_events:
             await self.event_store.append(evt)
+
+        # Relay messages only after their events are durably persisted.
+        for command in directive_outbound:
+            try:
+                agent.adapter.execute(command)
+            except Exception as exc:  # transport failures must not break the chain
+                logger.error("Directive relay failed via adapter: %s", exc)
 
         turn_reason: str | None = None
         round_num: int | None = None
@@ -227,15 +300,64 @@ class GatewayService:
             turn_reason = turn_trace.termination_reason.value
             round_num = turn_trace.round_number
 
-        return (
-            extraction_result.is_actionable,
-            extracted_events,
-            agent,
-            turn_reason,
-            round_num,
-            extraction_result.intent.value if extraction_result.intent else None,
+        return MessageIngestResult(
+            is_actionable=extraction_result.is_actionable,
+            events=extracted_events,
+            agent=agent,
+            turn_reason=turn_reason,
+            round_num=round_num,
+            intent=extraction_result.intent.value if extraction_result.intent else None,
+            directive_kind=directive_kind,
+            bot_reply=directive_reply,
+            notices=directive_notices,
         )
 
+    def _directive_manager_for(self, agent: CoordinationAgent) -> DirectiveManager:
+        """Builds a stateless directive manager bound to the agent's live adapter."""
+        return DirectiveManager(
+            adapter=agent.adapter,
+            reminder_after_minutes=self.directive_reminder_minutes,
+            escalation_after_minutes=self.directive_escalation_minutes,
+            reference_timezone=self.reference_timezone,
+        )
+
+    async def remind_directives(self, project_id: str, operator_id: str) -> MessageIngestResult:
+        """Manually nudges every unacknowledged directive and persists the reminders."""
+        async with self._project_lock(project_id):
+            agent = await self.get_or_replay_agent(project_id)
+            manager = self._directive_manager_for(agent)
+            outcome = manager.remind_open_directives(
+                agent.projector.state, operator_id, datetime.now(UTC)
+            )
+            if outcome.kind == "none":
+                return MessageIngestResult(
+                    is_actionable=False,
+                    events=[],
+                    agent=agent,
+                    intent=None,
+                    directive_kind="none",
+                    bot_reply=outcome.bot_reply,
+                )
+
+            for evt in outcome.events:
+                if agent.event_log.append(evt) is AppendResult.APPENDED:
+                    agent.projector.apply(evt)
+                await self.event_store.append(evt)
+            await self.save_agent_state(agent)
+            for command in outcome.outbound:
+                try:
+                    agent.adapter.execute(command)
+                except Exception as exc:
+                    logger.error("Directive reminder failed via adapter: %s", exc)
+            return MessageIngestResult(
+                is_actionable=False,
+                events=outcome.events,
+                agent=agent,
+                intent=None,
+                directive_kind="reminded",
+                bot_reply=outcome.bot_reply,
+                notices=list(outcome.notices),
+            )
     async def get_sync_coordinator(self, project_id: str) -> ProgressSyncCoordinator:
         """Retrieves or creates a ProgressSyncCoordinator bound to the current project agent.
 

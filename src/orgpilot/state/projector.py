@@ -3,10 +3,11 @@
 from collections.abc import Iterable
 from typing import Any
 
-from orgpilot.domain.enums import ClaimStatus, CommitmentStatus, HealthStatus
+from orgpilot.domain.enums import ClaimStatus, CommitmentStatus, DirectiveStatus, HealthStatus
 from orgpilot.domain.errors import DomainInvariantError
 from orgpilot.domain.models import (
     Commitment,
+    DirectiveState,
     MemberState,
     OrgState,
     TaskHealthClaim,
@@ -15,6 +16,11 @@ from orgpilot.domain.models import (
 from orgpilot.events.models import (
     CommitmentMadeEvent,
     CommitmentSupersededEvent,
+    DirectiveAcknowledgedEvent,
+    DirectiveCompletedEvent,
+    DirectiveEscalatedEvent,
+    DirectiveIssuedEvent,
+    DirectiveRemindedEvent,
     MemberRegisteredEvent,
     OrgEvent,
     TaskCreatedEvent,
@@ -60,6 +66,16 @@ class OrgProjector:
                 self._make_commitment(event)
             case CommitmentSupersededEvent():
                 self._supersede_commitment(event)
+            case DirectiveIssuedEvent():
+                self._issue_directive(event)
+            case DirectiveAcknowledgedEvent():
+                self._acknowledge_directive(event)
+            case DirectiveCompletedEvent():
+                self._complete_directive(event)
+            case DirectiveRemindedEvent():
+                self._remind_directive(event)
+            case DirectiveEscalatedEvent():
+                self._escalate_directive(event)
 
         self.state.processed_event_ids.add(event.event_id)
         self.state.last_event_id = event.event_id
@@ -234,6 +250,99 @@ class OrgProjector:
         if task is None:
             raise DomainInvariantError(f"unknown task {task_id!r}")
         return task
+
+    def _require_directive(self, directive_id: str) -> DirectiveState:
+        directive = self.state.directives.get(directive_id)
+        if directive is None:
+            raise DomainInvariantError(f"unknown directive {directive_id!r}")
+        return directive
+
+    def _issue_directive(self, event: DirectiveIssuedEvent) -> None:
+        payload = event.payload
+        if payload.directive_id in self.state.directives:
+            raise DomainInvariantError(f"directive {payload.directive_id!r} already exists")
+        if payload.issuer_id not in self.state.members:
+            raise DomainInvariantError(f"unknown directive issuer {payload.issuer_id!r}")
+        if payload.target_id not in self.state.members:
+            raise DomainInvariantError(f"unknown directive target {payload.target_id!r}")
+        if payload.task_id is not None:
+            self._require_task(payload.task_id)
+
+        self.state.directives[payload.directive_id] = DirectiveState(
+            directive_id=payload.directive_id,
+            text=payload.text,
+            issuer_id=payload.issuer_id,
+            target_id=payload.target_id,
+            task_id=payload.task_id,
+            deadline=payload.deadline,
+            status=DirectiveStatus.ISSUED,
+            issued_at=event.occurred_at,
+            source_event_ids=(event.event_id,),
+            last_update_at=event.occurred_at,
+        )
+
+    def _acknowledge_directive(self, event: DirectiveAcknowledgedEvent) -> None:
+        payload = event.payload
+        directive = self._require_directive(payload.directive_id)
+        if payload.ack_by not in self.state.members:
+            raise DomainInvariantError(f"unknown directive acknowledger {payload.ack_by!r}")
+        if directive.status is not DirectiveStatus.ISSUED:
+            # Defensive idempotency: a replayed ack after completion must not brick replay.
+            return
+
+        self.state.directives[payload.directive_id] = directive.model_copy(
+            update={
+                "status": DirectiveStatus.ACKNOWLEDGED,
+                "acknowledged_at": event.occurred_at,
+                "source_event_ids": (*directive.source_event_ids, event.event_id),
+                "last_update_at": event.occurred_at,
+            }
+        )
+
+    def _complete_directive(self, event: DirectiveCompletedEvent) -> None:
+        payload = event.payload
+        directive = self._require_directive(payload.directive_id)
+        if payload.completed_by not in self.state.members:
+            raise DomainInvariantError(f"unknown directive completer {payload.completed_by!r}")
+        if directive.status is DirectiveStatus.COMPLETED:
+            return
+
+        self.state.directives[payload.directive_id] = directive.model_copy(
+            update={
+                "status": DirectiveStatus.COMPLETED,
+                "completed_at": event.occurred_at,
+                "source_event_ids": (*directive.source_event_ids, event.event_id),
+                "last_update_at": event.occurred_at,
+            }
+        )
+
+    def _remind_directive(self, event: DirectiveRemindedEvent) -> None:
+        payload = event.payload
+        directive = self._require_directive(payload.directive_id)
+        if directive.status is not DirectiveStatus.ISSUED:
+            return
+
+        self.state.directives[payload.directive_id] = directive.model_copy(
+            update={
+                "reminder_count": max(directive.reminder_count + 1, payload.reminder_index),
+                "source_event_ids": (*directive.source_event_ids, event.event_id),
+                "last_update_at": event.occurred_at,
+            }
+        )
+
+    def _escalate_directive(self, event: DirectiveEscalatedEvent) -> None:
+        payload = event.payload
+        directive = self._require_directive(payload.directive_id)
+        if directive.status is not DirectiveStatus.ISSUED or directive.escalated:
+            return
+
+        self.state.directives[payload.directive_id] = directive.model_copy(
+            update={
+                "escalated": True,
+                "source_event_ids": (*directive.source_event_ids, event.event_id),
+                "last_update_at": event.occurred_at,
+            }
+        )
 
     def _active_claims(self, task_id: str) -> list[TaskHealthClaim]:
         return [

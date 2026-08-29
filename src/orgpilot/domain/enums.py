@@ -51,6 +51,7 @@ class ActionType(StrEnum):
     PROPOSE_RESCHEDULE = "propose_reschedule"
     NOTIFY_GROUP = "notify_group"
     UPDATE_TASK = "update_task"
+    SEND_DIRECTIVE = "send_directive"
 
 
 class CommandStatus(StrEnum):
@@ -112,3 +113,11 @@ class MessageIntent(StrEnum):
     QUESTION = "question"
     CHIT_CHAT = "chit_chat"
     UNCERTAIN = "uncertain"
+
+
+class DirectiveStatus(StrEnum):
+    """Lifecycle of a relayed directive from issuer to target member."""
+
+    ISSUED = "issued"
+    ACKNOWLEDGED = "acknowledged"
+    COMPLETED = "completed"

@@ -250,7 +250,7 @@ class FeishuWebhookHandler:
                 }
 
         # 3. Standard message ingestion and single-turn coordination
-        is_act, ext_events, agent, reason, round_num, _intent = await self.service.ingest_message(
+        ingest_result = await self.service.ingest_message(
             project_id=self.project_id,
             message=raw_text,
             actor_id=actor_id,
@@ -259,7 +259,7 @@ class FeishuWebhookHandler:
             auto_run_turn=True,
         )
 
-        if not is_act and actor_id:
+        if not ingest_result.is_actionable and actor_id:
             adapter = self.service.adapter_factory(self.project_id)
             client = getattr(adapter, "client", None)
             if client and hasattr(client, "send_message"):
@@ -301,10 +301,12 @@ class FeishuWebhookHandler:
             "code": 0,
             "msg": "success",
             "data": {
-                "is_actionable": is_act,
-                "extracted_events_count": len(ext_events),
-                "turn_termination_reason": reason,
-                "round_number": round_num,
+                "is_actionable": ingest_result.is_actionable,
+                "extracted_events_count": len(ingest_result.events),
+                "turn_termination_reason": ingest_result.turn_reason,
+                "round_number": ingest_result.round_num,
+                "intent": ingest_result.intent,
+                "directive_kind": ingest_result.directive_kind,
             },
         }
 

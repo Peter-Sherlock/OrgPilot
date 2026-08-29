@@ -59,6 +59,8 @@ def create_app(
         extractor=extractor,
         adapter_factory=adapter_factory,
         reference_timezone=runtime_settings.reference_timezone,
+        directive_reminder_minutes=runtime_settings.directive_reminder_minutes,
+        directive_escalation_minutes=runtime_settings.directive_escalation_minutes,
     )
 
     @asynccontextmanager

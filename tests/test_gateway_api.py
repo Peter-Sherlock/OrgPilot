@@ -447,6 +447,103 @@ async def test_pm_directive_message_is_routed_as_directive(client: httpx.AsyncCl
     assert report_data["is_actionable"] is True
 
 
+async def test_directive_full_lifecycle_end_to_end(client: httpx.AsyncClient) -> None:
+    """PM order -> relayed to target pane -> ack -> completion -> reminders."""
+    base = "/api/v1/projects/proj-directive"
+    await client.post(f"{base}/bootstrap-sandbox")
+
+    issue = await client.post(
+        f"{base}/sandbox-chat",
+        params={
+            "actor_id": "ou_pm",
+            "message": "告诉Alice，支付SDK必须在明天下午5点之前完成",
+        },
+    )
+    assert issue.status_code == 200
+    data = issue.json()
+    assert data["type"] == "normal_turn"
+    assert data["intent"] == "directive"
+    assert data["directive"] == "issued"
+    assert "已下达给" in data["bot_reply"]
+    assert any(n["actor_id"] == "ou_alice" for n in data["notices"])
+
+    ambiguous = await client.post(
+        f"{base}/sandbox-chat",
+        params={"actor_id": "ou_pm", "message": "告诉Alice，必须在明天上午12点之前完成"},
+    )
+    amb_data = ambiguous.json()
+    assert amb_data["directive"] == "clarify"
+    assert "中午 12:00" in amb_data["bot_reply"]
+
+    ack = await client.post(
+        f"{base}/sandbox-chat",
+        params={"actor_id": "ou_alice", "message": "收到，马上处理"},
+    )
+    ack_data = ack.json()
+    assert ack_data["directive"] == "acknowledged"
+    assert any(n["actor_id"] == "ou_pm" for n in ack_data["notices"])
+
+    done = await client.post(
+        f"{base}/sandbox-chat",
+        params={"actor_id": "ou_alice", "message": "支付SDK已完成，已交付"},
+    )
+    done_data = done.json()
+    assert done_data["directive"] == "completed"
+    assert any(n["actor_id"] == "ou_pm" for n in done_data["notices"])
+
+    # With the directive closed, the reminder endpoint reports nothing open.
+    remind = await client.post(f"{base}/directives/remind")
+    assert remind.status_code == 200
+    assert remind.json()["type"] == "none"
+
+
+async def test_directive_remind_before_ack(client: httpx.AsyncClient) -> None:
+    base = "/api/v1/projects/proj-dir-remind"
+    await client.post(f"{base}/bootstrap-sandbox")
+
+    issue = await client.post(
+        f"{base}/sandbox-chat",
+        params={"actor_id": "ou_pm", "message": "告诉David，压测方案今天下班前给我"},
+    )
+    assert issue.json()["directive"] == "issued"
+
+    remind = await client.post(f"{base}/directives/remind")
+    remind_data = remind.json()
+    assert remind_data["type"] == "reminded"
+    assert any(n["actor_id"] == "ou_david" for n in remind_data["notices"])
+
+    # A second reminder pass reminds again (reminder_count increments).
+    again = await client.post(f"{base}/directives/remind")
+    assert again.json()["type"] == "reminded"
+
+
+async def test_directive_state_survives_gateway_restart(tmp_path) -> None:
+    db_path = tmp_path / "directive-restart.db"
+    db = Database(f"sqlite+aiosqlite:///{db_path}")
+    await db.init_db()
+    service = GatewayService(db)
+    project_id = "proj-dir-restart"
+    await service.ingest_raw_events(project_id, _make_setup_events(project_id))
+    result = await service.ingest_message(
+        project_id=project_id,
+        message="告诉alice，Backend API 必须在明天下午5点之前完成",
+        actor_id="carol",
+        occurred_at=NOW,
+    )
+    assert result.directive_kind == "issued"
+    await db.close()
+
+    restarted_db = Database(f"sqlite+aiosqlite:///{db_path}")
+    await restarted_db.init_db()
+    restarted = GatewayService(restarted_db)
+    agent = await restarted.get_or_replay_agent(project_id)
+    assert len(agent.projector.state.directives) == 1
+    directive = next(iter(agent.projector.state.directives.values()))
+    assert directive.target_id == "alice"
+    assert directive.status.value == "issued"
+    await restarted_db.close()
+
+
 async def test_sync_session_survives_gateway_restart(tmp_path) -> None:
     """A restart mid-collection must restore the active sync session so member
     replies are not orphaned and the scatter-gather cycle can complete."""
