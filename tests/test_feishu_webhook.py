@@ -247,8 +247,9 @@ async def test_feishu_demo_bootstrap_disabled_by_default(client: httpx.AsyncClie
 
     state = (await client.get("/api/v1/projects/feishu-project/state")).json()
     assert state["tasks"] == {}
+    # The sender is auto-registered, but no demo task chain may be injected.
     events = (await client.get("/api/v1/projects/feishu-project/events")).json()
-    assert events == []
+    assert [event["event_type"] for event in events] == ["member.registered"]
 
 
 async def test_feishu_demo_bootstrap_opt_in() -> None:

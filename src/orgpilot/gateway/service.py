@@ -12,7 +12,13 @@ from orgpilot.coordination.sync_coordinator import ProgressSyncCoordinator
 from orgpilot.domain.models import AgentTurnTrace
 from orgpilot.domain.sync_models import SyncSession
 from orgpilot.events.log import AppendResult
-from orgpilot.events.models import OrgEvent, parse_event
+from orgpilot.events.models import (
+    EventSource,
+    MemberRegisteredEvent,
+    MemberRegisteredPayload,
+    OrgEvent,
+    parse_event,
+)
 from orgpilot.extraction.extractor import ClaimExtractor
 from orgpilot.extraction.models import MessageContext
 from orgpilot.storage.database import Database
@@ -157,9 +163,35 @@ class GatewayService:
     ) -> tuple[bool, list[OrgEvent], CoordinationAgent, str | None, int | None]:
         """Extracts claims from natural language message, persists events, and optionally
         executes a turn.
+
+        Events are projected in memory BEFORE being persisted: if the domain rejects
+        anything (and unknown senders are auto-registered, so it normally should not),
+        the persistent event log stays replayable instead of being bricked by an
+        event that can never be projected.
         """
         ts = occurred_at or datetime.now(UTC)
         agent = await self.get_or_replay_agent(project_id)
+
+        ingest_events: list[OrgEvent] = []
+        if actor_id and actor_id not in agent.projector.state.members:
+            # Auto-register unseen senders so their claims are attributable —
+            # a coordination agent must be able to meet new team members.
+            ingest_events.append(
+                MemberRegisteredEvent(
+                    project_id=project_id,
+                    event_id=f"evt-member-auto-{actor_id}",
+                    event_type="member.registered",
+                    source=EventSource.MESSAGE,
+                    source_ref=source_ref or "auto-registration",
+                    occurred_at=ts,
+                    received_at=ts,
+                    payload=MemberRegisteredPayload(
+                        member_id=actor_id,
+                        display_name=actor_id,
+                        role="member",
+                    ),
+                )
+            )
 
         tasks_dict = {t.task_id: t.title for t in agent.projector.state.tasks.values()}
         members_dict = {m.member_id: m.role for m in agent.projector.state.members.values()}
@@ -175,16 +207,20 @@ class GatewayService:
         )
 
         extraction_result, extracted_events = self.extractor.extract_from_message(message, context)
+        ingest_events.extend(extracted_events)
 
-        # Persist extracted events
-        for evt in extracted_events:
+        # Project in memory first; a domain rejection here leaves the SQL log untouched.
+        for evt in ingest_events:
+            if agent.event_log.append(evt) is AppendResult.APPENDED:
+                agent.projector.apply(evt)
+        for evt in ingest_events:
             await self.event_store.append(evt)
 
         turn_reason: str | None = None
         round_num: int | None = None
 
         if auto_run_turn and extracted_events:
-            turn_trace, _ = await self.run_agent_turn(agent, extracted_events, ts)
+            turn_trace, _ = await self.run_agent_turn(agent, [], ts)
             turn_reason = turn_trace.termination_reason.value
             round_num = turn_trace.round_number
 

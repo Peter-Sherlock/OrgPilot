@@ -1,5 +1,6 @@
 """Bounded Coordination Agent Loop with deterministic turn execution and state machine."""
 
+import logging
 from datetime import datetime, timedelta
 
 from orgpilot.adapter.base import CollaborationAdapter
@@ -23,6 +24,8 @@ from orgpilot.events.log import AppendResult, InMemoryEventLog
 from orgpilot.events.models import OrgEvent
 from orgpilot.policy.engine import PolicyEngine
 from orgpilot.state.projector import OrgProjector
+
+logger = logging.getLogger("orgpilot.agent.loop")
 
 
 class CoordinationAgent:
@@ -49,6 +52,22 @@ class CoordinationAgent:
     @property
     def state(self) -> OrgState:
         return self.projector.state
+
+    def _safe_adapter_call(self, operation: str, call, *args) -> bool:
+        """Runs an adapter transport call, isolating delivery failures.
+
+        A channel outage (Feishu 4xx/5xx, network) must degrade to a logged error
+        instead of crashing the turn: the case still transitions and unresponsive
+        members are handled by the existing timeout-escalation reconciliation.
+        """
+        try:
+            call(*args)
+            return True
+        except Exception:
+            logger.exception(
+                "Adapter %s failed; coordination continues without delivery", operation
+            )
+            return False
 
     def run_turn(
         self,
@@ -108,7 +127,7 @@ class CoordinationAgent:
                             created_at=current_time,
                             idempotency_key=f"idem:{action.action_id}:r{self._turn_count}",
                         )
-                        self.adapter.execute(command)
+                        self._safe_adapter_call("execute(inquiry)", self.adapter.execute, command)
                         self.case_ledger.record_command(case.case_id, command, current_time)
                         executed_cmd_ids.append(command.command_id)
 
@@ -158,7 +177,12 @@ class CoordinationAgent:
                                 }
                             }
                         )
-                        self.adapter.request_approval(outbound_command, approver)
+                        self._safe_adapter_call(
+                            "request_approval",
+                            self.adapter.request_approval,
+                            outbound_command,
+                            approver,
+                        )
                         executed_cmd_ids.append(proposed_command.command_id)
 
                         self.case_ledger.transition(
@@ -185,7 +209,9 @@ class CoordinationAgent:
                                 created_at=current_time,
                                 idempotency_key=f"idem:update:{case.source_task_id}:r{self._turn_count}",
                             )
-                            self.adapter.execute(update_cmd)
+                            self._safe_adapter_call(
+                                "execute(reschedule_update)", self.adapter.execute, update_cmd
+                            )
                             self.case_ledger.record_command(case.case_id, update_cmd, current_time)
                             executed_cmd_ids.append(update_cmd.command_id)
                             self.case_ledger.transition(
@@ -196,7 +222,9 @@ class CoordinationAgent:
                                 candidate_actions=(),
                             )
                         elif req.action_type is ActionType.UPDATE_TASK:
-                            self.adapter.execute(command)
+                            self._safe_adapter_call(
+                                "execute(task_update)", self.adapter.execute, command
+                            )
                             self.case_ledger.record_command(case.case_id, command, current_time)
                             executed_cmd_ids.append(command.command_id)
                             self.case_ledger.transition(

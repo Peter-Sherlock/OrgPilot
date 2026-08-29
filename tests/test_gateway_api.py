@@ -434,6 +434,32 @@ async def test_concurrent_member_turns_serialize_without_duplicates() -> None:
     await db.close()
 
 
+async def test_message_from_unregistered_member_auto_registers(
+    client: httpx.AsyncClient,
+) -> None:
+    """Regression: a message from an unseen Feishu account used to persist an
+    unprojectable health event, permanently bricking the project replay (500 on
+    every endpoint). The sender must be auto-registered and the claim processed."""
+    setup_events = _make_setup_events("proj-auto-register")
+    await client.post(
+        "/api/v1/projects/proj-auto-register/events", json={"events": setup_events}
+    )
+
+    resp = await client.post(
+        "/api/v1/projects/proj-auto-register/sandbox-chat",
+        params={"actor_id": "ou_newcomer", "message": "backend_api 报错，排查需要到明天下午 5 点"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["type"] == "normal_turn"
+    assert body["is_actionable"] is True
+
+    # Project endpoints stay healthy (replay is not bricked) and the member exists.
+    state = (await client.get("/api/v1/projects/proj-auto-register/state")).json()
+    assert "ou_newcomer" in state["members"]
+    assert "backend_api" in state["tasks"]
+
+
 async def test_app_lifespan() -> None:
     app = create_app()
     assert app.title == "OrgPilot Event Gateway"
