@@ -460,6 +460,24 @@ async def test_message_from_unregistered_member_auto_registers(
     assert "backend_api" in state["tasks"]
 
 
+async def test_gateway_bootstrap_sandbox_is_idempotent(client: httpx.AsyncClient) -> None:
+    """Regression: double-clicking the demo bootstrap used to append duplicate
+    member registrations, permanently bricking the project replay (500 on every
+    endpoint). A repeated bootstrap must be a no-op top-up."""
+    first = await client.post("/api/v1/projects/proj-boot-twice/bootstrap-sandbox")
+    assert first.status_code == 200
+    assert first.json() == {"status": "initialized", "members_count": 4, "tasks_count": 3}
+
+    second = await client.post("/api/v1/projects/proj-boot-twice/bootstrap-sandbox")
+    assert second.status_code == 200
+    assert second.json()["members_count"] == 0
+    assert second.json()["tasks_count"] == 0
+
+    state = await client.get("/api/v1/projects/proj-boot-twice/state")
+    assert state.status_code == 200
+    assert len(state.json()["tasks"]) == 3
+
+
 async def test_app_lifespan() -> None:
     app = create_app()
     assert app.title == "OrgPilot Event Gateway"

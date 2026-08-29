@@ -107,6 +107,7 @@ class FeishuWebhookHandler:
         # Auto-bootstrap demo tasks for first-time solo tester (opt-in via ORGPILOT_DEMO_BOOTSTRAP)
         if await self._should_bootstrap_demo(actor_id):
             now_ts = occurred_at
+            agent_init = await self.service.get_or_replay_agent(self.project_id)
             bootstrap_events: list[OrgEvent] = [
                 MemberRegisteredEvent(
                     project_id=self.project_id,
@@ -174,6 +175,11 @@ class FeishuWebhookHandler:
                 ),
             ]
             for evt in bootstrap_events:
+                if (
+                    isinstance(evt, MemberRegisteredEvent)
+                    and evt.payload.member_id in agent_init.projector.state.members
+                ):
+                    continue
                 await self.service.event_store.append(evt)
 
         chat_type = message.get("chat_type", "p2p")

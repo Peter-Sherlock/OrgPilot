@@ -1,5 +1,38 @@
 # 开发记录
 
+## 2026-08-29：真机联调修复二——bootstrap 幂等与前端静默失败治理（推进计划第二步·下）
+
+### 真机暴露的问题
+
+用户重复点击"一键初始化"后项目再次砖化：`bootstrap-sandbox` 每次以时间戳生成事件 ID，二次初始化追加重复的 `member.registered`（`ou_pm already exists`）——又一处"先落库、后投影"路径；同时前端在 HTTP 500 时静默失败（聊天发送 `!res.ok` 直接 return，bootstrap 失败仍渲染"初始化成功"横幅），用户侧表现为"完全没有反应"。
+
+### 已修复
+
+- **bootstrap 幂等化**：改为确定性事件 ID（项目内唯一）；初始化前先读投影，已存在的成员/任务事件跳过（top-up 语义）；先内存投影、成功后落库。连续 N 次点击实测安全（首次 4 成员/3 任务，后续 0/0）。
+- **飞书演示引导同类隐患**：成员已注册时跳过注册事件。
+- **前端静默失败治理**：沙盒聊天与 bootstrap 的非 2xx 响现在渲染"系统错误（HTTP xxx），本次操作未生效"气泡并刷新状态，不再无声无息。
+
+### 回归测试（1 个）
+
+- 连续两次 bootstrap：第二次为 no-op，项目回放保持健康。
+
+### 自测（真实 LLM）
+
+三次 bootstrap 幂等通过；多人同步全流程 6 步全 200（探针扇出 3 成员、模糊回复自动追问、多轮槽位补全、状态健康）。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS (4 P0 + 5 M1)
+orgpilot eval-extraction (mock): PASS (20 samples, 100% F1)
+pytest: 171 passed
+coverage: 90.28% branch-aware total coverage (fail_under=90%)
+ruff: All checks passed
+git diff --check: PASS
+```
+
+---
+
 ## 2026-08-29：真机联调修复——摄入原子性、成员自注册与传输故障隔离（推进计划第二步·下）
 
 ### 真机暴露的问题（分屏沙盒实测发现）

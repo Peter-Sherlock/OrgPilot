@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends, Request
 
 from orgpilot.domain.enums import WorkflowStatus
+from orgpilot.events.log import AppendResult
 from orgpilot.events.models import (
     EventSource,
     MemberRegisteredEvent,
@@ -99,12 +100,21 @@ async def bootstrap_sandbox_endpoint(
     project_id: str,
     service: GatewayService = Depends(get_service),
 ) -> dict:
-    """Initializes or resets a demo sandbox with PM, Alice, Bob, and dependent task chain."""
+    """Initializes or tops up a demo sandbox with PM, Alice, Bob, and a dependent task chain.
+
+    Idempotent: entities already present in the projection are skipped, so double
+    clicks or repeated initializations never append unprojectable duplicate
+    registration events (which would permanently brick the project replay).
+    """
     now = datetime.now(UTC)
+    agent = await service.get_or_replay_agent(project_id)
+    known_members = set(agent.projector.state.members)
+    known_tasks = set(agent.projector.state.tasks)
+
     events: list[OrgEvent] = [
         MemberRegisteredEvent(
             project_id=project_id,
-            event_id=f"boot-m-pm-{now.timestamp()}",
+            event_id=f"boot-m-pm-{project_id}",
             event_type="member.registered",
             source=EventSource.HUMAN,
             source_ref="sandbox-init",
@@ -116,7 +126,7 @@ async def bootstrap_sandbox_endpoint(
         ),
         MemberRegisteredEvent(
             project_id=project_id,
-            event_id=f"boot-m-alice-{now.timestamp()}",
+            event_id=f"boot-m-alice-{project_id}",
             event_type="member.registered",
             source=EventSource.HUMAN,
             source_ref="sandbox-init",
@@ -128,7 +138,7 @@ async def bootstrap_sandbox_endpoint(
         ),
         MemberRegisteredEvent(
             project_id=project_id,
-            event_id=f"boot-m-bob-{now.timestamp()}",
+            event_id=f"boot-m-bob-{project_id}",
             event_type="member.registered",
             source=EventSource.HUMAN,
             source_ref="sandbox-init",
@@ -140,7 +150,7 @@ async def bootstrap_sandbox_endpoint(
         ),
         MemberRegisteredEvent(
             project_id=project_id,
-            event_id=f"boot-m-david-{now.timestamp()}",
+            event_id=f"boot-m-david-{project_id}",
             event_type="member.registered",
             source=EventSource.HUMAN,
             source_ref="sandbox-init",
@@ -152,7 +162,7 @@ async def bootstrap_sandbox_endpoint(
         ),
         TaskCreatedEvent(
             project_id=project_id,
-            event_id=f"boot-t-pay-{now.timestamp()}",
+            event_id=f"boot-t-pay-{project_id}",
             event_type="task.created",
             source=EventSource.TASK,
             source_ref="sandbox-init",
@@ -168,7 +178,7 @@ async def bootstrap_sandbox_endpoint(
         ),
         TaskCreatedEvent(
             project_id=project_id,
-            event_id=f"boot-t-checkout-{now.timestamp()}",
+            event_id=f"boot-t-checkout-{project_id}",
             event_type="task.created",
             source=EventSource.TASK,
             source_ref="sandbox-init",
@@ -185,7 +195,7 @@ async def bootstrap_sandbox_endpoint(
         ),
         TaskCreatedEvent(
             project_id=project_id,
-            event_id=f"boot-t-qa-{now.timestamp()}",
+            event_id=f"boot-t-qa-{project_id}",
             event_type="task.created",
             source=EventSource.TASK,
             source_ref="sandbox-init",
@@ -201,12 +211,28 @@ async def bootstrap_sandbox_endpoint(
             ),
         ),
     ]
+    events = [
+        e
+        for e in events
+        if not (
+            isinstance(e, MemberRegisteredEvent) and e.payload.member_id in known_members
+        )
+        and not (isinstance(e, TaskCreatedEvent) and e.payload.task_id in known_tasks)
+    ]
+
+    # Project in memory first; only then persist. A domain rejection leaves the
+    # event log fully replayable instead of bricking the project.
+    for e in events:
+        if agent.event_log.append(e) is AppendResult.APPENDED:
+            agent.projector.apply(e)
     for e in events:
         await service.event_store.append(e)
 
-    agent = await service.get_or_replay_agent(project_id)
-    await service.state_store.save_state(agent.projector.state)
-    return {"status": "initialized", "members_count": 4, "tasks_count": 3}
+    return {
+        "status": "initialized",
+        "members_count": sum(isinstance(e, MemberRegisteredEvent) for e in events),
+        "tasks_count": sum(isinstance(e, TaskCreatedEvent) for e in events),
+    }
 
 
 @router.post("/sandbox-chat")

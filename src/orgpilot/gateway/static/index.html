@@ -360,7 +360,12 @@
 
     async function bootstrapSandbox() {
       const pid = getProjectId();
-      await fetch(`/api/v1/projects/${pid}/bootstrap-sandbox`, { method: 'POST' });
+      const res = await fetch(`/api/v1/projects/${pid}/bootstrap-sandbox`, { method: 'POST' });
+      if (!res.ok) {
+        appendChatBubble('chatStreamPM', false, '系统错误', `沙盒初始化失败（HTTP ${res.status}），本次操作未生效，请重试或查看网关日志。`);
+        await refreshData();
+        return;
+      }
       document.getElementById('chatStreamPM').innerHTML = `
         <div class="chat-bubble-bot p-3 rounded-xl text-slate-300 space-y-1">
           <div class="font-bold text-brand-400 flex items-center gap-1"><span>🤖</span> OrgPilot 智能体</div>
@@ -422,7 +427,11 @@
       const cfg = streamMap[actorId] || { id: 'chatStreamPM', name: actorId };
       appendChatBubble(cfg.id, true, cfg.name, message);
       const res = await fetch(`/api/v1/projects/${pid}/sandbox-chat?actor_id=${actorId}&message=${encodeURIComponent(message)}`, { method: 'POST' });
-      if (!res.ok) return;
+      if (!res.ok) {
+        appendChatBubble(cfg.id, false, '系统错误', `消息处理失败（HTTP ${res.status}），本次操作未生效，请重试或查看网关日志。`);
+        await refreshData();
+        return;
+      }
       const data = await res.json();
       if (data.type === 'sync_started') {
         appendChatBubble('chatStreamPM', false, 'OrgPilot 机器人', data.bot_reply);
