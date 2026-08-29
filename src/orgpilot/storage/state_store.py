@@ -6,8 +6,14 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 
 from orgpilot.domain.models import ApprovalRequest, CoordinationCase, OrgState
+from orgpilot.domain.sync_models import SyncSession
 from orgpilot.storage.database import Database
-from orgpilot.storage.models import ApprovalRecord, CaseRecord, StateSnapshotRecord
+from orgpilot.storage.models import (
+    ApprovalRecord,
+    CaseRecord,
+    StateSnapshotRecord,
+    SyncSessionRecord,
+)
 
 
 class SqlStateStore:
@@ -128,3 +134,38 @@ class SqlStateStore:
             res = await session.execute(stmt)
             records = res.scalars().all()
             return [ApprovalRequest.model_validate_json(r.data_json) for r in records]
+
+    async def save_sync_sessions(self, project_id: str, sessions: list[SyncSession]) -> None:
+        """Upserts progress sync sessions for a project."""
+        now = datetime.now(UTC)
+        async with self.db.session() as session:
+            for sync in sessions:
+                stmt = select(SyncSessionRecord).where(
+                    SyncSessionRecord.session_id == sync.session_id
+                )
+                res = await session.execute(stmt)
+                rec = res.scalar_one_or_none()
+                data_json = json.dumps(sync.model_dump(mode="json"), default=str)
+                if rec is None:
+                    session.add(
+                        SyncSessionRecord(
+                            session_id=sync.session_id,
+                            project_id=project_id,
+                            status=sync.status.value,
+                            initiated_by=sync.initiated_by,
+                            data_json=data_json,
+                            updated_at=now,
+                        )
+                    )
+                else:
+                    rec.status = sync.status.value
+                    rec.data_json = data_json
+                    rec.updated_at = now
+
+    async def load_sync_sessions(self, project_id: str) -> list[SyncSession]:
+        """Loads all progress sync sessions recorded for a project."""
+        async with self.db.session() as session:
+            stmt = select(SyncSessionRecord).where(SyncSessionRecord.project_id == project_id)
+            res = await session.execute(stmt)
+            records = res.scalars().all()
+            return [SyncSession.model_validate_json(r.data_json) for r in records]

@@ -1,5 +1,38 @@
 # 开发记录
 
+## 2026-08-29：多成员并发交互机制与真实飞书连接冒烟（推进计划第二步·上）
+
+### 已实现（多成员并发三件套）
+
+- **SyncSession SQL 持久化**（新表 `sync_sessions`）：进度同步会话（各成员探针状态、多轮澄清记录、已生成简报）随每轮交互落库，网关重启后自动恢复，进行中的散采-汇聚（scatter-gather）周期不再因重启孤儿化，成员重启后的回复不会丢失上下文。
+- **回复处理前代理状态刷新**：`handle_sync_member_reply` 与 `run_agent_turn` 在决策前经 `_refresh_agent_from_store` 从事件库补拉事件、案例与审批，探针回复与普通消息摄入并发到达时不再基于过时投影做协调决策。
+- **每项目回合锁**：`GatewayService` 以 per-project `asyncio.Lock` 串行化同一项目的协调回合，杜绝两名成员并发回复导致的重复追问或重复发消息。
+
+### 新增回归测试（3 个）
+
+- 同步会话跨网关重启恢复并完成收敛（文件级 SQLite 模拟真实重启）；
+- 过时代理在回合前补齐事件与案例，不重复协调（两个先后物化的代理恰产生一次动作）；
+- 并发双回合经锁串行化后仅产生一次协调动作（`asyncio.gather` 竞态回归）。
+
+### 真实飞书凭证冒烟（只读验证，未发送任何消息）
+
+- `tenant_access_token` 获取成功（真实凭证 + 真实网络出站）；
+- 飞书官方 WebSocket 长连接真实建立：`connected to wss://msg-frontier.feishu.cn/ws/v2`，零公网部署路径全链路验证通过；
+- `im/v1/chats` 返回权限不足（应用未开通 `im:chat:readonly` 读会话权限）——不影响收发消息主链路（机器人按来信者 `open_id`/`chat_id` 应答）；如需会话枚举可在飞书开放平台为应用补开该权限。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS (4 P0 + 5 M1)
+orgpilot eval-extraction: PASS (20 samples, 100% F1, 100% Grounding)
+pytest: 167 passed
+coverage: 90.47% branch-aware total coverage (fail_under=90%)
+ruff: All checks passed
+git diff --check: PASS
+```
+
+---
+
 ## 2026-08-28：修复与加固（推进计划第一步）
 
 ### 已修复

@@ -78,3 +78,16 @@ class StateSnapshotRecord(Base):
     project_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     state_json: Mapped[str] = mapped_column(Text, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class SyncSessionRecord(Base):
+    """Persistent progress sync session so scatter-gather survives gateway restarts."""
+
+    __tablename__ = "sync_sessions"
+
+    session_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    initiated_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    data_json: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

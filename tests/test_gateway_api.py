@@ -1,5 +1,6 @@
 """Async API integration tests for FastAPI event gateway."""
 
+import asyncio
 from datetime import datetime, timedelta
 
 import httpx
@@ -67,6 +68,26 @@ def _make_setup_events(project_id: str) -> list[dict]:
             },
         },
     ]
+
+
+def _health_report_event(project_id: str, task_id: str, health_status: str) -> dict:
+    return {
+        "schema_version": 1,
+        "project_id": project_id,
+        "event_id": f"evt-{project_id}-health-{task_id}",
+        "event_type": "task.health_reported",
+        "source": "message",
+        "source_ref": "om-health-1",
+        "actor_id": "alice",
+        "occurred_at": NOW.isoformat(),
+        "received_at": NOW.isoformat(),
+        "payload": {
+            "task_id": task_id,
+            "health_status": health_status,
+            "blocker": "SDK 报错卡住",
+            "confidence": 0.95,
+        },
+    }
 
 
 async def test_gateway_event_ingestion_and_query(client: httpx.AsyncClient) -> None:
@@ -321,6 +342,96 @@ async def test_gateway_sandbox_chat_sync_flow_end_to_end(client: httpx.AsyncClie
     )
     assert normal.status_code == 200
     assert normal.json()["type"] == "normal_turn"
+
+
+async def test_sync_session_survives_gateway_restart(tmp_path) -> None:
+    """A restart mid-collection must restore the active sync session so member
+    replies are not orphaned and the scatter-gather cycle can complete."""
+    db_path = tmp_path / "restart.db"
+    db = Database(f"sqlite+aiosqlite:///{db_path}")
+    await db.init_db()
+    service = GatewayService(db)
+    project_id = "proj-restart"
+    await service.ingest_raw_events(project_id, _make_setup_events(project_id))
+    session = await service.start_progress_sync(project_id, initiated_by="carol")
+    await db.close()
+
+    restarted_db = Database(f"sqlite+aiosqlite:///{db_path}")
+    await restarted_db.init_db()
+    restarted = GatewayService(restarted_db)
+    coordinator = await restarted.get_sync_coordinator(project_id)
+    active = coordinator.get_active_session(project_id)
+    assert active is not None
+    assert active.session_id == session.session_id
+
+    converged, clarify_q, _ = await restarted.handle_sync_member_reply(
+        project_id=project_id,
+        member_id="alice",
+        message="Backend API 一切正常，按计划推进",
+        occurred_at=NOW,
+    )
+    assert converged is True
+    assert clarify_q is None
+    completed = coordinator.get_session(session.session_id)
+    assert completed is not None
+    assert completed.status.value == "completed"
+    assert completed.briefing is not None
+    await restarted_db.close()
+
+
+async def test_stale_agent_catches_up_without_duplicate_actions() -> None:
+    """An agent materialized before a member's report must catch up on persisted
+    events and cases before its turn, so it does not double-coordinate."""
+    db = Database("sqlite+aiosqlite:///:memory:")
+    await db.init_db()
+    service = GatewayService(db)
+    project_id = "proj-catchup"
+    await service.ingest_raw_events(project_id, _make_setup_events(project_id))
+
+    stale_a = await service.get_or_replay_agent(project_id)
+    stale_b = await service.get_or_replay_agent(project_id)
+    await service.ingest_raw_events(
+        project_id, [_health_report_event(project_id, "backend_api", "at_risk")]
+    )
+
+    trace_a, _ = await service.run_agent_turn(stale_a, [], NOW)
+    trace_b, _ = await service.run_agent_turn(stale_b, [], NOW)
+
+    executed = len(trace_a.executed_command_ids) + len(trace_b.executed_command_ids)
+    assert executed == 1
+    cases = await service.state_store.load_cases(project_id)
+    assert len(cases) == 1
+    assert cases[0].status.value == "waiting_for_response"
+    await db.close()
+
+
+async def test_concurrent_member_turns_serialize_without_duplicates() -> None:
+    """Two turns racing for the same project must run serialized behind the
+    per-project lock and produce exactly one coordination action."""
+    db = Database("sqlite+aiosqlite:///:memory:")
+    await db.init_db()
+    service = GatewayService(db)
+    project_id = "proj-concurrent"
+    await service.ingest_raw_events(project_id, _make_setup_events(project_id))
+
+    agent_a = await service.get_or_replay_agent(project_id)
+    agent_b = await service.get_or_replay_agent(project_id)
+    await service.ingest_raw_events(
+        project_id, [_health_report_event(project_id, "backend_api", "at_risk")]
+    )
+
+    results = await asyncio.gather(
+        service.run_agent_turn(agent_a, [], NOW),
+        service.run_agent_turn(agent_b, [], NOW),
+    )
+    trace_a, _ = results[0]
+    trace_b, _ = results[1]
+
+    executed = len(trace_a.executed_command_ids) + len(trace_b.executed_command_ids)
+    assert executed == 1
+    cases = await service.state_store.load_cases(project_id)
+    assert len(cases) == 1
+    await db.close()
 
 
 async def test_app_lifespan() -> None:

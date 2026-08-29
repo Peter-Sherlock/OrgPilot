@@ -39,6 +39,30 @@ class GatewayService:
             lambda project_id: MockCollaborationAdapter(project_id=project_id)
         )
         self._sync_coordinators: dict[str, ProgressSyncCoordinator] = {}
+        self._project_locks: dict[str, asyncio.Lock] = {}
+
+    def _project_lock(self, project_id: str) -> asyncio.Lock:
+        """Serializes coordination turns per project so concurrent member
+        interactions cannot interleave case transitions or duplicate actions."""
+        if project_id not in self._project_locks:
+            self._project_locks[project_id] = asyncio.Lock()
+        return self._project_locks[project_id]
+
+    async def _refresh_agent_from_store(self, agent: CoordinationAgent) -> None:
+        """Catches a held agent up with events, cases, and approvals persisted by
+        concurrent turns, so it never decides on stale projected state."""
+        events = await self.event_store.get_events(agent.project_id)
+        for evt in events:
+            if evt.event_id in agent.projector.state.processed_event_ids:
+                continue
+            if agent.event_log.append(evt) is AppendResult.APPENDED:
+                agent.projector.apply(evt)
+        for case in await self.state_store.load_cases(agent.project_id):
+            if agent.case_ledger.get_case(case.case_id) is None:
+                agent.case_ledger._cases[case.case_id] = case
+        for request in await self.state_store.load_approvals(agent.project_id):
+            if agent.approval_manager.get_request(request.approval_id) is None:
+                agent.approval_manager._requests[request.approval_id] = request
 
     async def get_or_replay_agent(self, project_id: str) -> CoordinationAgent:
         """Constructs an Agent with state restored from the persistent SQL event log and stores."""
@@ -79,15 +103,22 @@ class GatewayService:
         events: list[OrgEvent],
         current_time: datetime,
     ) -> tuple[AgentTurnTrace, list[OrgEvent]]:
-        """Runs the synchronous deterministic kernel off-loop and persists all outputs."""
-        trace, generated_events = await asyncio.to_thread(
-            agent.run_turn,
-            events,
-            current_time,
-        )
-        for event in generated_events:
-            await self.event_store.append(event)
-        await self.save_agent_state(agent)
+        """Runs the synchronous deterministic kernel off-loop and persists all outputs.
+
+        Turns for the same project are serialized behind a per-project lock, and the
+        agent is refreshed from the event log before deciding, so replies arriving
+        concurrently from multiple members cannot duplicate coordination actions.
+        """
+        async with self._project_lock(agent.project_id):
+            await self._refresh_agent_from_store(agent)
+            trace, generated_events = await asyncio.to_thread(
+                agent.run_turn,
+                events,
+                current_time,
+            )
+            for event in generated_events:
+                await self.event_store.append(event)
+            await self.save_agent_state(agent)
         return trace, generated_events
 
     async def save_agent_state(self, agent: CoordinationAgent) -> None:
@@ -163,14 +194,20 @@ class GatewayService:
         )
 
     async def get_sync_coordinator(self, project_id: str) -> ProgressSyncCoordinator:
-        """Retrieves or creates a ProgressSyncCoordinator bound to the current project agent."""
+        """Retrieves or creates a ProgressSyncCoordinator bound to the current project agent.
+
+        Sessions persisted by an earlier gateway run are restored so a restart does
+        not orphan probes already sent to team members.
+        """
         if project_id not in self._sync_coordinators:
             agent = await self.get_or_replay_agent(project_id)
-            self._sync_coordinators[project_id] = ProgressSyncCoordinator(
+            coordinator = ProgressSyncCoordinator(
                 agent=agent,
                 adapter=agent.adapter,
                 extractor=self.extractor,
             )
+            coordinator.restore_sessions(await self.state_store.load_sync_sessions(project_id))
+            self._sync_coordinators[project_id] = coordinator
         return self._sync_coordinators[project_id]
 
     async def start_progress_sync(
@@ -185,7 +222,9 @@ class GatewayService:
         agent = await self.get_or_replay_agent(project_id)
         coordinator.agent = agent
         coordinator.adapter = agent.adapter
-        return coordinator.start_sync_session(project_id, initiated_by, custom_intro)
+        session = coordinator.start_sync_session(project_id, initiated_by, custom_intro)
+        await self.state_store.save_sync_sessions(project_id, [session])
+        return session
 
     async def handle_sync_member_reply(
         self,
@@ -194,23 +233,35 @@ class GatewayService:
         message: str,
         occurred_at: datetime | None = None,
     ) -> tuple[bool, str | None, SyncSession | None]:
-        """Handles reply from probed member, driving clarification or DAG briefing delivery."""
-        coordinator = await self.get_sync_coordinator(project_id)
-        active_session = coordinator.get_active_session(project_id)
-        if not active_session:
-            return True, None, None
+        """Handles reply from probed member, driving clarification or DAG briefing delivery.
 
-        converged, clarification_q = coordinator.handle_member_reply(
-            session_id=active_session.session_id,
-            member_id=member_id,
-            message=message,
-            occurred_at=occurred_at,
-        )
+        Runs behind the per-project turn lock and rebuilds the agent from the event
+        log first, so replies that race with normal message ingestion are decided
+        against the latest persisted state, and the mutated session is checkpointed
+        to survive a restart mid-collection.
+        """
+        async with self._project_lock(project_id):
+            coordinator = await self.get_sync_coordinator(project_id)
+            active_session = coordinator.get_active_session(project_id)
+            if not active_session:
+                return True, None, None
 
-        # Save any new events generated during the turn. Re-appending the full
-        # in-memory log is idempotent: the SQL store deduplicates by event id.
-        for evt in coordinator.agent.event_log.all():
-            await self.event_store.append(evt)
+            agent = await self.get_or_replay_agent(project_id)
+            coordinator.agent = agent
+            coordinator.adapter = agent.adapter
 
-        await self.state_store.save_state(coordinator.agent.projector.state)
+            converged, clarification_q = coordinator.handle_member_reply(
+                session_id=active_session.session_id,
+                member_id=member_id,
+                message=message,
+                occurred_at=occurred_at,
+            )
+
+            # Save any new events generated during the turn. Re-appending the full
+            # in-memory log is idempotent: the SQL store deduplicates by event id.
+            for evt in coordinator.agent.event_log.all():
+                await self.event_store.append(evt)
+
+            await self.state_store.save_state(coordinator.agent.projector.state)
+            await self.state_store.save_sync_sessions(project_id, [active_session])
         return converged, clarification_q, active_session

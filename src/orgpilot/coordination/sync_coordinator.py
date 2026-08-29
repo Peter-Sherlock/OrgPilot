@@ -51,6 +51,11 @@ class ProgressSyncCoordinator:
     def get_session(self, session_id: str) -> SyncSession | None:
         return self._sessions.get(session_id)
 
+    def restore_sessions(self, sessions: list[SyncSession]) -> None:
+        """Reloads sessions persisted by an earlier gateway run (restart recovery)."""
+        for persisted in sessions:
+            self._sessions[persisted.session_id] = persisted
+
     def get_active_session(self, project_id: str) -> SyncSession | None:
         for s in reversed(list(self._sessions.values())):
             if s.project_id == project_id and s.status in (
