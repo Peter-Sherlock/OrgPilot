@@ -67,6 +67,10 @@ class ProgressSyncCoordinator:
                 return s
         return None
 
+    def all_sessions(self) -> list[SyncSession]:
+        """Returns every session held by this coordinator for persistence."""
+        return list(self._sessions.values())
+
     def start_sync_session(
         self,
         project_id: str,
@@ -76,6 +80,16 @@ class ProgressSyncCoordinator:
         """Dispatches 1-on-1 private inquiries to all active task owners across the project."""
         now = datetime.now(UTC)
         session_id = f"sync-{project_id}-{uuid.uuid4().hex[:8]}"
+
+        # A project has at most one live sync: close stale probes so replies after a
+        # re-initiation cannot resurrect zombie sessions from an earlier run.
+        for existing in self._sessions.values():
+            if existing.project_id == project_id and existing.status in (
+                SyncSessionStatus.PROBING,
+                SyncSessionStatus.CLARIFYING,
+            ):
+                existing.status = SyncSessionStatus.SUPERSEDED
+                existing.updated_at = now
 
         active_tasks = [
             t
@@ -268,6 +282,23 @@ class ProgressSyncCoordinator:
 
         return True, None
 
+    def force_complete_session(self, session_id: str) -> ExecutiveBriefing | None:
+        """Closes a live session now: unresponsive probes become NO_RESPONSE and the
+        briefing is synthesized from whatever has been collected so far."""
+        session = self.get_session(session_id)
+        if not session or session.status not in (
+            SyncSessionStatus.PROBING,
+            SyncSessionStatus.CLARIFYING,
+        ):
+            return None
+
+        now = datetime.now(UTC)
+        for probe in session.member_probes.values():
+            if probe.status != ProbeMemberStatus.COLLECTED:
+                probe.status = ProbeMemberStatus.NO_RESPONSE
+        session.updated_at = now
+        return self.synthesize_and_deliver_briefing(session_id)
+
     def synthesize_and_deliver_briefing(self, session_id: str) -> ExecutiveBriefing | None:
         """Synthesizes all member probe findings with DAG impact analysis and dispatches to PM."""
         session = self.get_session(session_id)
@@ -318,6 +349,15 @@ class ProgressSyncCoordinator:
 
         # Generate actionable recommendations
         recommendations: list[str] = []
+        no_response = [
+            p for p in session.member_probes.values() if p.status == ProbeMemberStatus.NO_RESPONSE
+        ]
+        if no_response:
+            names = "、".join(p.display_name for p in no_response)
+            recommendations.append(
+                f"{len(no_response)} 位成员（{names}）未响应本次探针，简报基于已回收信息生成，"
+                "建议单独跟进确认。"
+            )
         if delayed > 0:
             recommendations.append(
                 f"发现 {delayed} 项延误任务存在下游关键依赖风险，建议优先通过改期卡片完成排期审批。"

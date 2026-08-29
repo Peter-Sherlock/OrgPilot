@@ -115,9 +115,6 @@
       <button id="tabTimelineBtn" onclick="switchTab('timeline')" class="px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition flex items-center gap-2">
         <span>📜</span> 可解释性时间线
       </button>
-      <button id="tabSimulatorBtn" onclick="switchTab('simulator')" class="px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition flex items-center gap-2">
-        <span>⚡</span> 快速模拟与决策台
-      </button>
     </div>
     <div id="dagLegend" class="flex items-center gap-3 text-xs text-slate-400">
       <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> 正常</span>
@@ -138,7 +135,7 @@
           <span class="px-3 py-1 bg-brand-500/20 text-brand-300 border border-brand-500/30 rounded-lg text-xs font-bold">
             🎭 一人分饰多角演练台
           </span>
-          <p class="text-xs text-slate-300">在 3 个独立窗口中分别扮演 PM 与各研发角色，观察机器人主动探针、追问与 DAG 决策简报</p>
+          <p class="text-xs text-slate-300">在 4 个独立窗口中分别扮演 PM 与各研发角色，观察机器人主动探针、追问与 DAG 决策简报</p>
         </div>
         <div class="flex items-center gap-2.5">
           <button onclick="bootstrapSandbox()" class="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold rounded-lg text-slate-200 transition flex items-center gap-1.5">
@@ -150,7 +147,7 @@
         </div>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1 min-h-[550px]">
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 flex-1 min-h-[550px]">
         <!-- PM Window -->
         <div class="bg-slate-900/60 border border-slate-800 rounded-xl flex flex-col overflow-hidden shadow-lg">
           <div class="px-4 py-3 bg-slate-800/90 border-b border-slate-700 flex items-center justify-between">
@@ -164,15 +161,24 @@
             <button onclick="sendRoleMsg('ou_pm', '我要知道当前的项目进度')" class="px-2.5 py-1 bg-brand-600/30 hover:bg-brand-600/50 text-brand-300 border border-brand-500/40 rounded text-[11px] font-semibold transition">
               🚀 发起全员进度同步
             </button>
+            <button onclick="forceCompleteSync()" class="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/40 text-amber-300 border border-amber-500/40 rounded text-[11px] font-semibold transition">
+              ⏭️ 未响应成员直接出简报
+            </button>
             <button onclick="refreshData()" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded text-[11px] transition">
               🔄 刷新状态
             </button>
           </div>
-          <div id="chatStreamPM" class="flex-1 p-4 overflow-auto space-y-3 max-h-[380px] bg-slate-950/40 text-xs">
+          <div id="chatStreamPM" class="flex-1 p-4 overflow-auto space-y-3 max-h-[340px] bg-slate-950/40 text-xs">
             <div class="chat-bubble-bot p-3 rounded-xl text-slate-300 space-y-1">
               <div class="font-bold text-brand-400 flex items-center gap-1"><span>🤖</span> OrgPilot 智能体</div>
               <p>你好！我是项目协同智能体。点击上方「🚀 发起全员进度同步」可开始分布式主动探针！</p>
             </div>
+          </div>
+          <div class="border-t border-slate-800 bg-slate-900/90">
+            <div class="px-3 py-1.5 flex items-center justify-between">
+              <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">🛡️ PM 审批决策</span>
+            </div>
+            <div id="approvalsListContainer" class="px-3 pb-2 space-y-2 max-h-[120px] overflow-auto"></div>
           </div>
           <div class="p-3 bg-slate-900/90 border-t border-slate-800 flex items-center gap-2">
             <input id="inputPM" type="text" placeholder="以 PM 身份输入..." onkeydown="if(event.key==='Enter') sendInputMsg('ou_pm')" class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:border-brand-500 focus:outline-none">
@@ -240,6 +246,35 @@
             <button onclick="sendInputMsg('ou_bob')" class="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs transition">发送</button>
           </div>
         </div>
+
+        <!-- David Window -->
+        <div class="bg-slate-900/60 border border-slate-800 rounded-xl flex flex-col overflow-hidden shadow-lg">
+          <div class="px-4 py-3 bg-slate-800/90 border-b border-slate-700 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-violet-400 animate-pulse"></span>
+              <h3 class="text-xs font-bold text-slate-100 flex items-center gap-1"><span>🧪</span> QA 压测验收组 · David</h3>
+            </div>
+            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900/80 text-violet-300">ou_david</span>
+          </div>
+          <div class="p-2.5 bg-slate-900/80 border-b border-slate-800 flex flex-wrap gap-1.5">
+            <button onclick="sendRoleMsg('ou_david', '压测方案已就绪，等上游联调完成即可开测，整体按计划推进')" class="px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 border border-emerald-500/40 rounded text-[11px] font-semibold transition">
+              ✅ 报告验收就绪
+            </button>
+            <button onclick="sendRoleMsg('ou_david', '压测环境搭建卡住了，联调至少要延到周五才能开测')" class="px-2.5 py-1 bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 border border-rose-500/40 rounded text-[11px] transition">
+              ⚠️ 报告验收延期
+            </button>
+          </div>
+          <div id="chatStreamDavid" class="flex-1 p-4 overflow-auto space-y-3 max-h-[380px] bg-slate-950/40 text-xs">
+            <div class="chat-bubble-bot p-3 rounded-xl text-slate-300 space-y-1">
+              <div class="font-bold text-violet-400 flex items-center gap-1"><span>🤖</span> OrgPilot 智能体</div>
+              <p>你好 David！你负责末端验收任务【支付全链路压测与验收】，PM 发起同步后请务必回复，否则简报无法收敛。</p>
+            </div>
+          </div>
+          <div class="p-3 bg-slate-900/90 border-t border-slate-800 flex items-center gap-2">
+            <input id="inputDavid" type="text" placeholder="以 David 身份输入..." onkeydown="if(event.key==='Enter') sendInputMsg('ou_david')" class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:border-brand-500 focus:outline-none">
+            <button onclick="sendInputMsg('ou_david')" class="px-3.5 py-2 bg-violet-600 hover:bg-violet-500 text-white font-bold rounded-lg text-xs transition">发送</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -266,37 +301,6 @@
     <div id="viewTimeline" class="hidden flex-1 bg-slate-900/40 border border-slate-800 rounded-xl p-5 overflow-auto max-h-[650px]">
       <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-4">项目事件与可解释性时间线 (Audit Log)</h3>
       <div id="timelineContainer" class="space-y-4"></div>
-    </div>
-
-    <!-- View 3: Simulator -->
-    <div id="viewSimulator" class="hidden flex-1 grid grid-cols-1 md:grid-cols-2 gap-5">
-      <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-5 flex flex-col justify-between">
-        <div>
-          <h3 class="text-sm font-semibold text-slate-200 flex items-center gap-2"><span>💬</span> 自然语言消息摄入与抽取模拟</h3>
-          <p class="text-xs text-slate-400 mt-1">模拟成员在飞书群/私聊发送消息，由 ClaimExtractor 结构化抽取并驱动 Agent</p>
-          <div class="mt-4 space-y-3">
-            <div>
-              <label class="text-xs text-slate-400 block mb-1">发言成员 ID (Actor)</label>
-              <input id="simActorInput" type="text" value="ou_alice" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 font-mono focus:border-brand-500 focus:outline-none">
-            </div>
-            <div>
-              <label class="text-xs text-slate-400 block mb-1">聊天消息内容</label>
-              <textarea id="simMsgInput" rows="3" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:border-brand-500 focus:outline-none" placeholder="例如：支付 SDK 报错，排查需要到明天下午 5 点"></textarea>
-            </div>
-          </div>
-        </div>
-        <div class="pt-4 border-t border-slate-800 flex items-center justify-between">
-          <button onclick="runTurnExplicitly()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold rounded-lg text-slate-200 transition">仅触发 1 轮协调 (Run Turn)</button>
-          <button onclick="sendSimulatedMessage()" class="px-5 py-2 bg-brand-600 hover:bg-brand-500 text-xs font-bold rounded-lg text-white shadow-lg shadow-brand-500/20 transition">发送消息并自动闭环 ➔</button>
-        </div>
-      </div>
-      <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-5 flex flex-col justify-between">
-        <div>
-          <h3 class="text-sm font-semibold text-slate-200 flex items-center gap-2"><span>🛡️</span> PM 快速审批决策面板</h3>
-          <div id="approvalsListContainer" class="mt-4 space-y-3 max-h-[300px] overflow-auto"></div>
-        </div>
-        <div class="pt-4 border-t border-slate-800 text-xs text-slate-500 text-right">审批后将自动驱动 Agent 推进任务改期与群通知</div>
-      </div>
     </div>
 
     <!-- Node Detail Drawer -->
@@ -330,7 +334,7 @@
     function getProjectId() { return document.getElementById('projectIdInput').value.trim() || 'feishu-project'; }
 
     function switchTab(tabName) {
-      const tabs = ['sandbox', 'dag', 'timeline', 'simulator'];
+      const tabs = ['sandbox', 'dag', 'timeline'];
       tabs.forEach(t => {
         const view = document.getElementById(`view${t.charAt(0).toUpperCase() + t.slice(1)}`);
         const btn = document.getElementById(`tab${t.charAt(0).toUpperCase() + t.slice(1)}Btn`);
@@ -345,7 +349,6 @@
       });
       if (tabName === 'dag') loadDag();
       if (tabName === 'timeline') loadTimeline();
-      if (tabName === 'simulator') loadApprovals();
     }
 
     async function refreshData() {
@@ -381,6 +384,11 @@
           <div class="font-bold text-emerald-400 flex items-center gap-1"><span>🤖</span> OrgPilot 智能体</div>
           <p>已绑定任务【收银台前端结账】(TODO)。等待 PM 发起进度探针...</p>
         </div>`;
+      document.getElementById('chatStreamDavid').innerHTML = `
+        <div class="chat-bubble-bot p-3 rounded-xl text-slate-300 space-y-1">
+          <div class="font-bold text-violet-400 flex items-center gap-1"><span>🤖</span> OrgPilot 智能体</div>
+          <p>已绑定任务【支付全链路压测与验收】(TODO)。等待 PM 发起进度探针...</p>
+        </div>`;
       await refreshData();
     }
 
@@ -394,24 +402,31 @@
       } else {
         bubble.className = "flex justify-start";
         if (isCard && cardData) {
+          const memberBadges = (cardData.member_statuses || []).map(m => {
+            const color = m.status === 'collected' ? 'text-emerald-400' : (m.status === 'no_response' ? 'text-rose-400' : 'text-amber-400');
+            return `<span class="${color}">${m.display_name}:${m.status}</span>`;
+          }).join(' · ');
           bubble.innerHTML = `
             <div class="p-3.5 bg-slate-900 border border-brand-500/40 rounded-xl text-slate-200 max-w-[95%] shadow-xl space-y-2">
               <div class="flex items-center justify-between border-b border-slate-800 pb-2">
-                <span class="font-bold text-brand-400 flex items-center gap-1.5">📊 ${cardData.title || '项目全景决策简报'}</span>
+                <span class="font-bold text-brand-400 flex items-center gap-1.5">📊 项目全景决策简报</span>
+                <span class="text-[9px] text-slate-500 font-mono">${(cardData.generated_at || '').replace('T', ' ').substring(0, 16)}</span>
               </div>
               <div class="grid grid-cols-3 gap-1.5 text-center text-[11px] py-1 bg-slate-800/60 rounded-lg">
                 <div><span class="text-emerald-400 font-bold">${cardData.on_track_count || 0}</span> 正常</div>
                 <div><span class="text-amber-400 font-bold">${cardData.at_risk_count || 0}</span> 风险</div>
                 <div><span class="text-rose-400 font-bold">${cardData.delayed_count || 0}</span> 延误</div>
               </div>
+              <div class="text-[10px] text-slate-400">${memberBadges || '无成员响应记录'}</div>
               <div class="text-[11px] text-slate-300 bg-rose-500/10 border border-rose-500/20 p-2 rounded">
                 <span class="font-bold text-rose-400">⚠️ 关键路径波及：</span>
-                ${cardData.topological_risks && cardData.topological_risks[0] ? `【${cardData.topological_risks[0].source_task_id}】延误直接阻碍下游【${cardData.topological_risks[0].cascading_impact_tasks.join('、')}】` : '无下游阻碍'}
+                ${cardData.topological_risks && cardData.topological_risks[0] ? `【${cardData.topological_risks[0].source_task_title || cardData.topological_risks[0].source_task_id}】延误直接阻碍下游【${cardData.topological_risks[0].cascading_impact_tasks.join('、')}】` : '无下游阻碍'}
               </div>
               <div class="text-[11px] text-slate-400 space-y-1">
                 <span class="font-semibold text-slate-300">💡 协同决策建议：</span>
                 ${(cardData.recommended_actions || []).map(r => `<div>• ${r}</div>`).join('')}
               </div>
+              <div class="text-[10px] text-slate-500 border-t border-slate-800 pt-1.5">${cardData.summary_text || ''}</div>
             </div>`;
         } else {
           bubble.innerHTML = `<div class="chat-bubble-bot p-2.5 px-3 rounded-xl text-slate-200 max-w-[85%] shadow space-y-0.5"><div class="text-[10px] text-brand-400 font-semibold mb-0.5 flex items-center gap-1"><span>🤖</span> ${senderTitle}</div><p class="whitespace-pre-wrap">${text}</p></div>`;
@@ -423,7 +438,7 @@
 
     async function sendRoleMsg(actorId, message) {
       const pid = getProjectId();
-      const streamMap = { 'ou_pm': { id: 'chatStreamPM', name: '项目负责人 PM' }, 'ou_alice': { id: 'chatStreamAlice', name: '支付工程师 Alice' }, 'ou_bob': { id: 'chatStreamBob', name: '前端工程师 Bob' } };
+      const streamMap = { 'ou_pm': { id: 'chatStreamPM', name: '项目负责人 PM' }, 'ou_alice': { id: 'chatStreamAlice', name: '支付工程师 Alice' }, 'ou_bob': { id: 'chatStreamBob', name: '前端工程师 Bob' }, 'ou_david': { id: 'chatStreamDavid', name: 'QA 测试 David' } };
       const cfg = streamMap[actorId] || { id: 'chatStreamPM', name: actorId };
       appendChatBubble(cfg.id, true, cfg.name, message);
       const res = await fetch(`/api/v1/projects/${pid}/sandbox-chat?actor_id=${actorId}&message=${encodeURIComponent(message)}`, { method: 'POST' });
@@ -438,6 +453,7 @@
         setTimeout(() => {
           appendChatBubble('chatStreamAlice', false, 'OrgPilot 机器人', 'Hi Alice！项目负责人正在同步当前项目进度。请问您负责的【支付SDK接入】目前进展如何？是否有遇到阻碍或需要协调的地方？');
           appendChatBubble('chatStreamBob', false, 'OrgPilot 机器人', 'Hi Bob！项目负责人正在同步当前项目进度。请问您负责的【收银台前端结账】目前进展如何？是否有遇到阻碍或需要协调的地方？');
+          appendChatBubble('chatStreamDavid', false, 'OrgPilot 机器人', 'Hi David！项目负责人正在同步当前项目进度。请问您负责的【支付全链路压测与验收】目前进展如何？是否有遇到阻碍或需要协调的地方？');
         }, 300);
       } else if (data.type === 'clarification_needed') {
         appendChatBubble(cfg.id, false, 'OrgPilot 智能追问', data.bot_reply);
@@ -454,8 +470,25 @@
       await refreshData();
     }
 
+    async function forceCompleteSync() {
+      const pid = getProjectId();
+      const res = await fetch(`/api/v1/projects/${pid}/sync/complete`, { method: 'POST' });
+      if (!res.ok) {
+        appendChatBubble('chatStreamPM', false, '系统错误', `简报生成失败（HTTP ${res.status}），请查看网关日志。`);
+        return;
+      }
+      const data = await res.json();
+      appendChatBubble('chatStreamPM', false, 'OrgPilot 机器人', data.bot_reply);
+      if (data.briefing) {
+        setTimeout(() => {
+          appendChatBubble('chatStreamPM', false, 'OrgPilot 简报递送', '', true, data.briefing);
+        }, 300);
+      }
+      await refreshData();
+    }
+
     function sendInputMsg(actorId) {
-      const inputMap = { 'ou_pm': 'inputPM', 'ou_alice': 'inputAlice', 'ou_bob': 'inputBob' };
+      const inputMap = { 'ou_pm': 'inputPM', 'ou_alice': 'inputAlice', 'ou_bob': 'inputBob', 'ou_david': 'inputDavid' };
       const el = document.getElementById(inputMap[actorId]);
       if (el && el.value.trim()) { const val = el.value.trim(); el.value = ''; sendRoleMsg(actorId, val); }
     }
@@ -475,6 +508,8 @@
         await new Promise(r => setTimeout(r, 1500));
         await sendRoleMsg('ou_alice', '预计排查需要到明天下午 5 点');
         await new Promise(r => setTimeout(r, 1200));
+        await sendRoleMsg('ou_david', '压测方案已就绪，等上游联调完成即可开测，整体按计划推进');
+        await new Promise(r => setTimeout(r, 1500));
       } finally {
         btn.disabled = false;
         btn.innerHTML = `<span>▶️</span> 一键全流程自动演练`;
@@ -495,11 +530,12 @@
       const res = await fetch(`/api/v1/projects/${pid}/dag`);
       if (!res.ok) return;
       dagData = await res.json();
-      document.getElementById('statTotalTasks').textContent = dagData.total_tasks;
-      document.getElementById('statCompletedSub').textContent = `已完成: ${dagData.completed_tasks}`;
-      document.getElementById('statOnTrack').textContent = `${dagData.health_distribution.ON_TRACK || 0} 🟢`;
-      document.getElementById('statAtRisk').textContent = `${dagData.health_distribution.AT_RISK || 0} 🟡`;
-      document.getElementById('statDelayed').textContent = `${dagData.health_distribution.DELAYED || 0} 🔴`;
+      const s = dagData.summary || {};
+      document.getElementById('statTotalTasks').textContent = s.total_tasks ?? 0;
+      document.getElementById('statCompletedSub').textContent = `已完成: ${s.completed_count ?? 0}`;
+      document.getElementById('statOnTrack').textContent = `${s.on_track_count ?? 0} 🟢`;
+      document.getElementById('statAtRisk').textContent = `${s.at_risk_count ?? 0} 🟡`;
+      document.getElementById('statDelayed').textContent = `${s.delayed_count ?? 0} 🔴`;
       renderDagSvg(dagData);
     }
 
@@ -511,11 +547,9 @@
         return;
       }
 
-      const nodeMap = {};
       const layers = {};
       data.nodes.forEach(n => {
-        nodeMap[n.id] = n;
-        const l = n.level || 0;
+        const l = n.layer || 0;
         layers[l] = layers[l] || [];
         layers[l].push(n);
       });
@@ -530,7 +564,7 @@
         const nodesInCol = layers[lvl];
         const startY = 60;
         nodesInCol.forEach((node, rowIdx) => {
-          nodePositions[node.id] = {
+          nodePositions[node.task_id] = {
             x: startX + colIdx * layerWidth,
             y: startY + rowIdx * (nodeHeight + 40),
             node: node
@@ -539,8 +573,8 @@
       });
 
       data.edges.forEach(edge => {
-        const from = nodePositions[edge.source];
-        const to = nodePositions[edge.target];
+        const from = nodePositions[edge.from_task];
+        const to = nodePositions[edge.to_task];
         if (!from || !to) return;
         const x1 = from.x + 160, y1 = from.y + 35, x2 = to.x, y2 = to.y + 35;
         let strokeColor = edge.is_impacted ? '#f43f5e' : (edge.is_critical ? '#38bdf8' : '#475569');
@@ -566,20 +600,20 @@
         gNode.onclick = () => openDrawer(n);
 
         let badgeBg = '#10b981';
-        if (n.health === 'AT_RISK') badgeBg = '#f59e0b';
-        if (n.health === 'DELAYED') badgeBg = '#f43f5e';
-        if (n.workflow_status === 'COMPLETED') badgeBg = '#a855f7';
+        if (n.health_status === 'at_risk') badgeBg = '#f59e0b';
+        if (n.health_status === 'delayed') badgeBg = '#f43f5e';
+        if (n.workflow_status === 'done') badgeBg = '#a855f7';
 
-        let borderStroke = n.is_critical ? '#38bdf8' : '#334155';
-        let borderWidth = n.is_critical ? '2.5' : '1.5';
+        let borderStroke = n.is_critical_path ? '#38bdf8' : '#334155';
+        let borderWidth = n.is_critical_path ? '2.5' : '1.5';
 
         gNode.innerHTML = `
           <rect width="160" height="70" rx="10" fill="#1e293b" stroke="${borderStroke}" stroke-width="${borderWidth}" />
           <rect x="0" y="0" width="6" height="70" rx="3" fill="${badgeBg}" />
           <text x="14" y="24" fill="#f8fafc" font-size="12" font-weight="bold">${n.title.length > 9 ? n.title.substring(0, 8) + '…' : n.title}</text>
           <text x="14" y="44" fill="#94a3b8" font-size="10" font-family="monospace">👤 ${n.owner_id}</text>
-          <text x="14" y="60" fill="#64748b" font-size="9">${n.workflow_status}</text>
-          ${n.is_critical ? '<circle cx="145" cy="18" r="4" fill="#38bdf8" />' : ''}
+          <text x="14" y="60" fill="#64748b" font-size="9">${n.workflow_status}${n.blockers && n.blockers.length ? ' · ⚠ ' + n.blockers[0] : ''}</text>
+          ${n.is_critical_path ? '<circle cx="145" cy="18" r="4" fill="#38bdf8" />' : ''}
         `;
         g.appendChild(gNode);
       });
@@ -589,19 +623,21 @@
     function resetDagZoom() { currentZoom = 1.0; document.getElementById('dagRootGroup').setAttribute('transform', 'scale(1.0)'); }
 
     function openDrawer(node) {
-      document.getElementById('drawerTaskId').textContent = node.id;
+      document.getElementById('drawerTaskId').textContent = node.task_id;
       document.getElementById('drawerTitle').textContent = node.title;
       document.getElementById('drawerOwner').textContent = node.owner_id;
       document.getElementById('drawerWorkflow').textContent = node.workflow_status;
       document.getElementById('drawerDeadline').textContent = node.deadline ? new Date(node.deadline).toLocaleString() : '未设置';
-      
-      const badge = document.getElementById('drawerStatusBadge');
-      badge.textContent = node.health;
-      if (node.health === 'ON_TRACK') badge.className = "px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300";
-      if (node.health === 'AT_RISK') badge.className = "px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300";
-      if (node.health === 'DELAYED') badge.className = "px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300";
 
-      document.getElementById('drawerBlockers').textContent = node.blocker_reason || '暂无上报阻塞';
+      const badge = document.getElementById('drawerStatusBadge');
+      badge.textContent = node.health_status;
+      if (node.health_status === 'on_track') badge.className = "px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300";
+      if (node.health_status === 'at_risk') badge.className = "px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300";
+      if (node.health_status === 'delayed') badge.className = "px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300";
+
+      const blockers = (node.blockers && node.blockers.length) ? node.blockers : [];
+      const expText = node.expected_completion ? `预计完成: ${new Date(node.expected_completion).toLocaleString()}` : '';
+      document.getElementById('drawerBlockers').textContent = blockers.length ? blockers.join('；') : (expText || '暂无上报阻塞');
       document.getElementById('nodeDrawer').classList.remove('translate-x-full');
     }
 
@@ -647,25 +683,26 @@
       if (!res.ok) return;
       const approvals = await res.json();
       const container = document.getElementById('approvalsListContainer');
+      if (!container) return;
       container.innerHTML = '';
 
       if (!approvals || approvals.length === 0) {
-        container.innerHTML = `<div class="p-4 bg-slate-800/40 rounded-lg text-slate-400 text-xs text-center">🎉 当前没有待审的改期请求</div>`;
+        container.innerHTML = `<div class="py-1.5 text-slate-500 text-[10px] text-center">🎉 暂无待审改期请求</div>`;
         return;
       }
 
       approvals.forEach(app => {
         const item = document.createElement('div');
-        item.className = "p-3.5 bg-slate-800/90 border border-amber-500/30 rounded-xl space-y-2 text-xs";
+        item.className = "p-2.5 bg-slate-800/90 border border-amber-500/30 rounded-lg space-y-1.5 text-[11px]";
         item.innerHTML = `
           <div class="flex items-center justify-between font-semibold">
-            <span class="text-amber-400">⚠️ 改期审批: ${app.proposed_command.payload.task_id || '任务'}</span>
-            <span class="text-slate-400">审批人: ${app.approver_id}</span>
+            <span class="text-amber-400">⚠️ 改期: ${app.proposed_command.payload.task_id || '任务'}</span>
+            <span class="text-slate-500">${app.approver_id}</span>
           </div>
-          <p class="text-slate-300">申请改期至：<span class="font-mono text-cyan-300 font-bold">${app.proposed_command.payload.proposed_deadline || '待定'}</span></p>
-          <div class="flex items-center gap-2 pt-1">
-            <button onclick="decideApproval('${app.approval_id}', 'approved')" class="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded">🟢 批准改期</button>
-            <button onclick="decideApproval('${app.approval_id}', 'rejected')" class="flex-1 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded">🔴 拒绝申请</button>
+          <p class="text-slate-300">改期至：<span class="font-mono text-cyan-300 font-bold">${app.proposed_command.payload.proposed_deadline || '待定'}</span></p>
+          <div class="flex items-center gap-1.5">
+            <button onclick="decideApproval('${app.approval_id}', 'approved')" class="flex-1 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded">🟢 批准</button>
+            <button onclick="decideApproval('${app.approval_id}', 'rejected')" class="flex-1 py-1 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded">🔴 拒绝</button>
           </div>
         `;
         container.appendChild(item);
@@ -679,28 +716,6 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ decision: decision, approver_id: 'pm_web_operator', reason: 'Web Console Decision' })
       });
-      await refreshData();
-    }
-
-    async function sendSimulatedMessage() {
-      const pid = getProjectId();
-      const actor = document.getElementById('simActorInput').value.trim();
-      const msg = document.getElementById('simMsgInput').value.trim();
-      if (!msg) return;
-
-      await fetch(`/api/v1/projects/${pid}/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: msg, actor_id: actor, auto_run_turn: true })
-      });
-      document.getElementById('simMsgInput').value = '';
-      await refreshData();
-      switchTab('dag');
-    }
-
-    async function runTurnExplicitly() {
-      const pid = getProjectId();
-      await fetch(`/api/v1/projects/${pid}/run-turn`, { method: 'POST' });
       await refreshData();
     }
 

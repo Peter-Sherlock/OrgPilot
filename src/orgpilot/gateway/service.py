@@ -263,7 +263,7 @@ class GatewayService:
         coordinator.agent = agent
         coordinator.adapter = agent.adapter
         session = coordinator.start_sync_session(project_id, initiated_by, custom_intro)
-        await self.state_store.save_sync_sessions(project_id, [session])
+        await self.state_store.save_sync_sessions(project_id, coordinator.all_sessions())
         return session
 
     async def handle_sync_member_reply(
@@ -303,5 +303,26 @@ class GatewayService:
                 await self.event_store.append(evt)
 
             await self.state_store.save_state(coordinator.agent.projector.state)
-            await self.state_store.save_sync_sessions(project_id, [active_session])
+            await self.state_store.save_sync_sessions(project_id, coordinator.all_sessions())
         return converged, clarification_q, active_session
+
+    async def force_complete_sync(self, project_id: str) -> SyncSession | None:
+        """Force-closes the live sync session, marking unresponsive probes and
+        synthesizing the executive briefing from collected replies."""
+        async with self._project_lock(project_id):
+            coordinator = await self.get_sync_coordinator(project_id)
+            active_session = coordinator.get_active_session(project_id)
+            if not active_session:
+                return None
+
+            agent = await self.get_or_replay_agent(project_id)
+            coordinator.agent = agent
+            coordinator.adapter = agent.adapter
+
+            coordinator.force_complete_session(active_session.session_id)
+
+            for evt in coordinator.agent.event_log.all():
+                await self.event_store.append(evt)
+            await self.state_store.save_state(coordinator.agent.projector.state)
+            await self.state_store.save_sync_sessions(project_id, coordinator.all_sessions())
+            return active_session

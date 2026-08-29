@@ -1,5 +1,46 @@
 # 开发记录
 
+## 2026-08-29：真机联调修复三——同步闭环收敛与 DAG 可视化对齐（推进计划第二步·下）
+
+### 真机暴露的问题
+
+消息回复已通，但闭环仍未形成，用户反馈三点：
+
+1. **同步会话永不收敛**：收敛条件是"全部探针 collected"，而演示链末端 QA David（`task-qa` 负责人）在分屏沙箱里**没有窗口**（原先靠"快速模拟"tab 代答），探针永远 `pending` → 简报永不合成，PM 收不到决策卡。且库中遗留两个僵尸 `clarifying` 会话（`save_sync_sessions` 为 upsert，重启后 `restore_sessions` 还会复活它们）。
+2. **依赖拓扑空白 + 头部统计 undefined**：前端 `loadDag` 读 `dagData.total_tasks / health_distribution`，`renderDagSvg` 读 `n.id / n.level / n.health / edge.source / edge.target`，而后端 `DagResponse` 实际是 `summary.total_tasks / on_track_count...`、`task_id / layer / health_status / from_task / to_task`——整页字段错位，DAG 一个节点都画不出来。
+3. **信息架构**：用户裁定"快速模拟与决策台"tab 不需要，成员模拟全部收进多角色分屏沙箱。
+
+### 已修复
+
+- **强制收敛路径**：新增 `POST /api/v1/projects/{id}/sync/complete`（PM 窗格「⏭️ 未响应成员直接出简报」按钮）——未响应探针标记 `no_response`（新枚举值），基于已回收信息立即合成简报，建议区点名未响应成员。
+- **会话唯一活性**：发起新同步时自动把同项目旧活跃会话置为 `superseded`（新枚举值），僵尸会话不再累积、不再复活；`save_sync_sessions` 改为持久化协调器全部会话。
+- **David 第 4 窗格**：分屏沙箱扩为 4 窗（`xl:grid-cols-4`），QA David 配快捷回复按钮；自动演练链补 David 回复步，一键跑完整闭环。
+- **审批面板并入 PM 窗格**：随"快速模拟"tab 一并移除独立决策台，审批条紧凑版落位 PM 窗格下方，审批闭环不离开沙箱。
+- **DAG/头部统计字段对齐**：`loadDag` 改读 `summary.*`，节点/边/抽屉全部改用后端真实字段（`task_id/layer/health_status/from_task/to_task/is_critical_path`，小写枚举值 `done`），简报卡补成员响应状态行与总结文本。
+- 顺带修正：README 启动命令核对（`create_app --factory` 不带括号）。
+
+### 回归测试（2 个）
+
+- 强制收敛：Alice 已答、Bob/David 沉默 → complete 后两者 `no_response`、简报含未响应点名；无活跃会话时 complete 返回 `no_active_session` 而非崩溃。
+- 会话接管：二次发起同步后旧会话 `superseded`，成员回复落入新会话。
+
+### 自测（真实 LLM，全链路）
+
+bootstrap(4 成员/3 任务) → PM 发起 → Alice 模糊触发追问 → 补时间收集 → Bob 正常 → David 回复即 `sync_completed`：简报 3 任务/2 正常/1 风险，拓扑风险正确识别 `task-payment → [task-checkout, task-qa]`；`/dag` 关键路径三层全对；二次同步 + 强制收敛验证 `no_response` 点名成立。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS (4 P0 + 5 M1)
+orgpilot eval-extraction (mock): PASS (20 samples, 100% F1)
+pytest: 173 passed
+coverage: 90.36% branch-aware total coverage (fail_under=90%)
+ruff: All checks passed
+git diff --check: PASS
+```
+
+---
+
 ## 2026-08-29：真机联调修复二——bootstrap 幂等与前端静默失败治理（推进计划第二步·下）
 
 ### 真机暴露的问题

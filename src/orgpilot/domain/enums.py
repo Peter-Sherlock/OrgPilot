@@ -91,9 +91,11 @@ class SyncSessionStatus(StrEnum):
     CLARIFYING = "clarifying"
     SYNTHESIZING = "synthesizing"
     COMPLETED = "completed"
+    SUPERSEDED = "superseded"
 
 
 class ProbeMemberStatus(StrEnum):
     PENDING = "pending"
     CLARIFYING = "clarifying"
     COLLECTED = "collected"
+    NO_RESPONSE = "no_response"

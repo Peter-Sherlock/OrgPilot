@@ -344,6 +344,82 @@ async def test_gateway_sandbox_chat_sync_flow_end_to_end(client: httpx.AsyncClie
     assert normal.json()["type"] == "normal_turn"
 
 
+async def test_force_complete_sync_marks_no_response_and_delivers_briefing(
+    client: httpx.AsyncClient,
+) -> None:
+    """Regression for the live-test dead loop: a member who never replies used to
+    wedge the session in clarifying forever, so the briefing was never delivered.
+    The force-complete endpoint must close the cycle with no_response markers."""
+    base = "/api/v1/projects/proj-force-complete"
+    await client.post(f"{base}/bootstrap-sandbox")
+
+    start = await client.post(
+        f"{base}/sandbox-chat",
+        params={"actor_id": "ou_pm", "message": "我要知道当前的项目进度"},
+    )
+    assert start.json()["type"] == "sync_started"
+
+    alice = await client.post(
+        f"{base}/sandbox-chat",
+        params={"actor_id": "ou_alice", "message": "支付SDK接入一切正常，按计划推进"},
+    )
+    assert alice.json()["type"] == "member_collected"
+
+    # ou_bob and ou_david stay silent; the PM force-completes the session.
+    done = await client.post(f"{base}/sync/complete")
+    assert done.status_code == 200
+    data = done.json()
+    assert data["type"] == "sync_completed"
+    briefing = data["briefing"]
+    assert briefing is not None
+
+    statuses = {m["member_id"]: m["status"] for m in briefing["member_statuses"]}
+    assert statuses["ou_alice"] == "collected"
+    assert statuses["ou_bob"] == "no_response"
+    assert statuses["ou_david"] == "no_response"
+    assert any("未响应" in rec for rec in briefing["recommended_actions"])
+
+    # Completing again with no live session reports the idle state, not a crash.
+    again = await client.post(f"{base}/sync/complete")
+    assert again.status_code == 200
+    assert again.json()["type"] == "no_active_session"
+
+
+async def test_new_sync_supersedes_previous_active_session(client: httpx.AsyncClient) -> None:
+    """Re-initiating a sync must close the previous live session so stale probes
+    cannot accumulate as zombie clarifying sessions across restarts."""
+    base = "/api/v1/projects/proj-supersede"
+    await client.post(f"{base}/bootstrap-sandbox")
+
+    first = await client.post(
+        f"{base}/sandbox-chat",
+        params={"actor_id": "ou_pm", "message": "我要知道当前的项目进度"},
+    )
+    first_session_id = first.json()["session_id"]
+
+    second = await client.post(
+        f"{base}/sandbox-chat",
+        params={"actor_id": "ou_pm", "message": "我要同步进度"},
+    )
+    assert second.json()["type"] == "sync_started"
+    second_session_id = second.json()["session_id"]
+    assert second_session_id != first_session_id
+
+    first_detail = (await client.get(f"{base}/sync-sessions/{first_session_id}")).json()
+    assert first_detail["status"] == "superseded"
+    second_detail = (await client.get(f"{base}/sync-sessions/{second_session_id}")).json()
+    assert second_detail["status"] in {"probing", "clarifying"}
+
+    # A member reply must land in the live session, not the superseded one.
+    alice = await client.post(
+        f"{base}/sandbox-chat",
+        params={"actor_id": "ou_alice", "message": "支付SDK接入一切正常，按计划推进"},
+    )
+    assert alice.status_code == 200
+    alive = (await client.get(f"{base}/sync-sessions/{second_session_id}")).json()
+    assert alive["member_probes"]["ou_alice"]["status"] == "collected"
+
+
 async def test_sync_session_survives_gateway_restart(tmp_path) -> None:
     """A restart mid-collection must restore the active sync session so member
     replies are not orphaned and the scatter-gather cycle can complete."""

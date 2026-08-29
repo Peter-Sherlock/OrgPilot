@@ -25,7 +25,7 @@ To run the gateway and open the Web Dashboard locally:
 ```powershell
 uv run uvicorn orgpilot.gateway.app:create_app --factory --port 8000
 ```
-Open `http://localhost:8000/` in your browser to explore the interactive DAG topology, Explainability Timeline, and PM Approval Console.
+Open `http://localhost:8000/` in your browser: the multi-role split-screen sandbox lets one person role-play PM + engineers (4 windows) through probe fan-out, autonomous clarification, and DAG briefing synthesis; the interactive DAG topology, the Explainability Timeline, and the PM approval strip (inside the PM window) sit on the adjacent tabs. If a probed member never replies, `POST /api/v1/projects/{id}/sync/complete` (the PM window's「⏭️ 未响应成员直接出简报」button) closes the session with `no_response` markers and delivers the briefing anyway.
 
 External integrations are opt-in. For AIHubMix:
 

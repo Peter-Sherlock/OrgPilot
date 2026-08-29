@@ -318,3 +318,24 @@ async def sandbox_chat_endpoint(
         ),
         "turn_reason": reason,
     }
+
+
+@router.post("/sync/complete")
+async def force_complete_sync_endpoint(
+    project_id: str,
+    service: GatewayService = Depends(get_service),
+) -> dict:
+    """Force-closes the live sync session: unresponsive probes are marked no_response
+    and the executive briefing is synthesized from collected replies immediately."""
+    session = await service.force_complete_sync(project_id)
+    if session is None or session.briefing is None:
+        return {
+            "type": "no_active_session",
+            "bot_reply": "当前没有进行中的同步会话，请先由 PM 发起全员进度同步。",
+        }
+    return {
+        "type": "sync_completed",
+        "bot_reply": "⏭️ 未响应成员已标记，已基于已回收信息生成项目决策简报！",
+        "session": session.model_dump(mode="json"),
+        "briefing": session.briefing.model_dump(mode="json"),
+    }
