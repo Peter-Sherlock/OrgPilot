@@ -74,6 +74,7 @@ def create_app(
                 app_secret=runtime_settings.feishu_app_secret,
                 gateway_service=gateway_service,
                 project_id=runtime_settings.feishu_project_id,
+                demo_bootstrap=runtime_settings.demo_bootstrap,
             )
             with contextlib.suppress(Exception):
                 ws_listener.start()

@@ -205,7 +205,7 @@ async def bootstrap_sandbox_endpoint(
         await service.event_store.append(e)
 
     agent = await service.get_or_replay_agent(project_id)
-    await service.state_store.save_state(project_id, agent.projector.state)
+    await service.state_store.save_state(agent.projector.state)
     return {"status": "initialized", "members_count": 4, "tasks_count": 3}
 
 

@@ -40,6 +40,7 @@ class OrgPilotSettings:
     aihubmix_base_url: str = "https://aihubmix.com"
     aihubmix_model: str = "gpt-5.6-luna"
     collaboration_adapter: str = "mock"
+    demo_bootstrap: bool = False
     feishu_use_ws: bool = True
     feishu_app_id: str | None = None
     feishu_app_secret: str | None = field(default=None, repr=False)
@@ -50,6 +51,7 @@ class OrgPilotSettings:
     def from_env(cls) -> "OrgPilotSettings":
         _load_dotenv_if_exists()
         use_ws_env = os.getenv("ORGPILOT_FEISHU_USE_WS", "true").strip().lower()
+        demo_bootstrap_env = os.getenv("ORGPILOT_DEMO_BOOTSTRAP", "false").strip().lower()
         settings = cls(
             database_url=os.getenv(
                 "ORGPILOT_DATABASE_URL",
@@ -63,6 +65,7 @@ class OrgPilotSettings:
             collaboration_adapter=os.getenv("ORGPILOT_COLLABORATION_ADAPTER", "mock")
             .strip()
             .lower(),
+            demo_bootstrap=demo_bootstrap_env in {"1", "true", "yes", "on"},
             feishu_use_ws=use_ws_env in {"1", "true", "yes", "on"},
             feishu_app_id=_optional_env("FEISHU_APP_ID"),
             feishu_app_secret=_optional_env("FEISHU_APP_SECRET"),

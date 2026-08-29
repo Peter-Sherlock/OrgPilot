@@ -119,6 +119,7 @@ def _start_feishu_ws(project_id: str | None = None) -> int:
         gateway_service=service,
         project_id=target_project,
         loop=loop,
+        demo_bootstrap=settings.demo_bootstrap,
     )
     print(f"[*] Starting Feishu WebSocket Listener for project '{target_project}'...")
     print(f"[*] App ID: {app_id}")

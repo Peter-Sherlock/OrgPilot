@@ -1,5 +1,49 @@
 # 开发记录
 
+## 2026-08-28：修复与加固（推进计划第一步）
+
+### 已修复
+
+- `SqlStateStore.save_state` 调用点签名错误：进度同步成员回复持久化路径（`gateway/service.py`）与 `bootstrap-sandbox` 端点（`gateway/routes/coordination.py`）多传了 `project_id` 参数，执行即抛 TypeError；该两条路径此前无测试覆盖，Bug 由本次新增回归测试暴露。
+- 同一同步回复路径上的第二个隐藏缺陷：`handle_sync_member_reply` 访问不存在的 `event_log.events` 属性（`InMemoryEventLog` 的公开访问器是 `all()`）。现改为幂等回灌完整内存日志，由 SQL 存储按 event_id 去重——即该路径自引入起从未跑通，本次修复后才真正可用。
+- `SqlEventStore` 哈希时区表示缺陷：`occurred_at` 入库时统一规范化为 UTC，但内容哈希按事件原始时区偏移序列化计算，导致任何非 UTC 时区事件持久化后经重放读回再入库必然误报 `DuplicateEventConflict`。哈希现按 UTC 规范化瞬间计算，同一事件在不同时区表示下哈希一致。
+
+### 已实现
+
+- 新增 `ORGPILOT_DEMO_BOOTSTRAP`（默认 false）：飞书 Webhook 与 WebSocket 路径上的演示任务链自动注入及演示问候语改为显式 opt-in，生产部署默认不再注入演示数据；本地 `.env` 已开启以保留单人体验。`.env.example`、`docs/feishu-setup-guide.md`、`README.md` 已同步说明。
+- 清理从未被系统产生的死枚举值：`AgentTerminationReason.MAX_ROUNDS/DUPLICATE_BLOCKED`、`CoordinationCaseStatus.APPROVED/EXECUTING`（含活跃状态集合引用）、`CommitmentStatus.AT_RISK/BROKEN`（注释标注预留至 M3 承诺风险跟踪实现时回归）、`SyncSessionStatus.TIMEOUT`、`ProbeMemberStatus.TIMEOUT`、`CommandStatus.FAILED/TIMEOUT`。
+
+### 工程卫生
+
+- `orgpilot.db` 运行时数据库从 git 跟踪中移除并加入 `.gitignore`；根目录个人文档（`/*.docx`）加入 `.gitignore`。
+- 测试套件耗时结论：全部单测实际执行约 5 秒（`--durations` 逐项合计），无任何单测退化；墙钟波动（约 50s–330s）来自执行环境对文件 I/O（SQLAlchemy/aiosqlite 连接、模块导入收集）的可变开销，与仓库代码无关。8 月 26 日同套件曾记录 5.58s。
+- 覆盖率门槛恢复：最近 5 次提交（飞书 WS 监听器、沙盒分屏聊天路由、简报卡片等）引入代码未同步补测试，分支覆盖率一度降至 87.61%（低于 90% 门槛）。本次针对性补齐后恢复至 90.23%。
+
+### 新增回归测试（15 个）
+
+- `bootstrap-sandbox` 端点状态初始化（HTTP 层，覆盖 save_state 修复）；
+- 进度同步成员回复持久化快照与健康事件（服务层，覆盖上述两处 Bug 修复路径）；
+- 事件时区回放去重（SqlEventStore，覆盖哈希修复）；
+- 演示 bootstrap 默认关闭 / 显式开启（Webhook HTTP 层）；
+- `ORGPILOT_DEMO_BOOTSTRAP` 环境变量解析；
+- 沙盒分屏聊天全流程（同步启动 → 自主澄清 → 全员采集 → DAG 简报合成 → 普通消息）；
+- 飞书同步意图触发进度同步会话；
+- `build_executive_briefing_card` 风险/健康两种形态；
+- `SlotCompletenessEvaluator` 四个未覆盖分支（关键词完备、无关键词追问、缺根因追问、双缺槽位合并追问、默认兜底）。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS (4 P0 + 5 M1)
+orgpilot eval-extraction: PASS (20 samples, 100% F1, 100% Grounding)
+pytest: 164 passed
+coverage: 90.23% branch-aware total coverage (fail_under=90%)
+ruff: All checks passed
+git diff --check: PASS
+```
+
+---
+
 ## 2026-08-26：W1 Web 全局可视化控制台与实时 DAG 拓扑看板
 
 ### 已实现

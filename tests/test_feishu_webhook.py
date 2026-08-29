@@ -217,6 +217,90 @@ async def test_feishu_card_rejection_flow(client: httpx.AsyncClient) -> None:
     assert "任务改期审批 [已拒绝]" in card_data["card"]["header"]["title"]["content"]
 
 
+def _greeting_payload(message_id: str) -> dict:
+    """Builds a p2p non-actionable greeting message from a first-time solo user."""
+    ts = str(int(NOW.timestamp() * 1000))
+    return {
+        "header": {
+            "event_id": f"evt_{message_id}",
+            "event_type": "im.message.receive_v1",
+            "create_time": ts,
+        },
+        "event": {
+            "sender": {"sender_id": {"open_id": "ou_solo"}, "sender_type": "user"},
+            "message": {
+                "message_id": message_id,
+                "message_type": "text",
+                "content": json.dumps({"text": "你好"}),
+                "create_time": ts,
+            },
+        },
+    }
+
+
+async def test_feishu_demo_bootstrap_disabled_by_default(client: httpx.AsyncClient) -> None:
+    # Regression: demo task injection used to run unconditionally on the production
+    # webhook path; it must stay off unless ORGPILOT_DEMO_BOOTSTRAP opts in.
+    resp = await client.post("/api/v1/feishu/events", json=_greeting_payload("om_greet_default"))
+    assert resp.status_code == 200
+    assert resp.json()["code"] == 0
+
+    state = (await client.get("/api/v1/projects/feishu-project/state")).json()
+    assert state["tasks"] == {}
+    events = (await client.get("/api/v1/projects/feishu-project/events")).json()
+    assert events == []
+
+
+async def test_feishu_demo_bootstrap_opt_in() -> None:
+    db = Database("sqlite+aiosqlite:///:memory:")
+    await db.init_db()
+    settings = OrgPilotSettings(
+        collaboration_adapter="mock",
+        feishu_use_ws=False,
+        demo_bootstrap=True,
+    )
+    app = create_app(db, settings=settings)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        resp = await ac.post("/api/v1/feishu/events", json=_greeting_payload("om_greet_optin"))
+        assert resp.status_code == 200
+        state = (await ac.get("/api/v1/projects/feishu-project/state")).json()
+
+    assert len(state["tasks"]) == 3
+    assert "task-payment" in state["tasks"]
+    await db.close()
+
+
+async def test_feishu_sync_intent_starts_progress_sync(client: httpx.AsyncClient) -> None:
+    setup_events = _make_setup_events("feishu-project")
+    await client.post("/api/v1/projects/feishu-project/events", json={"events": setup_events})
+
+    ts = str(int(NOW.timestamp() * 1000))
+    sync_payload = {
+        "header": {
+            "event_id": "evt_msg_sync_intent",
+            "event_type": "im.message.receive_v1",
+            "create_time": ts,
+        },
+        "event": {
+            "sender": {"sender_id": {"open_id": "ou_carol"}, "sender_type": "user"},
+            "message": {
+                "message_id": "om_sync_intent_1",
+                "message_type": "text",
+                "content": json.dumps({"text": "我要知道当前的项目进度"}),
+                "create_time": ts,
+            },
+        },
+    }
+    resp = await client.post("/api/v1/feishu/events", json=sync_payload)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["code"] == 0
+    assert data["msg"] == "sync_session_started"
+    assert data["data"]["probed_members_count"] == 1
+    assert data["data"]["session_id"]
+
+
 async def test_feishu_card_missing_or_invalid_approval(client: httpx.AsyncClient) -> None:
     # Missing approval_id
     resp = await client.post(

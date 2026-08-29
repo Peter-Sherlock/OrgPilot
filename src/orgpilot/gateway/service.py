@@ -207,9 +207,10 @@ class GatewayService:
             occurred_at=occurred_at,
         )
 
-        # Save any new events generated during the turn
-        for evt in coordinator.agent.event_log.events:
+        # Save any new events generated during the turn. Re-appending the full
+        # in-memory log is idempotent: the SQL store deduplicates by event id.
+        for evt in coordinator.agent.event_log.all():
             await self.event_store.append(evt)
 
-        await self.state_store.save_state(project_id, coordinator.agent.projector.state)
+        await self.state_store.save_state(coordinator.agent.projector.state)
         return converged, clarification_q, active_session

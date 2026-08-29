@@ -35,6 +35,16 @@ def test_settings_from_env_and_validation(monkeypatch: pytest.MonkeyPatch) -> No
         OrgPilotSettings(collaboration_adapter="feishu").validate()
 
 
+def test_demo_bootstrap_env_parsing(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert OrgPilotSettings().demo_bootstrap is False
+    for value in ("1", "true", "yes", "on"):
+        monkeypatch.setenv("ORGPILOT_DEMO_BOOTSTRAP", value)
+        assert OrgPilotSettings.from_env().demo_bootstrap is True
+    for value in ("false", "0", "no", "off"):
+        monkeypatch.setenv("ORGPILOT_DEMO_BOOTSTRAP", value)
+        assert OrgPilotSettings.from_env().demo_bootstrap is False
+
+
 def test_aihubmix_client_is_only_enabled_explicitly() -> None:
     db = Database("sqlite+aiosqlite:///:memory:")
     mock_app = create_app(db, settings=OrgPilotSettings())

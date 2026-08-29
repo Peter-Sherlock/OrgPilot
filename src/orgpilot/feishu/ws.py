@@ -32,6 +32,7 @@ class FeishuWebSocketListener:
         gateway_service: Any,
         project_id: str = "feishu-project",
         loop: asyncio.AbstractEventLoop | None = None,
+        demo_bootstrap: bool = False,
     ) -> None:
         self.app_id = app_id
         self.app_secret = app_secret
@@ -40,6 +41,7 @@ class FeishuWebSocketListener:
         self.webhook_handler = FeishuWebhookHandler(
             service=gateway_service,
             project_id=project_id,
+            demo_bootstrap=demo_bootstrap,
         )
         try:
             self._loop = loop or asyncio.get_running_loop()

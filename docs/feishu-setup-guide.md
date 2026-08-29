@@ -59,6 +59,10 @@ FEISHU_APP_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 # （可选）大模型语义抽取配置
 # ORGPILOT_LLM_PROVIDER=aihubmix
 # AIHUBMIX_API_KEY=your_key_here
+
+# （可选）单人体验演示：首次收到消息且项目无任务时，自动注入演示任务链。
+# 默认关闭；生产环境请保持 false。
+# ORGPILOT_DEMO_BOOTSTRAP=true
 ```
 
 #### 启动方式 A：启动全功能网关（Web 看板 + 飞书 WebSocket 长连接）

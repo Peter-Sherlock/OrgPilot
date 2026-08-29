@@ -28,10 +28,11 @@ class ClaimStatus(StrEnum):
 
 
 class CommitmentStatus(StrEnum):
+    """Lifecycle of a tracked commitment. AT_RISK/BROKEN are reserved until
+    commitment risk tracking is implemented (M3); do not persist them today."""
+
     ACTIVE = "active"
     FULFILLED = "fulfilled"
-    AT_RISK = "at_risk"
-    BROKEN = "broken"
     SUPERSEDED = "superseded"
 
 
@@ -39,8 +40,6 @@ class CoordinationCaseStatus(StrEnum):
     OPEN = "open"
     WAITING_FOR_RESPONSE = "waiting_for_response"
     WAITING_FOR_APPROVAL = "waiting_for_approval"
-    APPROVED = "approved"
-    EXECUTING = "executing"
     RESOLVED = "resolved"
     CANCELLED = "cancelled"
     ESCALATED = "escalated"
@@ -56,9 +55,7 @@ class ActionType(StrEnum):
 
 class CommandStatus(StrEnum):
     SUCCESS = "success"
-    FAILED = "failed"
     REJECTED = "rejected"
-    TIMEOUT = "timeout"
 
 
 class ApprovalStatus(StrEnum):
@@ -72,8 +69,6 @@ class AgentTerminationReason(StrEnum):
     ALL_RESOLVED = "all_resolved"
     WAITING_RESPONSE = "waiting_response"
     WAITING_APPROVAL = "waiting_approval"
-    MAX_ROUNDS = "max_rounds"
-    DUPLICATE_BLOCKED = "duplicate_blocked"
     ESCALATED = "escalated"
     NO_ACTION = "no_action"
 
@@ -96,11 +91,9 @@ class SyncSessionStatus(StrEnum):
     CLARIFYING = "clarifying"
     SYNTHESIZING = "synthesizing"
     COMPLETED = "completed"
-    TIMEOUT = "timeout"
 
 
 class ProbeMemberStatus(StrEnum):
     PENDING = "pending"
     CLARIFYING = "clarifying"
     COLLECTED = "collected"
-    TIMEOUT = "timeout"

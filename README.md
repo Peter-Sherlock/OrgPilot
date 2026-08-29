@@ -39,6 +39,7 @@ uv run uvicorn orgpilot.gateway.app:create_app --factory --port 8000
 The offline 20-sample extraction result is a deterministic regression benchmark; it is not a measured accuracy claim for the live model.
 
 - Feishu HTTP Webhook setup guide lives in `docs/feishu-setup-guide.md`.
+- The solo-tester demo task chain injected on a first Feishu message is opt-in: set `ORGPILOT_DEMO_BOOTSTRAP=true` (off by default).
 - Ground-truth replay scenarios (4 P0 + 5 M1) live in `evals/scenarios/`.
 - 20-sample natural language extraction gold dataset lives in `evals/extraction/gold_dataset.yaml`.
 - Architecture and design specifications live in `docs/`.

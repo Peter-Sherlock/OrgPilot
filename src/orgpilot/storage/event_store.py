@@ -23,6 +23,10 @@ class SqlEventStore:
     @staticmethod
     def _compute_hash(event: OrgEvent) -> str:
         envelope = event.model_dump(mode="json", exclude={"received_at"})
+        # occurred_at is stored normalized to UTC, so the hash must be computed
+        # over the same canonical instant. Otherwise replaying a persisted event
+        # re-hashes a different timezone representation and false-conflicts.
+        envelope["occurred_at"] = event.occurred_at.astimezone(UTC).isoformat()
         serialized = json.dumps(envelope, sort_keys=True, default=str)
         return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 

@@ -33,6 +33,11 @@ Thumbs.db
 # Runtime output
 var/
 *.log
+orgpilot.db
+*.db-journal
+
+# Personal documents that do not belong in the repository
+/*.docx
 
 # Git metadata lives here because the desktop sandbox mounts .git read-only.
 .git-data/

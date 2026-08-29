@@ -7,6 +7,7 @@ import pytest
 
 from orgpilot.config import OrgPilotSettings
 from orgpilot.gateway.app import create_app
+from orgpilot.gateway.service import GatewayService
 from orgpilot.storage.database import Database
 
 NOW = datetime.fromisoformat("2026-09-10T10:00:00+08:00")
@@ -216,6 +217,110 @@ async def test_gateway_error_cases(client: httpx.AsyncClient) -> None:
         json={"events": [{"invalid": "event"}]},
     )
     assert resp.status_code == 400
+
+
+async def test_gateway_bootstrap_sandbox_persists_state(client: httpx.AsyncClient) -> None:
+    # Regression: this endpoint crashed with a TypeError on a stale save_state
+    # signature; it must initialize the sandbox and serve the projected state.
+    resp = await client.post("/api/v1/projects/proj-sandbox/bootstrap-sandbox")
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "initialized", "members_count": 4, "tasks_count": 3}
+
+    resp_state = await client.get("/api/v1/projects/proj-sandbox/state")
+    assert resp_state.status_code == 200
+    state_data = resp_state.json()
+    assert len(state_data["tasks"]) == 3
+    assert len(state_data["members"]) == 4
+
+
+async def test_gateway_sync_reply_persists_snapshot_and_events() -> None:
+    db = Database("sqlite+aiosqlite:///:memory:")
+    await db.init_db()
+    service = GatewayService(db)
+    project_id = "proj-sync-persist"
+    await service.ingest_raw_events(project_id, _make_setup_events(project_id))
+
+    session = await service.start_progress_sync(project_id, initiated_by="carol")
+    assert "alice" in session.member_probes
+
+    converged, clarify_q, _ = await service.handle_sync_member_reply(
+        project_id=project_id,
+        member_id="alice",
+        message="支付 SDK 报错，排查需要到明天下午 5 点",
+        occurred_at=NOW,
+    )
+    assert converged is True
+    assert clarify_q is None
+
+    # Regression: the sync reply path must persist the projected snapshot and the
+    # extracted health event, not crash on a stale save_state signature.
+    snapshot = await service.state_store.load_state(project_id)
+    assert snapshot is not None
+    persisted = await service.event_store.get_events(project_id)
+    assert any(event.event_type == "task.health_reported" for event in persisted)
+    await db.close()
+
+
+async def test_gateway_sandbox_chat_sync_flow_end_to_end(client: httpx.AsyncClient) -> None:
+    """Covers the split-screen sandbox chat backend: sync start, autonomous
+    clarification, member collection, DAG briefing synthesis, and normal turns."""
+    base = "/api/v1/projects/proj-chat"
+    await client.post(f"{base}/bootstrap-sandbox")
+
+    start = await client.post(
+        f"{base}/sandbox-chat",
+        params={"actor_id": "ou_pm", "message": "我要知道当前的项目进度"},
+    )
+    assert start.status_code == 200
+    start_data = start.json()
+    assert start_data["type"] == "sync_started"
+    session_id = start_data["session_id"]
+    assert set(start_data["probed_members"]) == {"ou_alice", "ou_bob", "ou_david"}
+
+    detail = await client.get(f"{base}/sync-sessions/{session_id}")
+    assert detail.status_code == 200
+    assert detail.json()["status"] == "probing"
+
+    alice = await client.post(
+        f"{base}/sandbox-chat",
+        params={"actor_id": "ou_alice", "message": "支付SDK接入一切正常，按计划推进"},
+    )
+    assert alice.json()["type"] == "member_collected"
+
+    bob_vague = await client.post(
+        f"{base}/sandbox-chat",
+        params={"actor_id": "ou_bob", "message": "收银台前端有点问题"},
+    )
+    assert bob_vague.json()["type"] == "clarification_needed"
+    assert bob_vague.json()["bot_reply"]
+
+    bob_clear = await client.post(
+        f"{base}/sandbox-chat",
+        params={"actor_id": "ou_bob", "message": "收银台前端搞定，预计明天下午6点恢复"},
+    )
+    assert bob_clear.json()["type"] == "member_collected"
+
+    david = await client.post(
+        f"{base}/sandbox-chat",
+        params={"actor_id": "ou_david", "message": "压测一切正常"},
+    )
+    assert david.json()["type"] == "sync_completed"
+    briefing = david.json()["briefing"]
+    assert briefing is not None
+    assert briefing["total_active_tasks"] == 3
+    assert briefing["summary_text"]
+    assert briefing["recommended_actions"]
+
+    final_detail = (await client.get(f"{base}/sync-sessions/{session_id}")).json()
+    assert final_detail["status"] == "completed"
+    assert final_detail["briefing"] is not None
+
+    normal = await client.post(
+        f"{base}/sandbox-chat",
+        params={"actor_id": "ou_pm", "message": "大家好，记得下午两点站会"},
+    )
+    assert normal.status_code == 200
+    assert normal.json()["type"] == "normal_turn"
 
 
 async def test_app_lifespan() -> None:

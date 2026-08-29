@@ -29,8 +29,6 @@ _ACTIVE_STATUSES = {
     CoordinationCaseStatus.OPEN,
     CoordinationCaseStatus.WAITING_FOR_RESPONSE,
     CoordinationCaseStatus.WAITING_FOR_APPROVAL,
-    CoordinationCaseStatus.APPROVED,
-    CoordinationCaseStatus.EXECUTING,
 }
 
 
