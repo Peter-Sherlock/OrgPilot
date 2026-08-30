@@ -56,6 +56,25 @@ class DirectiveState(StrictModel):
     last_update_at: datetime
 
 
+class PendingDirectiveClarification(StrictModel):
+    """A directive draft waiting for slot completion (target/task/deadline).
+
+    Persisted event-sourced so the original goal survives restarts: the
+    issuer's answer is merged back into the draft and the directive finally
+    issues with its full original context instead of being lost mid-clarify.
+    """
+
+    clarification_id: str
+    issuer_id: str
+    draft_text: str
+    missing_slots: tuple[str, ...]
+    targets: tuple[str, ...] = ()
+    task_id: str | None = None
+    time_expr: str | None = None
+    source_event_ids: tuple[str, ...] = ()
+    last_update_at: datetime
+
+
 class TaskState(StrictModel):
     task_id: str
     title: str
@@ -213,5 +232,8 @@ class OrgState(StrictModel):
     health_claims: dict[str, TaskHealthClaim] = Field(default_factory=dict)
     commitments: dict[str, Commitment] = Field(default_factory=dict)
     directives: dict[str, DirectiveState] = Field(default_factory=dict)
+    pending_directive_clarifications: dict[str, PendingDirectiveClarification] = Field(
+        default_factory=dict
+    )
     processed_event_ids: set[str] = Field(default_factory=set)
     last_event_id: str | None = None

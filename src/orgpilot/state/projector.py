@@ -10,6 +10,7 @@ from orgpilot.domain.models import (
     DirectiveState,
     MemberState,
     OrgState,
+    PendingDirectiveClarification,
     TaskHealthClaim,
     TaskState,
 )
@@ -17,6 +18,8 @@ from orgpilot.events.models import (
     CommitmentMadeEvent,
     CommitmentSupersededEvent,
     DirectiveAcknowledgedEvent,
+    DirectiveClarificationRequestedEvent,
+    DirectiveClarificationResolvedEvent,
     DirectiveCompletedEvent,
     DirectiveDeliveredEvent,
     DirectiveDeliveryFailedEvent,
@@ -82,6 +85,10 @@ class OrgProjector:
                 self._deliver_directive(event)
             case DirectiveDeliveryFailedEvent():
                 self._fail_directive_delivery(event)
+            case DirectiveClarificationRequestedEvent():
+                self._request_directive_clarification(event)
+            case DirectiveClarificationResolvedEvent():
+                self._resolve_directive_clarification(event)
 
         self.state.processed_event_ids.add(event.event_id)
         self.state.last_event_id = event.event_id
@@ -369,6 +376,38 @@ class OrgProjector:
                 "last_update_at": event.occurred_at,
             }
         )
+
+    def _request_directive_clarification(self, event: DirectiveClarificationRequestedEvent) -> None:
+        payload = event.payload
+        if payload.clarification_id in self.state.pending_directive_clarifications:
+            raise DomainInvariantError(
+                f"directive clarification {payload.clarification_id!r} already exists"
+            )
+        if payload.issuer_id not in self.state.members:
+            raise DomainInvariantError(f"unknown clarification issuer {payload.issuer_id!r}")
+        if payload.task_id is not None:
+            self._require_task(payload.task_id)
+        self.state.pending_directive_clarifications[payload.clarification_id] = (
+            PendingDirectiveClarification(
+                clarification_id=payload.clarification_id,
+                issuer_id=payload.issuer_id,
+                draft_text=payload.draft_text,
+                missing_slots=payload.missing_slots,
+                targets=payload.targets,
+                task_id=payload.task_id,
+                time_expr=payload.time_expr,
+                source_event_ids=(event.event_id,),
+                last_update_at=event.occurred_at,
+            )
+        )
+
+    def _resolve_directive_clarification(self, event: DirectiveClarificationResolvedEvent) -> None:
+        payload = event.payload
+        pending = self.state.pending_directive_clarifications.pop(payload.clarification_id, None)
+        if pending is None:
+            raise DomainInvariantError(
+                f"unknown directive clarification {payload.clarification_id!r}"
+            )
 
     def _active_claims(self, task_id: str) -> list[TaskHealthClaim]:
         return [

@@ -159,6 +159,22 @@ class DirectiveDeliveryFailedPayload(FrozenModel):
     attempts: int
 
 
+class DirectiveClarificationRequestedPayload(FrozenModel):
+    clarification_id: str
+    issuer_id: str
+    draft_text: str
+    missing_slots: tuple[str, ...]
+    targets: tuple[str, ...] = ()
+    task_id: str | None = None
+    time_expr: str | None = None
+
+
+class DirectiveClarificationResolvedPayload(FrozenModel):
+    clarification_id: str
+    # Empty when the issuer cancelled the clarification outright.
+    directive_id: str = ""
+
+
 class MemberRegisteredEvent(EventBase):
     event_type: Literal["member.registered"]
     payload: MemberRegisteredPayload
@@ -229,6 +245,16 @@ class DirectiveDeliveryFailedEvent(EventBase):
     payload: DirectiveDeliveryFailedPayload
 
 
+class DirectiveClarificationRequestedEvent(EventBase):
+    event_type: Literal["directive.clarification_requested"]
+    payload: DirectiveClarificationRequestedPayload
+
+
+class DirectiveClarificationResolvedEvent(EventBase):
+    event_type: Literal["directive.clarification_resolved"]
+    payload: DirectiveClarificationResolvedPayload
+
+
 type OrgEvent = Annotated[
     MemberRegisteredEvent
     | TaskCreatedEvent
@@ -243,7 +269,9 @@ type OrgEvent = Annotated[
     | DirectiveRemindedEvent
     | DirectiveEscalatedEvent
     | DirectiveDeliveredEvent
-    | DirectiveDeliveryFailedEvent,
+    | DirectiveDeliveryFailedEvent
+    | DirectiveClarificationRequestedEvent
+    | DirectiveClarificationResolvedEvent,
     Field(discriminator="event_type"),
 ]
 

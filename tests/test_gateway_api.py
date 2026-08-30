@@ -679,3 +679,67 @@ async def test_gateway_bootstrap_sandbox_is_idempotent(client: httpx.AsyncClient
 async def test_app_lifespan() -> None:
     app = create_app()
     assert app.title == "OrgPilot Event Gateway"
+
+
+async def test_directive_clarification_multiturn_closes_loop(client: httpx.AsyncClient) -> None:
+    """P1 regression: answering the ambiguity question must issue the original
+    directive with restored context, not lose it (ask-only is not a loop)."""
+    base = "/api/v1/projects/proj-dir-clarify"
+    await client.post(f"{base}/bootstrap-sandbox")
+
+    ask = await client.post(
+        f"{base}/sandbox-chat",
+        params={"actor_id": "ou_pm", "message": "告诉Alice，必须在明天上午12点之前完成"},
+    )
+    assert ask.json()["directive"] == "clarify"
+
+    answer = await client.post(
+        f"{base}/sandbox-chat",
+        params={"actor_id": "ou_pm", "message": "中午12点"},
+    )
+    data = answer.json()
+    assert data["directive"] == "issued"
+    assert "Alice" in data["bot_reply"]
+
+    # The loop truly closed: Alice can now acknowledge the issued directive.
+    ack = await client.post(
+        f"{base}/sandbox-chat",
+        params={"actor_id": "ou_alice", "message": "收到，马上处理"},
+    )
+    assert ack.json()["directive"] == "acknowledged"
+
+
+async def test_pending_clarification_survives_gateway_restart(tmp_path) -> None:
+    """A restart between the clarification question and the issuer's answer must
+    not orphan the draft: the answer still issues the original directive."""
+    db_path = tmp_path / "clarify-restart.db"
+    db = Database(f"sqlite+aiosqlite:///{db_path}")
+    await db.init_db()
+    service = GatewayService(db)
+    project_id = "proj-clarify-restart"
+    await service.ingest_raw_events(project_id, _make_setup_events(project_id))
+    ask = await service.ingest_message(
+        project_id=project_id,
+        message="告诉alice，必须在明天上午12点之前完成",
+        actor_id="carol",
+        occurred_at=NOW,
+    )
+    assert ask.directive_kind == "clarify"
+    await db.close()
+
+    restarted_db = Database(f"sqlite+aiosqlite:///{db_path}")
+    await restarted_db.init_db()
+    restarted = GatewayService(restarted_db)
+    answer = await restarted.ingest_message(
+        project_id=project_id,
+        message="中午12点",
+        actor_id="carol",
+        occurred_at=NOW,
+    )
+    assert answer.directive_kind == "issued"
+    agent = await restarted.get_or_replay_agent(project_id)
+    directive = next(iter(agent.projector.state.directives.values()))
+    assert directive.target_id == "alice"
+    assert directive.deadline is not None
+    assert agent.projector.state.pending_directive_clarifications == {}
+    await restarted_db.close()

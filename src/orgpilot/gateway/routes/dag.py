@@ -230,9 +230,15 @@ async def get_project_timeline(
                 "completed": "🏁 指令完成",
                 "reminded": "⏰ 指令催办",
                 "escalated": "🚨 指令升级",
+                "delivered": "📨 指令送达",
+                "delivery_failed": "⚠️ 指令送达失败",
+                "clarification_requested": "🤔 指令澄清",
+                "clarification_resolved": "💬 指令澄清完成",
             }
             payload = evt.payload
-            dir_id = getattr(payload, "directive_id", "")
+            dir_id = getattr(payload, "directive_id", "") or getattr(
+                payload, "clarification_id", ""
+            )
             title = f"{action_labels.get(action, evt.event_type)}: {dir_id}"
             if action == "issued":
                 desc = (

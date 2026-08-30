@@ -274,3 +274,192 @@ def test_remind_with_no_open_directives() -> None:
     outcome = _manager().remind_open_directives(projector.state, "carol", NOW)
     assert outcome.kind == "none"
     assert "没有待确认" in (outcome.bot_reply or "")
+
+
+# ------------------------------------------------- multi-turn clarification
+
+
+def _apply(projector: OrgProjector, outcome) -> None:
+    for event in outcome.events:
+        projector.apply(event)
+
+
+def test_ambiguous_time_clarification_closes_loop() -> None:
+    """P1 regression: the clarify answer must restore the original draft and
+    finally issue the directive — asking alone is not a closed loop."""
+    projector, pm, _alice, _bob = _setup_state()
+    manager = _manager()
+    first = manager.handle_directive_intent(
+        message="告诉Alice，必须在明天上午12点之前完成",
+        actor_id=pm,
+        hints=IntentHint(mentioned_member_ids=("alice",), raw_time_expr="明天上午12点"),
+        state=projector.state,
+        occurred_at=NOW,
+    )
+    assert first.kind == "clarify"
+    _apply(projector, first)
+    assert len(projector.state.pending_directive_clarifications) == 1
+    pending = next(iter(projector.state.pending_directive_clarifications.values()))
+    assert pending.missing_slots == ("deadline",)
+    assert pending.targets == ("alice",)
+
+    resolved = manager.resolve_pending_clarification(pm, "中午12点", projector.state, NOW)
+    assert resolved is not None and resolved.kind == "issued"
+    _apply(projector, resolved)
+    directive = next(iter(projector.state.directives.values()))
+    assert directive.target_id == "alice"
+    assert directive.deadline == datetime.fromisoformat("2026-09-11T12:00:00+08:00")
+    assert projector.state.pending_directive_clarifications == {}
+
+
+def test_clarification_answer_with_midnight_keyword() -> None:
+    projector, pm, _alice, _bob = _setup_state()
+    manager = _manager()
+    first = manager.handle_directive_intent(
+        message="告诉Alice，必须在明天上午12点之前完成",
+        actor_id=pm,
+        hints=IntentHint(mentioned_member_ids=("alice",), raw_time_expr="明天上午12点"),
+        state=projector.state,
+        occurred_at=NOW,
+    )
+    _apply(projector, first)
+    resolved = manager.resolve_pending_clarification(pm, "凌晨，半夜就要", projector.state, NOW)
+    assert resolved is not None and resolved.kind == "issued"
+    _apply(projector, resolved)
+    directive = next(iter(projector.state.directives.values()))
+    assert directive.deadline == datetime.fromisoformat("2026-09-11T00:00:00+08:00")
+
+
+def test_missing_target_clarification_restored_by_reply() -> None:
+    projector, pm, _alice, _bob = _setup_state()
+    manager = _manager()
+    first = manager.handle_directive_intent(
+        message="必须在明天下午5点之前完成联调",
+        actor_id=pm,
+        hints=IntentHint(raw_time_expr="明天下午5点"),
+        state=projector.state,
+        occurred_at=NOW,
+    )
+    assert first.kind == "clarify"
+    _apply(projector, first)
+
+    resolved = manager.resolve_pending_clarification(pm, "Alice", projector.state, NOW)
+    assert resolved is not None and resolved.kind == "issued"
+    _apply(projector, resolved)
+    directive = next(iter(projector.state.directives.values()))
+    assert directive.target_id == "alice"
+    assert directive.deadline == datetime.fromisoformat("2026-09-11T17:00:00+08:00")
+
+
+def test_task_clarification_restored_by_reply() -> None:
+    projector, pm, _alice, bob = _setup_state()
+    manager = _manager()
+    first = manager.handle_directive_intent(
+        message="告诉Bob，务必尽快推进",
+        actor_id=pm,
+        hints=IntentHint(mentioned_member_ids=("bob",)),
+        state=projector.state,
+        occurred_at=NOW,
+    )
+    assert first.kind == "clarify"
+    _apply(projector, first)
+
+    resolved = manager.resolve_pending_clarification(pm, "全链路压测", projector.state, NOW)
+    assert resolved is not None and resolved.kind == "issued"
+    _apply(projector, resolved)
+    directive = next(iter(projector.state.directives.values()))
+    assert directive.task_id == "task-qa"
+    assert directive.target_id == "bob"
+
+
+def test_clarification_can_be_cancelled() -> None:
+    projector, pm, _alice, _bob = _setup_state()
+    manager = _manager()
+    first = manager.handle_directive_intent(
+        message="告诉Alice，必须在明天上午12点之前完成",
+        actor_id=pm,
+        hints=IntentHint(mentioned_member_ids=("alice",), raw_time_expr="明天上午12点"),
+        state=projector.state,
+        occurred_at=NOW,
+    )
+    _apply(projector, first)
+    cancelled = manager.resolve_pending_clarification(pm, "算了，先不下", projector.state, NOW)
+    assert cancelled is not None and cancelled.kind == "cancelled"
+    _apply(projector, cancelled)
+    assert projector.state.directives == {}
+    assert projector.state.pending_directive_clarifications == {}
+
+
+def test_pending_clarification_survives_replay() -> None:
+    """Restart mid-clarify: a replayed event log restores the pending draft and
+    the issuer's later answer still issues the original directive."""
+    projector, pm, _alice, _bob = _setup_state()
+    manager = _manager()
+    first = manager.handle_directive_intent(
+        message="告诉Alice，必须在明天上午12点之前完成",
+        actor_id=pm,
+        hints=IntentHint(mentioned_member_ids=("alice",), raw_time_expr="明天上午12点"),
+        state=projector.state,
+        occurred_at=NOW,
+    )
+    _apply(projector, first)
+
+    replayed = OrgProjector(project_id="proj-dir")
+    replayed.replay(_base_events() + first.events)
+    assert len(replayed.state.pending_directive_clarifications) == 1
+
+    resolved = manager.resolve_pending_clarification(pm, "中午12点", replayed.state, NOW)
+    assert resolved is not None and resolved.kind == "issued"
+    for event in resolved.events:
+        replayed.apply(event)
+    directive = next(iter(replayed.state.directives.values()))
+    assert directive.deadline == datetime.fromisoformat("2026-09-11T12:00:00+08:00")
+    assert replayed.state.pending_directive_clarifications == {}
+
+
+def test_multiple_open_directives_require_disambiguation() -> None:
+    projector, pm, alice, _bob = _setup_state()
+    # Alice owns two tasks in this scenario.
+    for event in [
+        TaskCreatedEvent(
+            project_id="proj-dir",
+            event_id="evt-t-9",
+            event_type="task.created",
+            source=EventSource.TASK,
+            source_ref="setup",
+            occurred_at=NOW,
+            received_at=NOW,
+            payload={"task_id": "task-report", "title": "周报系统", "owner_id": "alice"},
+        )
+    ]:
+        projector.apply(event)
+    manager = _manager()
+    first = manager.handle_directive_intent(
+        message="推进支付SDK",
+        actor_id=pm,
+        hints=IntentHint(mentioned_member_ids=("alice",), mentioned_task_ids=("task-payment",)),
+        state=projector.state,
+        occurred_at=NOW,
+    )
+    _apply(projector, first)
+    second = manager.handle_directive_intent(
+        message="推进周报系统",
+        actor_id=pm,
+        hints=IntentHint(mentioned_member_ids=("alice",), mentioned_task_ids=("task-report",)),
+        state=projector.state,
+        occurred_at=NOW + timedelta(seconds=1),
+    )
+    _apply(projector, second)
+    assert len(projector.state.directives) == 2
+
+    vague = manager.handle_member_reply(alice, "收到", projector.state, NOW)
+    assert vague is not None and vague.kind == "none"
+    assert "多条进行中的指令" in (vague.bot_reply or "")
+
+    bound = manager.handle_member_reply(alice, "收到，支付SDK接入那条", projector.state, NOW)
+    assert bound is not None and bound.kind == "acknowledged"
+    for event in bound.events:
+        projector.apply(event)
+    statuses = {d.task_id: d.status for d in projector.state.directives.values()}
+    assert statuses["task-payment"] is DirectiveStatus.ACKNOWLEDGED
+    assert statuses["task-report"] is DirectiveStatus.ISSUED

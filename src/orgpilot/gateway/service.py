@@ -307,7 +307,18 @@ class GatewayService:
         directive_outbound: list[ActionCommand] = []
         manager = self._directive_manager_for(agent)
 
-        if extraction_result.intent is MessageIntent.DIRECTIVE:
+        # A pending directive clarification consumes the issuer's next reply:
+        # the answer restores the original draft instead of starting a new turn.
+        pending_outcome = manager.resolve_pending_clarification(
+            actor_id, message, agent.projector.state, ts
+        )
+        if pending_outcome is not None:
+            directive_kind = pending_outcome.kind
+            directive_reply = pending_outcome.bot_reply
+            directive_notices.extend(pending_outcome.notices)
+            directive_outbound.extend(pending_outcome.outbound)
+            ingest_events.extend(pending_outcome.events)
+        elif extraction_result.intent is MessageIntent.DIRECTIVE:
             outcome = manager.handle_directive_intent(
                 message=message,
                 actor_id=actor_id,
