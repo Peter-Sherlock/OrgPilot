@@ -128,9 +128,7 @@ class IntentRouter:
                 hints=hints,
             )
 
-        if _DEADLINE_CHANGE_RE.search(text) or (
-            _MANDATE_RE.search(text) and tasks and not members
-        ):
+        if _DEADLINE_CHANGE_RE.search(text) or (_MANDATE_RE.search(text) and tasks and not members):
             mandate_note = "（含强制语气）" if _MANDATE_RE.search(text) else ""
             return IntentResult(
                 intent=MessageIntent.DEADLINE_CHANGE,

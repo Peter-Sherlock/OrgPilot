@@ -641,9 +641,7 @@ async def test_message_from_unregistered_member_auto_registers(
     unprojectable health event, permanently bricking the project replay (500 on
     every endpoint). The sender must be auto-registered and the claim processed."""
     setup_events = _make_setup_events("proj-auto-register")
-    await client.post(
-        "/api/v1/projects/proj-auto-register/events", json={"events": setup_events}
-    )
+    await client.post("/api/v1/projects/proj-auto-register/events", json={"events": setup_events})
 
     resp = await client.post(
         "/api/v1/projects/proj-auto-register/sandbox-chat",

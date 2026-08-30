@@ -231,9 +231,7 @@ class DirectiveManager:
             events = [e for e in (ack_event, event) if e is not None]
             return DirectiveOutcome(
                 kind="completed",
-                bot_reply=(
-                    f"🏁 已记录：您已完成指令任务。感谢反馈，已同步给 {issuer_name}。"
-                ),
+                bot_reply=(f"🏁 已记录：您已完成指令任务。感谢反馈，已同步给 {issuer_name}。"),
                 notices=[
                     DirectiveNotice(
                         actor_id=directive.issuer_id,
@@ -250,8 +248,7 @@ class DirectiveManager:
                 return DirectiveOutcome(
                     kind="acknowledged",
                     bot_reply=(
-                        "✅ 已确认收到，谢谢！完成后请回复「已完成」，我会同步给 "
-                        f"{issuer_name}。"
+                        f"✅ 已确认收到，谢谢！完成后请回复「已完成」，我会同步给 {issuer_name}。"
                     ),
                     notices=[
                         DirectiveNotice(
@@ -370,9 +367,7 @@ class DirectiveManager:
                     )
                 )
                 notices.append(DirectiveNotice(actor_id=directive.issuer_id, text=text))
-            elif (
-                directive.reminder_count == 0 and age_minutes >= self.reminder_after_minutes
-            ):
+            elif directive.reminder_count == 0 and age_minutes >= self.reminder_after_minutes:
                 events.append(
                     DirectiveRemindedEvent(
                         project_id=state.project_id,
@@ -428,7 +423,9 @@ class DirectiveManager:
         open_dirs = [
             d
             for d in state.directives.values()
-            if d.target_id == actor_id and d.status in (
+            if d.target_id == actor_id
+            and d.status
+            in (
                 DirectiveStatus.ISSUED,
                 DirectiveStatus.ACKNOWLEDGED,
             )
@@ -475,7 +472,7 @@ class DirectiveManager:
             action_id=f"action:directive:{directive_id}",
             action_type=ActionType.SEND_DIRECTIVE,
             targets=[target_id],
-            payload={"inquiry_text": text, "directive_id": directive_id},
+            payload={"text": text, "directive_id": directive_id},
             created_at=occurred_at,
             idempotency_key=f"idem:directive:{directive_id}:{target_id}",
         )
@@ -494,9 +491,7 @@ class DirectiveManager:
         )
 
     @staticmethod
-    def _directive_id(
-        project_id: str, actor_id: str, message: str, occurred_at: datetime
-    ) -> str:
+    def _directive_id(project_id: str, actor_id: str, message: str, occurred_at: datetime) -> str:
         identity = f"{project_id}|{actor_id}|{occurred_at.isoformat()}|{message}"
         return f"dir-{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:16]}"
 

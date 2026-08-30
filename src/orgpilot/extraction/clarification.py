@@ -42,15 +42,11 @@ class SlotCompletenessEvaluator:
             )
         if "预计恢复或完成时间点" in missing_slots:
             return (
-                f"收到！关于【{task_title}】，"
-                "请问预计大概需要排查到什么时候（例如：明天下午5点）？"
+                f"收到！关于【{task_title}】，请问预计大概需要排查到什么时候（例如：明天下午5点）？"
             )
         if "具体阻塞根因与卡点" in missing_slots:
             return (
                 f"收到！关于【{task_title}】，"
                 "请问导致延期的主要卡点是什么？是否需要协调其他同学支持？"
             )
-        return (
-            f"收到！关于【{task_title}】，"
-            "为了评估对下游影响，请补充预计完成时间或当前具体进展。"
-        )
+        return f"收到！关于【{task_title}】，为了评估对下游影响，请补充预计完成时间或当前具体进展。"

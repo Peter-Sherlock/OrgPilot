@@ -214,9 +214,7 @@ async def bootstrap_sandbox_endpoint(
     events = [
         e
         for e in events
-        if not (
-            isinstance(e, MemberRegisteredEvent) and e.payload.member_id in known_members
-        )
+        if not (isinstance(e, MemberRegisteredEvent) and e.payload.member_id in known_members)
         and not (isinstance(e, TaskCreatedEvent) and e.payload.task_id in known_tasks)
     ]
 
@@ -321,8 +319,7 @@ async def sandbox_chat_endpoint(
             "该链路将在下一里程碑启用，本期已准确识别。"
         ),
         "question": (
-            "已识别为提问。智能问答链路将在后续版本启用；"
-            "当前可由 PM 发起全员进度同步获取最新状态。"
+            "已识别为提问。智能问答链路将在后续版本启用；当前可由 PM 发起全员进度同步获取最新状态。"
         ),
     }
     bot_reply = result.bot_reply or (

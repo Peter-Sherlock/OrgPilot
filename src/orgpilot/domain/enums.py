@@ -57,6 +57,7 @@ class ActionType(StrEnum):
 class CommandStatus(StrEnum):
     SUCCESS = "success"
     REJECTED = "rejected"
+    FAILED = "failed"
 
 
 class ApprovalStatus(StrEnum):

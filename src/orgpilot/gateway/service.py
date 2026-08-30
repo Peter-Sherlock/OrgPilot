@@ -358,6 +358,7 @@ class GatewayService:
                 bot_reply=outcome.bot_reply,
                 notices=list(outcome.notices),
             )
+
     async def get_sync_coordinator(self, project_id: str) -> ProgressSyncCoordinator:
         """Retrieves or creates a ProgressSyncCoordinator bound to the current project agent.
 
