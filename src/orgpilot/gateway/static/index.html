@@ -343,6 +343,24 @@
   <script>
     let currentZoom = 1.0;
     let dagData = null;
+    // Operator identity is provided by the server (project PM/lead member), never
+    // a hardcoded frontend constant impersonating an approver.
+    let OPERATOR_ID = null;
+
+    const ESCAPE_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+    function esc(value) {
+      return String(value ?? '').replace(/[&<>"']/g, ch => ESCAPE_MAP[ch]);
+    }
+
+    async function loadOperatorContext() {
+      try {
+        const res = await fetch(`/api/v1/projects/${getProjectId()}/context`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.operator_id) OPERATOR_ID = data.operator_id;
+        }
+      } catch (err) { console.error('Operator context load failed', err); }
+    }
 
     function getProjectId() { return document.getElementById('projectIdInput').value.trim() || 'feishu-project'; }
 
@@ -424,13 +442,13 @@
       const bubble = document.createElement('div');
       if (isUser) {
         bubble.className = "flex justify-end";
-        bubble.innerHTML = `<div class="chat-bubble-user p-2.5 px-3 rounded-xl text-white max-w-[85%] shadow"><div class="text-[10px] opacity-80 text-right mb-0.5">${senderTitle}</div><p class="whitespace-pre-wrap">${text}</p></div>`;
+        bubble.innerHTML = `<div class="chat-bubble-user p-2.5 px-3 rounded-xl text-white max-w-[85%] shadow"><div class="text-[10px] opacity-80 text-right mb-0.5">${esc(senderTitle)}</div><p class="whitespace-pre-wrap">${esc(text)}</p></div>`;
       } else {
         bubble.className = "flex justify-start";
         if (isCard && cardData) {
           const memberBadges = (cardData.member_statuses || []).map(m => {
             const color = m.status === 'collected' ? 'text-emerald-400' : (m.status === 'no_response' ? 'text-rose-400' : 'text-amber-400');
-            return `<span class="${color}">${m.display_name}:${m.status}</span>`;
+            return `<span class="${color}">${esc(m.display_name)}:${esc(m.status)}</span>`;
           }).join(' · ');
           bubble.innerHTML = `
             <div class="p-3.5 bg-slate-900 border border-brand-500/40 rounded-xl text-slate-200 max-w-[95%] shadow-xl space-y-2">
@@ -446,16 +464,16 @@
               <div class="text-[10px] text-slate-400">${memberBadges || '无成员响应记录'}</div>
               <div class="text-[11px] text-slate-300 bg-rose-500/10 border border-rose-500/20 p-2 rounded">
                 <span class="font-bold text-rose-400">⚠️ 关键路径波及：</span>
-                ${cardData.topological_risks && cardData.topological_risks[0] ? `【${cardData.topological_risks[0].source_task_title || cardData.topological_risks[0].source_task_id}】延误直接阻碍下游【${cardData.topological_risks[0].cascading_impact_tasks.join('、')}】` : '无下游阻碍'}
+                ${cardData.topological_risks && cardData.topological_risks[0] ? `【${esc(cardData.topological_risks[0].source_task_title || cardData.topological_risks[0].source_task_id)}】延误直接阻碍下游【${esc(cardData.topological_risks[0].cascading_impact_tasks.join('、'))}】` : '无下游阻碍'}
               </div>
               <div class="text-[11px] text-slate-400 space-y-1">
                 <span class="font-semibold text-slate-300">💡 协同决策建议：</span>
-                ${(cardData.recommended_actions || []).map(r => `<div>• ${r}</div>`).join('')}
+                ${(cardData.recommended_actions || []).map(r => `<div>• ${esc(r)}</div>`).join('')}
               </div>
-              <div class="text-[10px] text-slate-500 border-t border-slate-800 pt-1.5">${cardData.summary_text || ''}</div>
+              <div class="text-[10px] text-slate-500 border-t border-slate-800 pt-1.5">${esc(cardData.summary_text || '')}</div>
             </div>`;
         } else {
-          bubble.innerHTML = `<div class="chat-bubble-bot p-2.5 px-3 rounded-xl text-slate-200 max-w-[85%] shadow space-y-0.5"><div class="text-[10px] text-brand-400 font-semibold mb-0.5 flex items-center gap-1"><span>🤖</span> ${senderTitle}</div><p class="whitespace-pre-wrap">${text}</p></div>`;
+          bubble.innerHTML = `<div class="chat-bubble-bot p-2.5 px-3 rounded-xl text-slate-200 max-w-[85%] shadow space-y-0.5"><div class="text-[10px] text-brand-400 font-semibold mb-0.5 flex items-center gap-1"><span>🤖</span> ${esc(senderTitle)}</div><p class="whitespace-pre-wrap">${esc(text)}</p></div>`;
         }
       }
       container.appendChild(bubble);
@@ -655,11 +673,11 @@
         let borderWidth = n.is_critical_path ? '2.5' : '1.5';
 
         gNode.innerHTML = `
-          <rect width="160" height="70" rx="10" fill="#1e293b" stroke="${borderStroke}" stroke-width="${borderWidth}" />
-          <rect x="0" y="0" width="6" height="70" rx="3" fill="${badgeBg}" />
-          <text x="14" y="24" fill="#f8fafc" font-size="12" font-weight="bold">${n.title.length > 9 ? n.title.substring(0, 8) + '…' : n.title}</text>
-          <text x="14" y="44" fill="#94a3b8" font-size="10" font-family="monospace">👤 ${n.owner_id}</text>
-          <text x="14" y="60" fill="#64748b" font-size="9">${n.workflow_status}${n.blockers && n.blockers.length ? ' · ⚠ ' + n.blockers[0] : ''}</text>
+          <rect width="160" height="70" rx="10" fill="#1e293b" stroke="${esc(borderStroke)}" stroke-width="${borderWidth}" />
+          <rect x="0" y="0" width="6" height="70" rx="3" fill="${esc(badgeBg)}" />
+          <text x="14" y="24" fill="#f8fafc" font-size="12" font-weight="bold">${esc(n.title.length > 9 ? n.title.substring(0, 8) + '…' : n.title)}</text>
+          <text x="14" y="44" fill="#94a3b8" font-size="10" font-family="monospace">👤 ${esc(n.owner_id)}</text>
+          <text x="14" y="60" fill="#64748b" font-size="9">${esc(n.workflow_status)}${n.blockers && n.blockers.length ? ' · ⚠ ' + esc(n.blockers[0]) : ''}</text>
           ${n.is_critical_path ? '<circle cx="145" cy="18" r="4" fill="#38bdf8" />' : ''}
         `;
         g.appendChild(gNode);
@@ -711,13 +729,13 @@
         const item = document.createElement('div');
         item.className = "p-3.5 bg-slate-900/80 border border-slate-800 rounded-xl flex items-start gap-3 text-xs";
         item.innerHTML = `
-          <div class="mt-0.5 px-2 py-0.5 rounded uppercase font-bold text-[10px] ${catBadge}">${entry.category}</div>
+          <div class="mt-0.5 px-2 py-0.5 rounded uppercase font-bold text-[10px] ${catBadge}">${esc(entry.category)}</div>
           <div class="flex-1">
             <div class="flex items-center justify-between">
-              <h4 class="font-bold text-slate-200">${entry.title}</h4>
+              <h4 class="font-bold text-slate-200">${esc(entry.title)}</h4>
               <span class="text-slate-500 font-mono">${new Date(entry.timestamp).toLocaleTimeString()}</span>
             </div>
-            <p class="text-slate-400 mt-1">${entry.description}</p>
+            <p class="text-slate-400 mt-1">${esc(entry.description)}</p>
           </div>
         `;
         container.appendChild(item);
@@ -743,13 +761,13 @@
         item.className = "p-2.5 bg-slate-800/90 border border-amber-500/30 rounded-lg space-y-1.5 text-[11px]";
         item.innerHTML = `
           <div class="flex items-center justify-between font-semibold">
-            <span class="text-amber-400">⚠️ 改期: ${app.proposed_command.payload.task_id || '任务'}</span>
-            <span class="text-slate-500">${app.approver_id}</span>
+            <span class="text-amber-400">⚠️ 改期: ${esc(app.proposed_command.payload.task_id || '任务')}</span>
+            <span class="text-slate-500">${esc(app.approver_id)}</span>
           </div>
-          <p class="text-slate-300">改期至：<span class="font-mono text-cyan-300 font-bold">${app.proposed_command.payload.new_deadline || '待定'}</span></p>
+          <p class="text-slate-300">改期至：<span class="font-mono text-cyan-300 font-bold">${esc(app.proposed_command.payload.new_deadline || '待定')}</span></p>
           <div class="flex items-center gap-1.5">
-            <button onclick="decideApproval('${app.approval_id}', 'approved')" class="flex-1 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded">🟢 批准</button>
-            <button onclick="decideApproval('${app.approval_id}', 'rejected')" class="flex-1 py-1 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded">🔴 拒绝</button>
+            <button onclick="decideApproval('${esc(app.approval_id)}', 'approved')" class="flex-1 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded">🟢 批准</button>
+            <button onclick="decideApproval('${esc(app.approval_id)}', 'rejected')" class="flex-1 py-1 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded">🔴 拒绝</button>
           </div>
         `;
         container.appendChild(item);
@@ -761,12 +779,13 @@
       await fetch(`/api/v1/projects/${pid}/approvals/${approvalId}/decision`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision: decision, approver_id: 'pm_web_operator', reason: 'Web Console Decision' })
+        body: JSON.stringify({ decision: decision, approver_id: OPERATOR_ID || '', reason: 'Web Console Decision' })
       });
       await refreshData();
     }
 
-    window.addEventListener('DOMContentLoaded', () => {
+    window.addEventListener('DOMContentLoaded', async () => {
+      await loadOperatorContext();
       refreshData();
       setInterval(refreshData, 5000);
     });

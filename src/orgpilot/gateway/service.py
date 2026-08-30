@@ -23,6 +23,7 @@ from orgpilot.events.models import (
     OrgEvent,
     parse_event,
 )
+from orgpilot.extraction.client import LLMUnavailableError
 from orgpilot.extraction.extractor import ClaimExtractor
 from orgpilot.extraction.models import MessageContext
 from orgpilot.gateway.outbox import OutboxDispatcher
@@ -146,23 +147,32 @@ class GatewayService:
         events: list[OrgEvent],
         current_time: datetime,
     ) -> tuple[AgentTurnTrace, list[OrgEvent]]:
+        """Runs a locked agent turn; see :meth:`_run_agent_turn_locked`."""
+        async with self._project_lock(agent.project_id):
+            return await self._run_agent_turn_locked(agent, events, current_time)
+
+    async def _run_agent_turn_locked(
+        self,
+        agent: CoordinationAgent,
+        events: list[OrgEvent],
+        current_time: datetime,
+    ) -> tuple[AgentTurnTrace, list[OrgEvent]]:
         """Runs the synchronous deterministic kernel off-loop and persists all outputs.
 
-        Turns for the same project are serialized behind a per-project lock, and the
-        agent is refreshed from the event log before deciding, so replies arriving
-        concurrently from multiple members cannot duplicate coordination actions.
+        Callers must already hold the per-project lock; the agent is refreshed
+        from the event log before deciding, so replies arriving concurrently from
+        multiple members cannot duplicate coordination actions.
         """
-        async with self._project_lock(agent.project_id):
-            await self._refresh_agent_from_store(agent)
-            trace, generated_events = await asyncio.to_thread(
-                agent.run_turn,
-                events,
-                current_time,
-            )
-            for event in generated_events:
-                await self.event_store.append(event)
-            await self._settle_turn_outbound(agent, current_time)
-            await self.save_agent_state(agent)
+        await self._refresh_agent_from_store(agent)
+        trace, generated_events = await asyncio.to_thread(
+            agent.run_turn,
+            events,
+            current_time,
+        )
+        for event in generated_events:
+            await self.event_store.append(event)
+        await self._settle_turn_outbound(agent, current_time)
+        await self.save_agent_state(agent)
         return trace, generated_events
 
     async def _settle_turn_outbound(self, agent: CoordinationAgent, ts: datetime) -> None:
@@ -260,7 +270,28 @@ class GatewayService:
         authority decline); replies from directive targets are intercepted for
         acknowledge/complete transitions; unanswered directives auto-remind and
         escalate by age.
+
+        The whole turn is serialized behind the per-project lock.
         """
+        async with self._project_lock(project_id):
+            return await self._ingest_message_locked(
+                project_id=project_id,
+                message=message,
+                actor_id=actor_id,
+                occurred_at=occurred_at,
+                source_ref=source_ref,
+                auto_run_turn=auto_run_turn,
+            )
+
+    async def _ingest_message_locked(
+        self,
+        project_id: str,
+        message: str,
+        actor_id: str,
+        occurred_at: datetime | None,
+        source_ref: str | None,
+        auto_run_turn: bool,
+    ) -> MessageIngestResult:
         ts = occurred_at or datetime.now(UTC)
         agent = await self.get_or_replay_agent(project_id)
 
@@ -298,7 +329,25 @@ class GatewayService:
             reference_timezone=self.reference_timezone,
         )
 
-        extraction_result, extracted_events = self.extractor.extract_from_message(message, context)
+        # Extraction may block on the LLM provider; run it off the event loop so
+        # a slow upstream cannot freeze the gateway (P1: ReadTimeout 500s).
+        try:
+            extraction_result, extracted_events = await asyncio.to_thread(
+                self.extractor.extract_from_message, message, context
+            )
+        except LLMUnavailableError as exc:
+            logger.error("LLM extraction unavailable: %s", exc)
+            return MessageIngestResult(
+                is_actionable=False,
+                events=[],
+                agent=agent,
+                intent=None,
+                directive_kind="llm_unavailable",
+                bot_reply=(
+                    "⚠️ 智能抽取服务暂时不可用（已自动重试），本条消息未处理。"
+                    "系统其他功能不受影响，请稍后重试。"
+                ),
+            )
         ingest_events.extend(extracted_events)
 
         directive_kind: str | None = None
@@ -372,7 +421,7 @@ class GatewayService:
         round_num: int | None = None
 
         if auto_run_turn and extracted_events:
-            turn_trace, _ = await self.run_agent_turn(agent, [], ts)
+            turn_trace, _ = await self._run_agent_turn_locked(agent, [], ts)
             turn_reason = turn_trace.termination_reason.value
             round_num = turn_trace.round_number
 

@@ -370,6 +370,23 @@ async def outbox_overview_endpoint(
     return await service.outbox_overview(project_id)
 
 
+@router.get("/context")
+async def project_context_endpoint(
+    project_id: str,
+    service: GatewayService = Depends(get_service),
+) -> dict:
+    """Server-provided operator identity for this console session: the project's
+    PM/lead member. The web console must not impersonate a hardcoded id."""
+    agent = await service.get_or_replay_agent(project_id)
+    operator = next(
+        (m for m in agent.projector.state.members.values() if m.role in ("pm", "lead")),
+        None,
+    )
+    if operator is None:
+        return {"operator_id": None, "display_name": None}
+    return {"operator_id": operator.member_id, "display_name": operator.display_name}
+
+
 @router.post("/sync/complete")
 async def force_complete_sync_endpoint(
     project_id: str,

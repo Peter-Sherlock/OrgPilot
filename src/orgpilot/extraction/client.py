@@ -1,7 +1,9 @@
 """Provider-agnostic LLM clients supporting deterministic mock, replay, and live APIs."""
 
 import json
+import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -14,6 +16,45 @@ from orgpilot.extraction.models import (
     MessageContext,
 )
 from orgpilot.extraction.verifier import TemporalResolver
+
+
+class LLMUnavailableError(RuntimeError):
+    """The LLM provider is unreachable: retries exhausted or circuit open."""
+
+
+class CircuitBreaker:
+    """Fail-fast guard after repeated consecutive provider failures."""
+
+    def __init__(
+        self,
+        failure_threshold: int = 3,
+        cooldown_seconds: float = 60.0,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self.failure_threshold = failure_threshold
+        self.cooldown_seconds = cooldown_seconds
+        self._clock = clock
+        self._consecutive_failures = 0
+        self._opened_at: float | None = None
+
+    def allow(self) -> bool:
+        if self._opened_at is None:
+            return True
+        if self._clock() - self._opened_at >= self.cooldown_seconds:
+            # Half-open: give the provider one probe window.
+            self._opened_at = None
+            self._consecutive_failures = self.failure_threshold - 1
+            return True
+        return False
+
+    def record_success(self) -> None:
+        self._consecutive_failures = 0
+        self._opened_at = None
+
+    def record_failure(self) -> None:
+        self._consecutive_failures += 1
+        if self._consecutive_failures >= self.failure_threshold:
+            self._opened_at = self._clock()
 
 
 class LLMClient(ABC):
@@ -37,6 +78,9 @@ class AnthropicCompatibleLLMClient(LLMClient):
         max_tokens: int = 1024,
         timeout: float = 30.0,
         client: httpx.Client | None = None,
+        max_retries: int = 1,
+        breaker_failure_threshold: int = 3,
+        breaker_cooldown_seconds: float = 60.0,
     ) -> None:
         if not api_key:
             raise ValueError("api_key must not be empty")
@@ -46,8 +90,33 @@ class AnthropicCompatibleLLMClient(LLMClient):
         self.max_tokens = max_tokens
         self._owns_client = client is None
         self._client = client or httpx.Client(timeout=timeout)
+        self.max_retries = max_retries
+        self.breaker = CircuitBreaker(
+            failure_threshold=breaker_failure_threshold,
+            cooldown_seconds=breaker_cooldown_seconds,
+        )
 
     def extract(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        raw_message: str,
+        context: MessageContext,
+    ) -> ExtractionResult:
+        if not self.breaker.allow():
+            raise LLMUnavailableError("LLM circuit breaker open; failing fast")
+        last_error: Exception | None = None
+        for _attempt in range(1 + self.max_retries):
+            try:
+                result = self._extract_once(system_prompt, user_prompt, raw_message, context)
+                self.breaker.record_success()
+                return result
+            except (httpx.TimeoutException, httpx.TransportError, httpx.HTTPStatusError) as exc:
+                last_error = exc
+        self.breaker.record_failure()
+        raise LLMUnavailableError(f"LLM unavailable after retries: {last_error}") from last_error
+
+    def _extract_once(
         self,
         system_prompt: str,
         user_prompt: str,
