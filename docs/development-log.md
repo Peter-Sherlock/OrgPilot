@@ -1,5 +1,22 @@
 # 开发记录
 
+## 2026-08-29：M3-R 真实集成可靠性（外部审查驱动，四轨修复）
+
+### 定位
+
+外部只读审查核证了架构与离线工程的质量（202 测试全绿、F1 100%），同时用运行日志实锤了集成链断层：飞书 `send_message` 缺 `msg_type`（真实送达为零）、改期字段三处错位且缺失时回退 `now()`、外发失败只记日志（账本谎报「已下达」）、歧义追问不存上下文、控制台审批身份写死必 403、LLM 同步调用阻塞事件循环 500、innerHTML 持久化 XSS。结论是插入 M3-R 阶段、暂缓 NL 建任务——采纳。
+
+### 四轨修复（T1-T4，每轨独立提交）
+
+- **T1 统一适配器契约**：`adapter/contracts.py` 单点解析 payload（Mock/真实同契约），规范键 `text`/`new_deadline`，必填字段 fail-closed（缺失截止期 → `CommandStatus.FAILED`，新增枚举值），13 项跨适配器契约测试。
+- **T2 持久化 outbox**：`outbox` 表（幂等键唯一约束）+ `OutboxDispatcher`（先落账再发送、线性退避重试、死信、启动/周期清扫补发崩溃命令）；新增 `directive.delivered/delivery_failed` 事件投影到 `DirectiveState.delivery_status`，账本与真实送达对齐；送达事件 occurred_at 钳制在指令最后事件之后（回放按 occurred_at 排序，未来时间戳的事件曾把送达排到签发之前——单测抓出）；催办中继补独立幂等后缀（否则会被 outbox 去重吞掉）；`GET /outbox` 端点 + 控制台积压提示条。
+- **T3 多轮指令闭环**：`directive.clarification_requested/resolved` 事件把澄清草稿持久化进投影状态（目标/任务/时间槽位 + 原文），发布者回复解析合并（「中午12点」合并回「明天上午12点」→ 正午 12:00），补全后按原上下文下达；支持「算了」取消；多条未确认指令按任务名/指令内容绑定，含糊回复列出清单反问；e2e 覆盖「提问→重启→应答→下达」全链路。
+- **T4 韧性与身份**：LLM 抽取 `asyncio.to_thread` 下放 + 有界重试 + 熔断（开路快失败/半开探活）+ `LLMUnavailableError`，故障降级为友好提示而非 500；消息摄入全链路纳入项目锁（agent 回合拆已持锁内部方法防重入死锁）；审批身份由 `GET /context` 服务端下发（项目 PM 成员 id），替换写死的 `pm_web_operator`；前端全部动态 innerHTML 过 `esc()` 转义；WS 监听器补 `stop()`。
+
+### 门禁
+
+241 项测试通过、覆盖率 90.37%、场景回放 9/9、离线评测 F1 100% + Intent 100%、ruff check/format 全净；四笔提交（T1 契约、T2 outbox、T3 澄清、T4 韧性）+ 本文档笔。
+
 ## 2026-08-29：M3 第二项——指令执行链路（升级方案·柱 2）
 
 ### 定位

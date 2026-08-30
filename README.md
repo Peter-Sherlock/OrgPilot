@@ -8,6 +8,7 @@ OrgPilot is a stateful organizational coordination agent kernel.
 - **P1 prototype**: Async SQL persistence and a FastAPI event gateway. Local persistent SQLite is the default; PostgreSQL deployment still requires environment-specific integration validation.
 - **F1 integration layer**: Feishu OpenAPI client, HTTP Webhook handler, adapter, and interactive cards. A real-account smoke test is still required before calling this production-ready.
 - **W1 Web console**: Embedded Single-Page management console and real-time interactive DAG topology visualizer served directly at `http://localhost:8000/`.
+- **M3 partial**: Role-aware intent routing, event-sourced directive execution (issue → relay → ack → complete → remind → escalate), closed multi-turn clarifications, and M3-R real-integration reliability (typed adapter contract, transactional outbox with retry/dead-letter/delivery ledger, LLM circuit breaker, per-project ingest serialization, server-bound approval identity, XSS escaping).
 
 ---
 
@@ -41,6 +42,7 @@ uv run uvicorn orgpilot.gateway.app:create_app --factory --port 8000
 
 - Feishu HTTP Webhook setup guide lives in `docs/feishu-setup-guide.md`.
 - The solo-tester demo task chain injected on a first Feishu message is opt-in: set `ORGPILOT_DEMO_BOOTSTRAP=true` (off by default).
+- Outbound delivery is durable: commands persist in an outbox before sending, failed transports retry with backoff (`ORGPILOT_OUTBOX_*` settings) and dead-letter after the attempt cap; a startup/periodic sweep re-sends anything a crash stranded between "event persisted" and "sent". `GET /api/v1/projects/{id}/outbox` exposes the delivery ledger, and the console shows a backlog badge.
 - Ground-truth replay scenarios (4 P0 + 5 M1) live in `evals/scenarios/`.
 - 20-sample natural language extraction gold dataset lives in `evals/extraction/gold_dataset.yaml`.
 - Architecture and design specifications live in `docs/`.
@@ -61,6 +63,9 @@ uv run uvicorn orgpilot.gateway.app:create_app --factory --port 8000
 - `docs/adr/0004-postgresql-event-store-and-fastapi-gateway.md`: ADR-0004: SQL Persistence & FastAPI Gateway
 - `docs/adr/0005-feishu-adapter-and-interactive-cards.md`: ADR-0005: Feishu Adapter & Interactive Cards
 - `docs/adr/0006-web-dashboard-and-dag-visualization.md`: ADR-0006: Web Dashboard & DAG Visualization
+- `docs/adr/0007-intent-routing-layer.md`: ADR-0007: Role-Aware Intent Routing Layer
+- `docs/adr/0008-directive-execution-chain.md`: ADR-0008: Event-Sourced Directive Execution Chain
+- `docs/adr/0009-real-integration-reliability.md`: ADR-0009: Real-Integration Reliability (M3-R)
 
 ---
 
