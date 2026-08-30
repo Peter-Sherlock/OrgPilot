@@ -26,6 +26,15 @@ async def handle_feishu_webhook(
     resolved_project_id = project_id or settings.feishu_project_id
     if (
         settings.collaboration_adapter == "feishu"
+        and not settings.feishu_allow_writes
+        and body.get("type") != "url_verification"
+    ):
+        raise HTTPException(
+            status_code=503,
+            detail="Feishu event processing is disabled while the write gate is closed",
+        )
+    if (
+        settings.collaboration_adapter == "feishu"
         and resolved_project_id != settings.feishu_project_id
     ):
         raise HTTPException(status_code=403, detail="Unexpected Feishu project mapping")

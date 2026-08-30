@@ -44,6 +44,16 @@ def _build_parser() -> argparse.ArgumentParser:
         help="OrgPilot project ID (defaults to env ORGPILOT_FEISHU_PROJECT_ID)",
     )
 
+    preflight = subparsers.add_parser(
+        "feishu-preflight",
+        help="validate live Feishu configuration without sending messages or updating tasks",
+    )
+    preflight.add_argument(
+        "--online-auth",
+        action="store_true",
+        help="also request a tenant token; this authenticates but performs no Feishu write",
+    )
+
     return parser
 
 
@@ -128,6 +138,9 @@ def _start_feishu_ws(project_id: str | None = None) -> int:
     import time
 
     from orgpilot.config import OrgPilotSettings
+    from orgpilot.extraction.client import AnthropicCompatibleLLMClient
+    from orgpilot.extraction.extractor import ClaimExtractor
+    from orgpilot.feishu.runtime import build_feishu_adapter_factory
     from orgpilot.feishu.ws import FeishuWebSocketListener
     from orgpilot.gateway.service import GatewayService
     from orgpilot.storage.database import Database
@@ -139,6 +152,11 @@ def _start_feishu_ws(project_id: str | None = None) -> int:
         raise SystemExit(
             "Error: FEISHU_APP_ID and FEISHU_APP_SECRET environment variables are required."
         )
+    if not settings.feishu_allow_writes:
+        raise SystemExit(
+            "Error: Feishu write gate is closed. Run 'orgpilot feishu-preflight' first, "
+            "then set ORGPILOT_FEISHU_ALLOW_WRITES=true only for an authorized live test."
+        )
 
     target_project = project_id or settings.feishu_project_id
     db = Database(settings.database_url)
@@ -146,7 +164,24 @@ def _start_feishu_ws(project_id: str | None = None) -> int:
     asyncio.set_event_loop(loop)
     loop.run_until_complete(db.init_db())
 
-    service = GatewayService(db)
+    llm_client = None
+    if settings.llm_provider == "aihubmix":
+        llm_client = AnthropicCompatibleLLMClient(
+            api_key=settings.aihubmix_api_key or "",
+            base_url=settings.aihubmix_base_url,
+            model=settings.aihubmix_model,
+            reasoning_effort=settings.llm_reasoning_effort,
+        )
+    service = GatewayService(
+        db,
+        extractor=ClaimExtractor(llm_client=llm_client),
+        adapter_factory=build_feishu_adapter_factory(settings),
+        reference_timezone=settings.reference_timezone,
+        directive_reminder_minutes=settings.directive_reminder_minutes,
+        directive_escalation_minutes=settings.directive_escalation_minutes,
+        outbox_max_attempts=settings.outbox_max_attempts,
+        outbox_retry_seconds=settings.outbox_retry_seconds,
+    )
     listener = FeishuWebSocketListener(
         app_id=app_id,
         app_secret=app_secret,
@@ -156,7 +191,7 @@ def _start_feishu_ws(project_id: str | None = None) -> int:
         demo_bootstrap=settings.demo_bootstrap,
     )
     print(f"[*] Starting Feishu WebSocket Listener for project '{target_project}'...")
-    print(f"[*] App ID: {app_id}")
+    print("[*] App credentials: configured (values hidden)")
     print("[*] WebSocket long-connection active. Listening for Feishu messages and card actions...")
     print("[*] Press Ctrl+C to stop.")
 
@@ -167,6 +202,91 @@ def _start_feishu_ws(project_id: str | None = None) -> int:
     except KeyboardInterrupt:
         print("\n[*] Stopping Feishu WebSocket Listener...")
         return 0
+    finally:
+        listener.stop()
+        loop.run_until_complete(db.close())
+        if llm_client is not None:
+            llm_client.close()
+        loop.close()
+
+
+def _feishu_preflight(online_auth: bool = False) -> int:
+    import asyncio
+
+    from orgpilot.config import OrgPilotSettings
+    from orgpilot.feishu.client import AsyncFeishuClient
+
+    try:
+        settings = OrgPilotSettings.from_env()
+    except ValueError as exc:
+        print(f"[FAIL] configuration: {exc}")
+        return 1
+
+    checks = [
+        (
+            "adapter",
+            settings.collaboration_adapter == "feishu",
+            "feishu selected" if settings.collaboration_adapter == "feishu" else "not feishu",
+        ),
+        (
+            "credentials",
+            bool(settings.feishu_app_id and settings.feishu_app_secret),
+            (
+                "present (values hidden)"
+                if settings.feishu_app_id and settings.feishu_app_secret
+                else "missing"
+            ),
+        ),
+        (
+            "transport",
+            settings.feishu_use_ws or bool(settings.feishu_verification_token),
+            (
+                "WebSocket"
+                if settings.feishu_use_ws
+                else (
+                    "HTTP Webhook"
+                    if settings.feishu_verification_token
+                    else "HTTP Webhook verification token missing"
+                )
+            ),
+        ),
+        (
+            "demo bootstrap",
+            not settings.demo_bootstrap,
+            "disabled" if not settings.demo_bootstrap else "enabled; disable for live acceptance",
+        ),
+        (
+            "write gate",
+            not settings.feishu_allow_writes,
+            "closed" if not settings.feishu_allow_writes else "OPEN; close before preflight",
+        ),
+    ]
+    passed = True
+    for name, ok, detail in checks:
+        print(f"[{'PASS' if ok else 'FAIL'}] {name}: {detail}")
+        passed = passed and ok
+    if not passed:
+        print("[FAIL] Feishu preflight stopped before network authentication.")
+        return 1
+
+    if not online_auth:
+        print("[SKIP] online auth: use --online-auth for a read-only credential check")
+        print("[PASS] Feishu preflight completed with the write gate closed.")
+        return 0
+
+    client = AsyncFeishuClient(
+        app_id=settings.feishu_app_id or "",
+        app_secret=settings.feishu_app_secret or "",
+        allow_writes=False,
+    )
+    try:
+        asyncio.run(client.get_tenant_access_token())
+    except Exception as exc:
+        print(f"[FAIL] online auth: {type(exc).__name__}: {exc}")
+        return 1
+    print("[PASS] online auth: tenant token issued (value hidden; no write performed)")
+    print("[PASS] Feishu preflight completed with the write gate closed.")
+    return 0
 
 
 def main() -> int:
@@ -187,6 +307,8 @@ def main() -> int:
         return _eval_extraction(args.dataset, args.provider)
     if args.command == "start-feishu-ws":
         return _start_feishu_ws(args.project_id)
+    if args.command == "feishu-preflight":
+        return _feishu_preflight(args.online_auth)
     return 2
 
 

@@ -1,5 +1,7 @@
 """Runtime configuration, provider wiring, and inbound authentication tests."""
 
+from unittest.mock import AsyncMock
+
 import httpx
 import pytest
 
@@ -8,6 +10,7 @@ from orgpilot.config import OrgPilotSettings
 from orgpilot.extraction.client import AnthropicCompatibleLLMClient, MockLLMClient
 from orgpilot.feishu.adapter import FeishuCollaborationAdapter
 from orgpilot.feishu.client import MockFeishuClient
+from orgpilot.feishu.runtime import build_feishu_adapter_factory
 from orgpilot.gateway.app import create_app
 from orgpilot.gateway.service import GatewayService
 from orgpilot.storage.database import Database
@@ -45,6 +48,16 @@ def test_demo_bootstrap_env_parsing(monkeypatch: pytest.MonkeyPatch) -> None:
     for value in ("false", "0", "no", "off"):
         monkeypatch.setenv("ORGPILOT_DEMO_BOOTSTRAP", value)
         assert OrgPilotSettings.from_env().demo_bootstrap is False
+
+
+def test_feishu_write_gate_is_closed_by_default_and_explicitly_parsed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert OrgPilotSettings().feishu_allow_writes is False
+    monkeypatch.setenv("ORGPILOT_FEISHU_ALLOW_WRITES", "true")
+    assert OrgPilotSettings.from_env().feishu_allow_writes is True
+    monkeypatch.setenv("ORGPILOT_FEISHU_ALLOW_WRITES", "false")
+    assert OrgPilotSettings.from_env().feishu_allow_writes is False
 
 
 def test_reference_timezone_validation(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -92,6 +105,99 @@ async def test_feishu_adapter_wiring_is_explicit() -> None:
     )
     feishu_agent = await feishu_app.state.gateway_service.get_or_replay_agent("project-1")
     assert isinstance(feishu_agent.adapter, FeishuCollaborationAdapter)
+    await db.close()
+
+
+def test_real_feishu_adapter_factory_preserves_write_gate() -> None:
+    closed = build_feishu_adapter_factory(
+        OrgPilotSettings(
+            collaboration_adapter="feishu",
+            feishu_app_id="cli_test",
+            feishu_app_secret="secret_test",
+        )
+    )("project-1")
+    opened = build_feishu_adapter_factory(
+        OrgPilotSettings(
+            collaboration_adapter="feishu",
+            feishu_app_id="cli_test",
+            feishu_app_secret="secret_test",
+            feishu_allow_writes=True,
+        )
+    )("project-1")
+
+    assert isinstance(closed, FeishuCollaborationAdapter)
+    assert closed.client.allow_writes is False
+    assert isinstance(opened, FeishuCollaborationAdapter)
+    assert opened.client.allow_writes is True
+
+
+async def test_closed_feishu_write_gate_disables_listener_and_outbox_sweep(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    started = False
+
+    def record_start(_listener) -> None:
+        nonlocal started
+        started = True
+
+    monkeypatch.setattr("orgpilot.gateway.app.FeishuWebSocketListener.start", record_start)
+    db = Database("sqlite+aiosqlite:///:memory:")
+    app = create_app(
+        db,
+        settings=OrgPilotSettings(
+            collaboration_adapter="feishu",
+            feishu_app_id="cli_test",
+            feishu_app_secret="secret_test",
+            feishu_use_ws=True,
+            feishu_allow_writes=False,
+        ),
+    )
+    sweep = AsyncMock()
+    app.state.gateway_service.sweep_outbox = sweep
+
+    async with app.router.lifespan_context(app):
+        pass
+
+    assert started is False
+    sweep.assert_not_awaited()
+
+
+async def test_closed_feishu_write_gate_rejects_events_but_allows_url_verification() -> None:
+    db = Database("sqlite+aiosqlite:///:memory:")
+    await db.init_db()
+    app = create_app(
+        db,
+        settings=OrgPilotSettings(
+            collaboration_adapter="feishu",
+            feishu_app_id="cli_test",
+            feishu_app_secret="secret_test",
+            feishu_verification_token="verify-test",
+            feishu_use_ws=False,
+            feishu_allow_writes=False,
+        ),
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        verification = await client.post(
+            "/api/v1/feishu/events",
+            json={
+                "type": "url_verification",
+                "challenge": "safe-challenge",
+                "token": "verify-test",
+            },
+        )
+        event = await client.post(
+            "/api/v1/feishu/events",
+            json={
+                "header": {"event_type": "im.message.receive_v1", "token": "verify-test"},
+                "event": {},
+            },
+        )
+
+    assert verification.status_code == 200
+    assert verification.json() == {"challenge": "safe-challenge"}
+    assert event.status_code == 503
+    assert "write gate is closed" in event.json()["detail"]
     await db.close()
 
 

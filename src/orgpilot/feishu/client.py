@@ -9,6 +9,10 @@ import httpx
 from orgpilot.adapter.contracts import PermanentDeliveryError
 
 
+class FeishuWriteDisabledError(PermanentDeliveryError):
+    """Raised before any mutating OpenAPI call while the write gate is closed."""
+
+
 @runtime_checkable
 class FeishuClient(Protocol):
     """Protocol defining Feishu OpenAPI operations."""
@@ -50,11 +54,14 @@ class AsyncFeishuClient:
         app_secret: str,
         base_url: str = "https://open.feishu.cn",
         client: httpx.AsyncClient | None = None,
+        *,
+        allow_writes: bool = False,
     ) -> None:
         self.app_id = app_id
         self.app_secret = app_secret
         self.base_url = base_url.rstrip("/")
         self._client = client
+        self.allow_writes = allow_writes
         self._tenant_token: str | None = None
         self._token_expires_at: float = 0.0
 
@@ -94,6 +101,13 @@ class AsyncFeishuClient:
         self._token_expires_at = now + expire
         return self._tenant_token
 
+    def _require_writes_enabled(self) -> None:
+        if not self.allow_writes:
+            raise FeishuWriteDisabledError(
+                "Feishu writes are disabled; set ORGPILOT_FEISHU_ALLOW_WRITES=true "
+                "only for an explicitly authorized live test"
+            )
+
     async def send_message(
         self,
         receive_id: str,
@@ -101,6 +115,7 @@ class AsyncFeishuClient:
         content: str | dict[str, Any],
         receive_id_type: str = "open_id",
     ) -> dict[str, Any]:
+        self._require_writes_enabled()
         if receive_id_type == "open_id" and receive_id.startswith("oc_"):
             receive_id_type = "chat_id"
         token = await self.get_tenant_access_token()
@@ -137,6 +152,7 @@ class AsyncFeishuClient:
         deadline: datetime,
     ) -> dict[str, Any]:
         """Updates task deadline via Task OpenAPI."""
+        self._require_writes_enabled()
         token = await self.get_tenant_access_token()
         url = f"{self.base_url}/open-apis/task/v2/tasks/{task_guid}"
         headers = {"Authorization": f"Bearer {token}"}

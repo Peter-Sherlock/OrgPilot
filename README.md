@@ -45,6 +45,9 @@ uv run uvicorn orgpilot.gateway.app:create_app --factory --port 8000
 - Live-model benchmark via `uv run orgpilot eval-extraction --provider aihubmix` (requires `AIHUBMIX_API_KEY`): official `deepseek-v4-flash` measured **F1 100%**, task-id accuracy 100%, slot-datetime accuracy 100%, false alarms 0%, grounding 100%, and **intent accuracy 92.86%** over all 34 synthetic gold samples (2026-08-30, Anthropic format, thinking disabled). Earlier `gpt-5.6-luna` runs measured intent accuracy 92.9–100%. Relative times resolve against the team reference timezone (`ORGPILOT_TIMEZONE`, default `Asia/Shanghai`). The role-aware intent router (directives, task create/reassign, deadline change, question, chit-chat) runs on deterministic rules before the LLM call and short-circuits non-report messages at zero LLM cost.
 
 - Feishu HTTP Webhook setup guide lives in `docs/feishu-setup-guide.md`.
+- Real Feishu mutations are additionally gated by `ORGPILOT_FEISHU_ALLOW_WRITES=true`
+  (false by default). Run `uv run orgpilot feishu-preflight` first; add
+  `--online-auth` only when a read-only credential check is intended.
 - The solo-tester demo task chain injected on a first Feishu message is opt-in: set `ORGPILOT_DEMO_BOOTSTRAP=true` (off by default).
 - Outbound delivery is durable: commands persist in an outbox before sending, failed transports retry with backoff (`ORGPILOT_OUTBOX_*` settings) and dead-letter after the attempt cap; a startup/periodic sweep re-sends anything a crash stranded between "event persisted" and "sent". `GET /api/v1/projects/{id}/outbox` exposes the delivery ledger, and the console shows a backlog badge.
 - Ground-truth replay scenarios (4 P0 + 5 M1) live in `evals/scenarios/`.
@@ -57,6 +60,7 @@ uv run uvicorn orgpilot.gateway.app:create_app --factory --port 8000
 
 - `docs/architecture.md`: Architecture specification, module boundaries, and state flow
 - `docs/feishu-setup-guide.md`: 2-minute Feishu Custom App creation and permission guide
+- `docs/feishu-live-acceptance.md`: gated live-tenant preflight, acceptance evidence, and rollback
 - `docs/event-semantics.md`: Event envelope, lifecycle, idempotency, and LLM boundary
 - `docs/ground-truth-scenarios.md`: Ground truth specifications for P0 and M1 scenarios
 - `docs/development.md`: Setup, Git workflow, checks, and Definition of Done

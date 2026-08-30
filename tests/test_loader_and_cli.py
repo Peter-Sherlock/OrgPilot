@@ -137,3 +137,54 @@ def test_cli_eval_extraction_missing_file(
     )
     with pytest.raises(SystemExit, match="dataset file not found"):
         cli.main()
+
+
+def _set_safe_feishu_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ORGPILOT_COLLABORATION_ADAPTER", "feishu")
+    monkeypatch.setenv("ORGPILOT_FEISHU_USE_WS", "true")
+    monkeypatch.setenv("ORGPILOT_FEISHU_ALLOW_WRITES", "false")
+    monkeypatch.setenv("ORGPILOT_DEMO_BOOTSTRAP", "false")
+    monkeypatch.setenv("FEISHU_APP_ID", "cli_test")
+    monkeypatch.setenv("FEISHU_APP_SECRET", "secret_must_not_appear")
+
+
+def test_cli_feishu_preflight_is_offline_and_hides_credentials(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _set_safe_feishu_env(monkeypatch)
+    monkeypatch.setattr(sys, "argv", ["orgpilot", "feishu-preflight"])
+
+    assert cli.main() == 0
+
+    output = capsys.readouterr().out
+    assert "[PASS] Feishu preflight completed" in output
+    assert "[SKIP] online auth" in output
+    assert "cli_test" not in output
+    assert "secret_must_not_appear" not in output
+
+
+def test_cli_feishu_preflight_online_auth_hides_token(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from orgpilot.feishu.client import AsyncFeishuClient
+
+    async def issue_token(_client: AsyncFeishuClient) -> str:
+        return "tenant_token_must_not_appear"
+
+    _set_safe_feishu_env(monkeypatch)
+    monkeypatch.setattr(AsyncFeishuClient, "get_tenant_access_token", issue_token)
+    monkeypatch.setattr(sys, "argv", ["orgpilot", "feishu-preflight", "--online-auth"])
+
+    assert cli.main() == 0
+
+    output = capsys.readouterr().out
+    assert "tenant token issued (value hidden; no write performed)" in output
+    assert "tenant_token_must_not_appear" not in output
+
+
+def test_cli_feishu_listener_requires_explicit_write_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_safe_feishu_env(monkeypatch)
+    with pytest.raises(SystemExit, match="write gate is closed"):
+        cli._start_feishu_ws()

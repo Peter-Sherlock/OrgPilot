@@ -5,7 +5,11 @@ from datetime import datetime
 import httpx
 import pytest
 
-from orgpilot.feishu.client import AsyncFeishuClient, MockFeishuClient
+from orgpilot.feishu.client import (
+    AsyncFeishuClient,
+    FeishuWriteDisabledError,
+    MockFeishuClient,
+)
 
 NOW = datetime.fromisoformat("2026-09-10T10:00:00+08:00")
 
@@ -71,6 +75,7 @@ async def test_async_feishu_client_token_and_calls() -> None:
         app_id="cli_test",
         app_secret="sec_test",
         client=http_client,
+        allow_writes=True,
     )
 
     # 1. Get token
@@ -111,3 +116,29 @@ async def test_async_feishu_client_token_failure() -> None:
 
     with pytest.raises(RuntimeError, match="tenant token request failed"):
         await client.get_tenant_access_token()
+
+
+async def test_async_feishu_client_blocks_writes_before_network_call() -> None:
+    requests = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal requests
+        requests += 1
+        return httpx.Response(500)
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = AsyncFeishuClient(
+        app_id="cli_test",
+        app_secret="sec_test",
+        client=http_client,
+    )
+
+    with pytest.raises(FeishuWriteDisabledError, match="FEISHU_ALLOW_WRITES"):
+        await client.send_message("ou_test", "text", {"text": "blocked"})
+    with pytest.raises(FeishuWriteDisabledError, match="FEISHU_ALLOW_WRITES"):
+        await client.send_card("ou_test", {"header": {"title": "blocked"}})
+    with pytest.raises(FeishuWriteDisabledError, match="FEISHU_ALLOW_WRITES"):
+        await client.update_task_deadline("task_test", NOW)
+
+    assert requests == 0
+    await http_client.aclose()

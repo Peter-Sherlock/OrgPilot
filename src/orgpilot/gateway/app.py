@@ -16,8 +16,7 @@ from orgpilot.adapter.mock import MockCollaborationAdapter
 from orgpilot.config import OrgPilotSettings
 from orgpilot.extraction.client import AnthropicCompatibleLLMClient, LLMClient
 from orgpilot.extraction.extractor import ClaimExtractor
-from orgpilot.feishu.adapter import FeishuCollaborationAdapter
-from orgpilot.feishu.client import AsyncFeishuClient
+from orgpilot.feishu.runtime import build_feishu_adapter_factory
 from orgpilot.feishu.ws import FeishuWebSocketListener
 from orgpilot.gateway.routes import approvals, cases, coordination, dag, events, feishu
 from orgpilot.gateway.service import GatewayService
@@ -46,13 +45,7 @@ def create_app(
     extractor = ClaimExtractor(llm_client=llm_client)
 
     if runtime_settings.collaboration_adapter == "feishu":
-        feishu_client = AsyncFeishuClient(
-            app_id=runtime_settings.feishu_app_id or "",
-            app_secret=runtime_settings.feishu_app_secret or "",
-        )
-
-        def adapter_factory(project_id: str) -> CollaborationAdapter:
-            return FeishuCollaborationAdapter(client=feishu_client, project_id=project_id)
+        adapter_factory = build_feishu_adapter_factory(runtime_settings)
 
     else:
 
@@ -79,6 +72,7 @@ def create_app(
         if (
             runtime_settings.collaboration_adapter == "feishu"
             and runtime_settings.feishu_use_ws
+            and runtime_settings.feishu_allow_writes
             and runtime_settings.feishu_app_id
             and runtime_settings.feishu_app_secret
         ):
@@ -92,12 +86,21 @@ def create_app(
             with contextlib.suppress(Exception):
                 ws_listener.start()
 
-        # Outbox recovery: deliver anything a previous process crashed between
-        # "event persisted" and "command sent", then keep sweeping on a timer.
-        try:
-            await gateway_service.sweep_outbox()
-        except Exception:
-            logger.exception("Startup outbox sweep failed")
+        writes_enabled = (
+            runtime_settings.collaboration_adapter != "feishu"
+            or runtime_settings.feishu_allow_writes
+        )
+        # A closed live write gate must not turn existing pending rows into dead
+        # letters. Recovery resumes only when writes are explicitly enabled.
+        if writes_enabled:
+            try:
+                await gateway_service.sweep_outbox()
+            except Exception:
+                logger.exception("Startup outbox sweep failed")
+        else:
+            logger.warning(
+                "Feishu write gate is closed; WebSocket listener and outbox sweep are disabled"
+            )
 
         async def outbox_sweeper() -> None:
             while True:
@@ -107,7 +110,8 @@ def create_app(
                 except Exception:
                     logger.exception("Outbox sweep failed")
 
-        outbox_task = asyncio.create_task(outbox_sweeper(), name="outbox-sweeper")
+        if writes_enabled:
+            outbox_task = asyncio.create_task(outbox_sweeper(), name="outbox-sweeper")
 
         try:
             yield

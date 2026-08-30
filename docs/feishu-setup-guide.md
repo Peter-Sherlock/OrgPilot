@@ -51,6 +51,8 @@ OrgPilot 支持 **WebSocket 长连接（官方推荐，零公网依赖）** 与 
 ORGPILOT_COLLABORATION_ADAPTER=feishu
 ORGPILOT_FEISHU_USE_WS=true
 ORGPILOT_FEISHU_PROJECT_ID=feishu-project
+# 默认关闭真实发送/任务更新；验收窗口必须显式打开。
+ORGPILOT_FEISHU_ALLOW_WRITES=false
 
 # 飞书应用凭证
 FEISHU_APP_ID=cli_xxxxxxxxxxxxxx
@@ -68,17 +70,37 @@ FEISHU_APP_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 # ORGPILOT_DIRECTIVE_ESCALATION_MINUTES=1440
 ```
 
+先在写入闸门关闭时执行本地预检：
+
+```powershell
+uv run orgpilot feishu-preflight
+```
+
+如需验证 App ID/App Secret 与飞书鉴权服务，可在明确允许凭证发往飞书后执行：
+
+```powershell
+uv run orgpilot feishu-preflight --online-auth
+```
+
+该命令只申请 `tenant_access_token`，不显示令牌、不发送消息、不更新任务。只有进入已授权的
+真实验收窗口时，才临时设置 `ORGPILOT_FEISHU_ALLOW_WRITES=true`；结束后立即恢复为 false。
+完整步骤与证据要求见 `docs/feishu-live-acceptance.md`。
+
 #### 启动方式 A：启动全功能网关（Web 看板 + 飞书 WebSocket 长连接）
 ```powershell
 uv run uvicorn orgpilot.gateway.app:create_app --factory --port 8000
 ```
 - 服务启动后会自动向飞书建立安全 WebSocket 长连接；
 - 同时在 `http://localhost:8000/` 提供实时 DAG 拓扑大盘与时间线。
+- 写入闸门为 false 时不会启动飞书长连接或 outbox 清扫，避免待发送记录被误投递/误死信。
 
 #### 启动方式 B：独立运行飞书长连接监听器
 ```powershell
 uv run orgpilot start-feishu-ws
 ```
+
+该命令会拒绝在写入闸门关闭时启动，并使用与全功能网关相同的真实飞书适配器；不会回退到
+Mock 适配器。
 
 ---
 

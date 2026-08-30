@@ -168,7 +168,8 @@ class FeishuWebSocketListener:
 
             ws_module.loop = thread_loop
             print(
-                f"[*] [Feishu WS] Connecting to Feishu WebSocket stream (App ID: {self.app_id})..."
+                "[*] [Feishu WS] Connecting to Feishu WebSocket stream "
+                "(credentials configured; values hidden)..."
             )
             try:
                 self._ws_client.start()

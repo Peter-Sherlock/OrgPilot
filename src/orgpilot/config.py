@@ -44,6 +44,7 @@ class OrgPilotSettings:
     collaboration_adapter: str = "mock"
     demo_bootstrap: bool = False
     feishu_use_ws: bool = True
+    feishu_allow_writes: bool = False
     feishu_app_id: str | None = None
     feishu_app_secret: str | None = field(default=None, repr=False)
     feishu_verification_token: str | None = field(default=None, repr=False)
@@ -60,6 +61,7 @@ class OrgPilotSettings:
         _load_dotenv_if_exists()
         use_ws_env = os.getenv("ORGPILOT_FEISHU_USE_WS", "true").strip().lower()
         demo_bootstrap_env = os.getenv("ORGPILOT_DEMO_BOOTSTRAP", "false").strip().lower()
+        allow_writes_env = os.getenv("ORGPILOT_FEISHU_ALLOW_WRITES", "false").strip().lower()
 
         def _int_env(name: str, default: int) -> int:
             raw = os.getenv(name, "").strip()
@@ -86,6 +88,7 @@ class OrgPilotSettings:
             .lower(),
             demo_bootstrap=demo_bootstrap_env in {"1", "true", "yes", "on"},
             feishu_use_ws=use_ws_env in {"1", "true", "yes", "on"},
+            feishu_allow_writes=allow_writes_env in {"1", "true", "yes", "on"},
             feishu_app_id=_optional_env("FEISHU_APP_ID"),
             feishu_app_secret=_optional_env("FEISHU_APP_SECRET"),
             feishu_verification_token=_optional_env("FEISHU_VERIFICATION_TOKEN"),
