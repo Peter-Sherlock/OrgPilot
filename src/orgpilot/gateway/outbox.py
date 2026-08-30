@@ -5,6 +5,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 
 from orgpilot.adapter.base import CollaborationAdapter
+from orgpilot.adapter.contracts import PermanentDeliveryError
 from orgpilot.domain.models import ActionCommand
 from orgpilot.events.models import (
     DirectiveDeliveredEvent,
@@ -13,6 +14,25 @@ from orgpilot.events.models import (
     OrgEvent,
 )
 from orgpilot.storage.outbox_store import SqlOutboxStore
+
+
+def _is_permanent(exc: BaseException, _depth: int = 0) -> bool:
+    """True when retrying this delivery failure cannot help.
+
+    Covers typed platform rejections and HTTP 4xx (except timeouts 408 and
+    rate-limit 429), walking the exception chain the adapter may have wrapped.
+    """
+    if _depth > 6:
+        return False
+    if isinstance(exc, PermanentDeliveryError):
+        return True
+    status_code = getattr(getattr(exc, "response", None), "status_code", None)
+    if isinstance(status_code, int) and 400 <= status_code < 500 and status_code not in (408, 429):
+        return True
+    cause = exc.__cause__ or exc.__context__
+    if cause is not None and cause is not exc:
+        return _is_permanent(cause, _depth + 1)
+    return False
 
 
 class OutboxDispatcher:
@@ -81,9 +101,11 @@ class OutboxDispatcher:
             # The adapter interface is synchronous and may block on IO.
             await asyncio.to_thread(adapter.execute, command)
         except Exception as exc:
-            # Transport failures are recoverable, not fatal: backoff, then dead-letter.
+            # Transport failures are recoverable (backoff, then dead-letter);
+            # permanent rejections (bad target, 4xx) dead-letter immediately —
+            # burning retries on a request that can never succeed is noise.
             attempts = await self.store.attempts_of(project_id, command.idempotency_key) + 1
-            dead = attempts >= self.max_attempts
+            dead = _is_permanent(exc) or attempts >= self.max_attempts
             retry_at = now if dead else now + timedelta(seconds=self.retry_seconds * attempts)
             await self.store.settle(
                 project_id,

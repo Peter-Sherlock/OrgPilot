@@ -368,3 +368,46 @@ async def test_outbox_api_reports_delivery_ledger(client: httpx.AsyncClient) -> 
     data = res.json()
     assert data["pending_count"] == 0
     assert data["rows"] and data["rows"][0]["status"] == "delivered"
+
+
+async def test_permanent_rejection_dead_letters_immediately(tmp_path) -> None:
+    """A 400-class platform rejection (e.g. a synthetic open_id) must dead-letter
+    on the first attempt instead of burning retries, with a delivery_failed event."""
+    from orgpilot.adapter.contracts import PermanentDeliveryError
+    from orgpilot.adapter.mock import MockCollaborationAdapter
+
+    class RejectingAdapter(MockCollaborationAdapter):
+        def execute(self, command):
+            raise PermanentDeliveryError("Feishu send message failed: invalid receive_id")
+
+    db = Database(f"sqlite+aiosqlite:///{tmp_path / 'outbox-permanent.db'}")
+    await db.init_db()
+    service = GatewayService(
+        db,
+        adapter_factory=lambda pid: RejectingAdapter(project_id=pid),
+        outbox_max_attempts=3,
+        outbox_retry_seconds=0,
+    )
+    project_id = "proj-outbox-permanent"
+    await _seed(db, project_id)
+
+    await service.ingest_message(
+        project_id=project_id,
+        message="告诉alice，今晚部署",
+        actor_id="carol",
+        occurred_at=NOW,
+    )
+
+    rows = await service.outbox_store.list_rows(project_id)
+    assert rows[0]["status"] == OUTBOX_DEAD
+    assert rows[0]["attempts"] == 1
+    assert "invalid receive_id" in (rows[0]["last_error"] or "")
+
+    events = await service.event_store.get_events(project_id)
+    failures = [e for e in events if e.event_type == "directive.delivery_failed"]
+    assert len(failures) == 1
+
+    agent = await service.get_or_replay_agent(project_id)
+    directive = next(iter(agent.projector.state.directives.values()))
+    assert directive.delivery_status == "failed"
+    await db.close()

@@ -25,6 +25,15 @@ class PayloadContractError(ValueError):
     """An ActionCommand payload violates the canonical adapter contract."""
 
 
+class PermanentDeliveryError(RuntimeError):
+    """The platform rejected the delivery logically (bad target, bad request).
+
+    Retrying cannot fix a permanent rejection — the outbox dead-letters these
+    immediately instead of burning retries; transport-level failures
+    (timeouts, 5xx) remain retryable.
+    """
+
+
 def parse_text(payload: dict[str, Any]) -> str | None:
     """Returns the canonical message text, or None when the payload carries none."""
     for key in _TEXT_KEYS:
