@@ -45,6 +45,8 @@ class DirectiveState(StrictModel):
     task_id: str | None = None
     deadline: datetime | None = None
     status: DirectiveStatus = DirectiveStatus.ISSUED
+    # Transport-level delivery ledger: pending until an adapter confirms relay.
+    delivery_status: str = "pending"
     issued_at: datetime
     acknowledged_at: datetime | None = None
     completed_at: datetime | None = None

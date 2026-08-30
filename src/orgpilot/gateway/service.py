@@ -4,7 +4,7 @@ import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from orgpilot.adapter.base import CollaborationAdapter
@@ -25,8 +25,10 @@ from orgpilot.events.models import (
 )
 from orgpilot.extraction.extractor import ClaimExtractor
 from orgpilot.extraction.models import MessageContext
+from orgpilot.gateway.outbox import OutboxDispatcher
 from orgpilot.storage.database import Database
 from orgpilot.storage.event_store import SqlEventStore
+from orgpilot.storage.outbox_store import SqlOutboxStore
 from orgpilot.storage.state_store import SqlStateStore
 
 logger = logging.getLogger("orgpilot.gateway.service")
@@ -60,10 +62,18 @@ class GatewayService:
         reference_timezone: str = "Asia/Shanghai",
         directive_reminder_minutes: int = 60,
         directive_escalation_minutes: int = 1440,
+        outbox_max_attempts: int = 3,
+        outbox_retry_seconds: int = 30,
     ) -> None:
         self.db = db
         self.event_store = SqlEventStore(db)
         self.state_store = SqlStateStore(db)
+        self.outbox_store = SqlOutboxStore(db)
+        self.outbox_dispatcher = OutboxDispatcher(
+            self.outbox_store,
+            max_attempts=outbox_max_attempts,
+            retry_seconds=outbox_retry_seconds,
+        )
         self.extractor = extractor or ClaimExtractor()
         self.reference_timezone = reference_timezone
         self.directive_reminder_minutes = directive_reminder_minutes
@@ -151,8 +161,60 @@ class GatewayService:
             )
             for event in generated_events:
                 await self.event_store.append(event)
+            await self._settle_turn_outbound(agent, current_time)
             await self.save_agent_state(agent)
         return trace, generated_events
+
+    async def _settle_turn_outbound(self, agent: CoordinationAgent, ts: datetime) -> None:
+        """Settles the agent turn's transports into the outbox.
+
+        Commands the adapter confirmed inline become durable delivery-ledger rows;
+        transport failures become pending rows that the outbox sweep retries, so a
+        failed probe or card is eventually delivered instead of being lost.
+        """
+        delivery_events: list[OrgEvent] = []
+        now = datetime.now(UTC)
+        for command, delivered, _error in agent.pop_turn_outbound():
+            if delivered:
+                delivery_events.extend(
+                    await self.outbox_dispatcher.record_pre_delivered(agent.project_id, command)
+                )
+            else:
+                await self.outbox_store.enqueue(
+                    agent.project_id,
+                    command,
+                    now,
+                    next_attempt_at=now + timedelta(seconds=self.outbox_dispatcher.retry_seconds),
+                )
+        await self._persist_delivery_events(agent, delivery_events)
+
+    async def _persist_delivery_events(
+        self, agent: CoordinationAgent, delivery_events: list[OrgEvent]
+    ) -> None:
+        """Projects and persists directive delivery ledger events.
+
+        Delivery timestamps are clamped forward to the directive's last known
+        event time: replay sorts by occurred_at, so a delivery stamped with the
+        transport clock must never sort before the directive it settles (a
+        future-dated issue event would otherwise brick replay).
+        """
+        state = agent.projector.state
+        clamped: list[OrgEvent] = []
+        for evt in delivery_events:
+            directive = state.directives.get(evt.payload.directive_id)
+            if directive is not None and evt.occurred_at < directive.last_update_at:
+                evt = evt.model_copy(
+                    update={
+                        "occurred_at": directive.last_update_at,
+                        "received_at": directive.last_update_at,
+                    }
+                )
+            clamped.append(evt)
+        for evt in clamped:
+            if agent.event_log.append(evt) is AppendResult.APPENDED:
+                agent.projector.apply(evt)
+        for evt in clamped:
+            await self.event_store.append(evt)
 
     async def save_agent_state(self, agent: CoordinationAgent) -> None:
         """Persists current state snapshot, active cases, and approvals."""
@@ -285,12 +347,15 @@ class GatewayService:
         for evt in ingest_events:
             await self.event_store.append(evt)
 
-        # Relay messages only after their events are durably persisted.
+        # Relay messages only after their events are durably persisted. The outbox
+        # makes the relay crash-recoverable (enqueue before send) and retries
+        # transport failures with backoff; delivery settles the directive ledger.
+        delivery_events: list[OrgEvent] = []
         for command in directive_outbound:
-            try:
-                agent.adapter.execute(command)
-            except Exception as exc:  # transport failures must not break the chain
-                logger.error("Directive relay failed via adapter: %s", exc)
+            delivery_events.extend(
+                await self.outbox_dispatcher.enqueue_and_deliver(project_id, command, agent.adapter)
+            )
+        await self._persist_delivery_events(agent, delivery_events)
 
         turn_reason: str | None = None
         round_num: int | None = None
@@ -344,11 +409,14 @@ class GatewayService:
                     agent.projector.apply(evt)
                 await self.event_store.append(evt)
             await self.save_agent_state(agent)
+            reminder_delivery_events: list[OrgEvent] = []
             for command in outcome.outbound:
-                try:
-                    agent.adapter.execute(command)
-                except Exception as exc:
-                    logger.error("Directive reminder failed via adapter: %s", exc)
+                reminder_delivery_events.extend(
+                    await self.outbox_dispatcher.enqueue_and_deliver(
+                        project_id, command, agent.adapter
+                    )
+                )
+            await self._persist_delivery_events(agent, reminder_delivery_events)
             return MessageIngestResult(
                 is_actionable=False,
                 events=outcome.events,
@@ -358,6 +426,35 @@ class GatewayService:
                 bot_reply=outcome.bot_reply,
                 notices=list(outcome.notices),
             )
+
+    async def sweep_outbox(self) -> int:
+        """Delivers due pending outbox commands for every project.
+
+        Called by the background sweep and once at startup, which recovers
+        commands that a crash stranded between "event persisted" and "sent".
+        """
+        now = datetime.now(UTC)
+        swept = 0
+        for project_id in await self.outbox_store.due_projects(now):
+            try:
+                async with self._project_lock(project_id):
+                    agent = await self.get_or_replay_agent(project_id)
+                    delivery_events = await self.outbox_dispatcher.execute_due(
+                        project_id, agent.adapter, now=now
+                    )
+                    await self._persist_delivery_events(agent, delivery_events)
+                    await self.save_agent_state(agent)
+                swept += 1
+            except Exception:
+                logger.exception("Outbox sweep failed for project %s", project_id)
+        return swept
+
+    async def outbox_overview(self, project_id: str) -> dict[str, Any]:
+        """Recent outbox rows plus undelivered counts for observability endpoints."""
+        return {
+            "rows": await self.outbox_store.list_rows(project_id),
+            "pending_count": await self.outbox_store.pending_count(project_id),
+        }
 
     async def get_sync_coordinator(self, project_id: str) -> ProgressSyncCoordinator:
         """Retrieves or creates a ProgressSyncCoordinator bound to the current project agent.

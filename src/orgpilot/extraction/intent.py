@@ -23,6 +23,7 @@ _TASK_CREATE_RE = re.compile(
 )
 
 _REASSIGN_RE = re.compile(r"改派给?|移交给?|负责人?换成?|转给?|交给?")
+_EXPLICIT_REASSIGN_RE = re.compile(r"改派|重新指派|负责人?换成?")
 
 _DIRECTIVE_VERBS = (
     "告诉",
@@ -109,12 +110,13 @@ class IntentRouter:
                 hints=hints,
             )
 
-        if _REASSIGN_RE.search(text) and members:
+        reassign_reason = self._match_reassign(text, lower, members, context)
+        if reassign_reason:
             return IntentResult(
                 intent=MessageIntent.TASK_REASSIGN,
                 confidence=0.9 if privileged else 0.7,
                 authority_ok=privileged,
-                reasoning=f"识别到任务改派表述，目标成员 {members[0][0]}",
+                reasoning=reassign_reason,
                 hints=hints,
             )
 
@@ -196,6 +198,28 @@ class IntentRouter:
             if token_id in lower or (token_title and token_title in lower.replace(" ", "")):
                 matched.append(task_id)
         return matched
+
+    def _match_reassign(
+        self,
+        text: str,
+        lower: str,
+        members: list[tuple[str, str, int]],
+        context: MessageContext,
+    ) -> str | None:
+        """Reassign requires a target: the transfer verb sits directly before the
+        member (转给Alice / 交给Alice), or an explicit 改派/换负责人 appears with
+        a member present. Bare「交」inside unrelated verbs (提交/交付) must not
+        hijack directive messages like「告诉alice，提交方案」."""
+        non_self = [(mid, tok, idx) for mid, tok, idx in members if mid != context.actor_id]
+        if not non_self:
+            return None
+        for mid, _, idx in non_self:
+            prefix = lower[max(0, idx - 4) : idx]
+            if _REASSIGN_RE.search(prefix):
+                return f"改派动词紧邻目标成员 {mid}"
+        if _EXPLICIT_REASSIGN_RE.search(text):
+            return f"识别到显式改派表述，目标成员 {non_self[0][0]}"
+        return None
 
     def _match_directive(
         self,

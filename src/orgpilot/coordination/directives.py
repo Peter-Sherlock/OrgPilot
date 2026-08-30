@@ -308,7 +308,12 @@ class DirectiveManager:
             )
             outbound.append(
                 self._relay_command(
-                    state.project_id, directive.directive_id, directive.target_id, text, occurred_at
+                    state.project_id,
+                    directive.directive_id,
+                    directive.target_id,
+                    text,
+                    occurred_at,
+                    idem_suffix=f":r{index}",
                 )
             )
             notices.append(DirectiveNotice(actor_id=directive.target_id, text=text))
@@ -364,6 +369,7 @@ class DirectiveManager:
                         directive.issuer_id,
                         text,
                         now,
+                        idem_suffix=":esc",
                     )
                 )
                 notices.append(DirectiveNotice(actor_id=directive.issuer_id, text=text))
@@ -391,7 +397,12 @@ class DirectiveManager:
                 )
                 outbound.append(
                     self._relay_command(
-                        state.project_id, directive.directive_id, directive.target_id, text, now
+                        state.project_id,
+                        directive.directive_id,
+                        directive.target_id,
+                        text,
+                        now,
+                        idem_suffix=":r1",
                     )
                 )
                 notices.append(DirectiveNotice(actor_id=directive.target_id, text=text))
@@ -466,6 +477,7 @@ class DirectiveManager:
         target_id: str,
         text: str,
         occurred_at: datetime,
+        idem_suffix: str = "",
     ) -> ActionCommand:
         return ActionCommand(
             command_id=f"cmd:directive:{directive_id}:{target_id}:{int(occurred_at.timestamp())}",
@@ -474,7 +486,9 @@ class DirectiveManager:
             targets=[target_id],
             payload={"text": text, "directive_id": directive_id},
             created_at=occurred_at,
-            idempotency_key=f"idem:directive:{directive_id}:{target_id}",
+            # Reminders/escalations must not collide with the original relay key,
+            # or the outbox would dedupe the nudge away.
+            idempotency_key=f"idem:directive:{directive_id}:{target_id}{idem_suffix}",
         )
 
     def _preview_directive(self, event: DirectiveIssuedEvent) -> DirectiveState:

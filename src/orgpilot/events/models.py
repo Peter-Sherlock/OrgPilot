@@ -145,6 +145,20 @@ class DirectiveEscalatedPayload(FrozenModel):
     reason: str
 
 
+class DirectiveDeliveredPayload(FrozenModel):
+    directive_id: str
+    command_id: str
+    target_id: str
+
+
+class DirectiveDeliveryFailedPayload(FrozenModel):
+    directive_id: str
+    command_id: str
+    target_id: str
+    error: str
+    attempts: int
+
+
 class MemberRegisteredEvent(EventBase):
     event_type: Literal["member.registered"]
     payload: MemberRegisteredPayload
@@ -205,6 +219,16 @@ class DirectiveEscalatedEvent(EventBase):
     payload: DirectiveEscalatedPayload
 
 
+class DirectiveDeliveredEvent(EventBase):
+    event_type: Literal["directive.delivered"]
+    payload: DirectiveDeliveredPayload
+
+
+class DirectiveDeliveryFailedEvent(EventBase):
+    event_type: Literal["directive.delivery_failed"]
+    payload: DirectiveDeliveryFailedPayload
+
+
 type OrgEvent = Annotated[
     MemberRegisteredEvent
     | TaskCreatedEvent
@@ -217,7 +241,9 @@ type OrgEvent = Annotated[
     | DirectiveAcknowledgedEvent
     | DirectiveCompletedEvent
     | DirectiveRemindedEvent
-    | DirectiveEscalatedEvent,
+    | DirectiveEscalatedEvent
+    | DirectiveDeliveredEvent
+    | DirectiveDeliveryFailedEvent,
     Field(discriminator="event_type"),
 ]
 

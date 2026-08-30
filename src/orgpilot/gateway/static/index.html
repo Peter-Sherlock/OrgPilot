@@ -182,6 +182,7 @@
               <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">🛡️ PM 审批决策</span>
             </div>
             <div id="approvalsListContainer" class="px-3 pb-2 space-y-2 max-h-[120px] overflow-auto"></div>
+            <div id="outboxStatus" class="px-3 pb-2 hidden"></div>
           </div>
           <div class="p-3 bg-slate-900/90 border-t border-slate-800 flex items-center gap-2">
             <input id="inputPM" type="text" placeholder="以 PM 身份输入..." onkeydown="if(event.key==='Enter') sendInputMsg('ou_pm')" class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:border-brand-500 focus:outline-none">
@@ -367,10 +368,23 @@
       const icon = document.getElementById('refreshIcon');
       icon.classList.add('animate-spin');
       try {
-        await Promise.all([loadDag(), loadState(), loadApprovals()]);
+        await Promise.all([loadDag(), loadState(), loadApprovals(), loadOutbox()]);
         document.getElementById('connStatus').textContent = '已连接';
       } catch (err) { console.error("Refresh failed", err); document.getElementById('connStatus').textContent = '连接异常'; }
       finally { setTimeout(() => icon.classList.remove('animate-spin'), 400); }
+    }
+
+    async function loadOutbox() {
+      try {
+        const res = await fetch(`/api/v1/projects/${getProjectId()}/outbox`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const box = document.getElementById('outboxStatus');
+        if (!box) return;
+        if (!data.pending_count) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+        box.classList.remove('hidden');
+        box.innerHTML = `<div class="py-1 px-2 bg-rose-500/10 border border-rose-500/30 rounded text-[10px] text-rose-300">📮 外发积压 ${data.pending_count} 条（含重试/死信），详见 /outbox</div>`;
+      } catch (err) { console.error("Outbox load failed", err); }
     }
 
     async function bootstrapSandbox() {

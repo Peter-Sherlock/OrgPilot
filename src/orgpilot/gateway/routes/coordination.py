@@ -361,6 +361,15 @@ async def remind_directives_endpoint(
     return response
 
 
+@router.get("/outbox")
+async def outbox_overview_endpoint(
+    project_id: str,
+    service: GatewayService = Depends(get_service),
+) -> dict:
+    """Outbound delivery ledger: pending retries, dead letters, and recent rows."""
+    return await service.outbox_overview(project_id)
+
+
 @router.post("/sync/complete")
 async def force_complete_sync_endpoint(
     project_id: str,

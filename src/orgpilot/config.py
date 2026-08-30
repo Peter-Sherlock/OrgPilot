@@ -50,6 +50,9 @@ class OrgPilotSettings:
     reference_timezone: str = "Asia/Shanghai"
     directive_reminder_minutes: int = 60
     directive_escalation_minutes: int = 1440
+    outbox_max_attempts: int = 3
+    outbox_retry_seconds: int = 30
+    outbox_sweep_seconds: int = 15
 
     @classmethod
     def from_env(cls) -> "OrgPilotSettings":
@@ -88,6 +91,9 @@ class OrgPilotSettings:
             reference_timezone=os.getenv("ORGPILOT_TIMEZONE", "Asia/Shanghai").strip(),
             directive_reminder_minutes=_int_env("ORGPILOT_DIRECTIVE_REMINDER_MINUTES", 60),
             directive_escalation_minutes=_int_env("ORGPILOT_DIRECTIVE_ESCALATION_MINUTES", 1440),
+            outbox_max_attempts=_int_env("ORGPILOT_OUTBOX_MAX_ATTEMPTS", 3),
+            outbox_retry_seconds=_int_env("ORGPILOT_OUTBOX_RETRY_SECONDS", 30),
+            outbox_sweep_seconds=_int_env("ORGPILOT_OUTBOX_SWEEP_SECONDS", 15),
         )
         settings.validate()
         return settings

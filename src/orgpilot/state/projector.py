@@ -18,6 +18,8 @@ from orgpilot.events.models import (
     CommitmentSupersededEvent,
     DirectiveAcknowledgedEvent,
     DirectiveCompletedEvent,
+    DirectiveDeliveredEvent,
+    DirectiveDeliveryFailedEvent,
     DirectiveEscalatedEvent,
     DirectiveIssuedEvent,
     DirectiveRemindedEvent,
@@ -76,6 +78,10 @@ class OrgProjector:
                 self._remind_directive(event)
             case DirectiveEscalatedEvent():
                 self._escalate_directive(event)
+            case DirectiveDeliveredEvent():
+                self._deliver_directive(event)
+            case DirectiveDeliveryFailedEvent():
+                self._fail_directive_delivery(event)
 
         self.state.processed_event_ids.add(event.event_id)
         self.state.last_event_id = event.event_id
@@ -339,6 +345,26 @@ class OrgProjector:
         self.state.directives[payload.directive_id] = directive.model_copy(
             update={
                 "escalated": True,
+                "source_event_ids": (*directive.source_event_ids, event.event_id),
+                "last_update_at": event.occurred_at,
+            }
+        )
+
+    def _deliver_directive(self, event: DirectiveDeliveredEvent) -> None:
+        directive = self._require_directive(event.payload.directive_id)
+        self.state.directives[event.payload.directive_id] = directive.model_copy(
+            update={
+                "delivery_status": "delivered",
+                "source_event_ids": (*directive.source_event_ids, event.event_id),
+                "last_update_at": event.occurred_at,
+            }
+        )
+
+    def _fail_directive_delivery(self, event: DirectiveDeliveryFailedEvent) -> None:
+        directive = self._require_directive(event.payload.directive_id)
+        self.state.directives[event.payload.directive_id] = directive.model_copy(
+            update={
+                "delivery_status": "failed",
                 "source_event_ids": (*directive.source_event_ids, event.event_id),
                 "last_update_at": event.occurred_at,
             }

@@ -48,6 +48,17 @@ def test_mandate_without_verb_is_directive() -> None:
     assert "alice" in result.hints.mentioned_member_ids
 
 
+def test_reassign_verb_requires_target_adjacency() -> None:
+    """「提交方案」contains a bare 交; it must not hijack a directive into reassign."""
+    result = IntentRouter().route("告诉Alice，明天上午10点前提交方案", _context("carol"))
+    assert result.intent is MessageIntent.DIRECTIVE
+
+    # Genuine reassignment phrasings still route to task_reassign.
+    for message in ("把Backend API任务转给David", "把Frontend交给Bob", "任务改派给David负责"):
+        reassigned = IntentRouter().route(message, _context("carol"))
+        assert reassigned.intent is MessageIntent.TASK_REASSIGN, message
+
+
 def test_self_instruction_is_not_directive() -> None:
     result = IntentRouter().route("我自己必须在明天之前完成", _context("carol"))
     assert result.intent is not MessageIntent.DIRECTIVE

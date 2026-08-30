@@ -48,10 +48,19 @@ class CoordinationAgent:
         self.adapter = adapter or MockCollaborationAdapter(project_id=project_id)
         self.max_response_timeout = timedelta(hours=max_response_timeout_hours)
         self._turn_count = 0
+        # Outbound commands executed this turn with their transport outcome, so the
+        # gateway can settle them into the persistent outbox after the turn.
+        self._turn_outbound: list[tuple[ActionCommand, bool, str | None]] = []
 
     @property
     def state(self) -> OrgState:
         return self.projector.state
+
+    def pop_turn_outbound(self) -> list[tuple[ActionCommand, bool, str | None]]:
+        """Returns and clears this turn's outbound commands with delivery outcomes."""
+        outbound = self._turn_outbound
+        self._turn_outbound = []
+        return outbound
 
     def _safe_adapter_call(self, operation: str, call, *args) -> bool:
         """Runs an adapter transport call, isolating delivery failures.
@@ -59,15 +68,22 @@ class CoordinationAgent:
         A channel outage (Feishu 4xx/5xx, network) must degrade to a logged error
         instead of crashing the turn: the case still transitions and unresponsive
         members are handled by the existing timeout-escalation reconciliation.
+        Executed commands are recorded with their outcome so the gateway can
+        settle them into the persistent outbox (retry failures, ledger honesty).
         """
+        command = args[0] if args and isinstance(args[0], ActionCommand) else None
         try:
             call(*args)
-            return True
-        except Exception:
+        except Exception as exc:
             logger.exception(
                 "Adapter %s failed; coordination continues without delivery", operation
             )
+            if command is not None:
+                self._turn_outbound.append((command, False, str(exc)))
             return False
+        if command is not None:
+            self._turn_outbound.append((command, True, None))
+        return True
 
     def run_turn(
         self,
