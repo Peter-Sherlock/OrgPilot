@@ -8,7 +8,7 @@ OrgPilot is a stateful organizational coordination agent kernel.
 - **P1 prototype**: Async SQL persistence and a FastAPI event gateway. Local persistent SQLite is the default; PostgreSQL deployment still requires environment-specific integration validation.
 - **F1 integration layer**: Feishu OpenAPI client, HTTP Webhook handler, adapter, and interactive cards. A real-account smoke test is still required before calling this production-ready.
 - **W1 Web console**: Embedded Single-Page management console and real-time interactive DAG topology visualizer served directly at `http://localhost:8000/`.
-- **M3 partial**: Role-aware intent routing, event-sourced directive execution (issue → relay → ack → complete → remind → escalate), closed multi-turn clarifications, and M3-R real-integration reliability (typed adapter contract, transactional outbox with retry/dead-letter/delivery ledger, LLM circuit breaker, per-project ingest serialization, server-bound approval identity, XSS escaping).
+- **M3 complete**: Role-aware intent routing, event-sourced directive execution (issue → relay → ack → complete → remind → escalate), closed multi-turn clarifications, gated NL task creation & reassignment (proposal → approval card → task.created/task.updated events → DAG + notifications), and M3-R real-integration reliability (typed adapter contract, transactional outbox with retry/dead-letter/delivery ledger, LLM circuit breaker, per-project ingest serialization, server-bound approval identity, XSS escaping).
 
 ---
 
@@ -66,6 +66,7 @@ uv run uvicorn orgpilot.gateway.app:create_app --factory --port 8000
 - `docs/adr/0007-intent-routing-layer.md`: ADR-0007: Role-Aware Intent Routing Layer
 - `docs/adr/0008-directive-execution-chain.md`: ADR-0008: Event-Sourced Directive Execution Chain
 - `docs/adr/0009-real-integration-reliability.md`: ADR-0009: Real-Integration Reliability (M3-R)
+- `docs/adr/0010-nl-task-operations.md`: ADR-0010: NL Task Creation & Reassignment Behind Approval Gates
 
 ---
 

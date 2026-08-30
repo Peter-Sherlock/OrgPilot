@@ -1,6 +1,7 @@
 """Async API integration tests for FastAPI event gateway."""
 
 import asyncio
+import json
 from datetime import datetime, timedelta
 
 import httpx
@@ -742,4 +743,135 @@ async def test_pending_clarification_survives_gateway_restart(tmp_path) -> None:
     assert directive.target_id == "alice"
     assert directive.deadline is not None
     assert agent.projector.state.pending_directive_clarifications == {}
+    await restarted_db.close()
+
+
+async def test_nl_task_create_full_approval_loop(client: httpx.AsyncClient) -> None:
+    """M3 finale: PM chat -> gated proposal -> approval -> task lands + notify."""
+    base = "/api/v1/projects/proj-task-create"
+    await client.post(f"{base}/bootstrap-sandbox")
+
+    propose = await client.post(
+        f"{base}/sandbox-chat",
+        params={
+            "actor_id": "ou_pm",
+            "message": "新增一个任务：网关压测脚本，由David负责，周五前完成",
+        },
+    )
+    data = propose.json()
+    assert data["intent"] == "task_create"
+    assert data["directive"] == "proposed"
+    assert "提案" in data["bot_reply"]
+
+    approvals = (await client.get(f"{base}/approvals")).json()
+    assert len(approvals) == 1
+    payload = approvals[0]["proposed_command"]["payload"]
+    assert payload["proposal_kind"] == "task_create"
+    assert payload["task_title"] == "网关压测脚本"
+    assert payload["owner_id"] == "ou_david"
+    approval_id = approvals[0]["approval_id"]
+
+    # The task must NOT exist before approval (check the DAG, not the whole
+    # state payload whose approvals section quotes the proposed title).
+    dag = (await client.get(f"{base}/dag")).json()
+    assert "网关压测脚本" not in json.dumps(dag, ensure_ascii=False)
+
+    decision = await client.post(
+        f"{base}/approvals/{approval_id}/decision",
+        json={"decision": "approved", "approver_id": "ou_pm", "reason": "ok"},
+    )
+    assert decision.status_code == 200
+    assert decision.json()["status"] == "approved"
+    assert "已创建" in (decision.json()["bot_reply"] or "")
+
+    state = (await client.get(f"{base}/state")).json()
+    titles = json.dumps(state, ensure_ascii=False)
+    assert "网关压测脚本" in titles
+
+    # The new owner got the assignment notification through the outbox.
+    outbox = (await client.get(f"{base}/outbox")).json()
+    assert outbox["pending_count"] == 0
+    assert any(row["status"] == "delivered" for row in outbox["rows"])
+
+
+async def test_nl_task_create_member_declined(client: httpx.AsyncClient) -> None:
+    base = "/api/v1/projects/proj-task-member"
+    await client.post(f"{base}/bootstrap-sandbox")
+    propose = await client.post(
+        f"{base}/sandbox-chat",
+        params={"actor_id": "ou_alice", "message": "新增任务：部署流水线，由Bob负责"},
+    )
+    data = propose.json()
+    assert data["intent"] == "task_create"
+    assert data["directive"] == "declined"
+    assert "无权限" in data["bot_reply"]
+    approvals = (await client.get(f"{base}/approvals")).json()
+    assert approvals == []
+
+
+async def test_nl_task_reassign_full_approval_loop(client: httpx.AsyncClient) -> None:
+    base = "/api/v1/projects/proj-task-reassign"
+    await client.post(f"{base}/bootstrap-sandbox")
+
+    propose = await client.post(
+        f"{base}/sandbox-chat",
+        params={"actor_id": "ou_pm", "message": "把收银台前端结账转给Alice"},
+    )
+    data = propose.json()
+    assert data["intent"] == "task_reassign"
+    assert data["directive"] == "proposed"
+
+    approvals = (await client.get(f"{base}/approvals")).json()
+    assert len(approvals) == 1
+    payload = approvals[0]["proposed_command"]["payload"]
+    assert payload["proposal_kind"] == "task_reassign"
+    assert payload["owner_id"] == "ou_alice"
+    assert payload["previous_owner_id"] != "ou_alice"
+    approval_id = approvals[0]["approval_id"]
+
+    decision = await client.post(
+        f"{base}/approvals/{approval_id}/decision",
+        json={"decision": "approved", "approver_id": "ou_pm"},
+    )
+    assert decision.status_code == 200
+    assert "改派" in (decision.json()["bot_reply"] or "")
+
+    dag = (await client.get(f"{base}/dag")).json()
+    nodes = json.dumps(dag, ensure_ascii=False)
+    assert "收银台前端结账" in nodes
+
+
+async def test_task_approval_survives_gateway_restart(tmp_path) -> None:
+    """A pending task proposal persists; approval after a restart still lands."""
+    db_path = tmp_path / "task-approval.db"
+    db = Database(f"sqlite+aiosqlite:///{db_path}")
+    await db.init_db()
+    settings = OrgPilotSettings(collaboration_adapter="mock", feishu_use_ws=False)
+    app = create_app(db, settings=settings)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        base = "/api/v1/projects/proj-task-restart"
+        await ac.post(f"{base}/bootstrap-sandbox")
+        propose = await ac.post(
+            f"{base}/sandbox-chat",
+            params={"actor_id": "ou_pm", "message": "新增任务：回归测试清单，由David负责"},
+        )
+        assert propose.json()["directive"] == "proposed"
+    await db.close()
+
+    restarted_db = Database(f"sqlite+aiosqlite:///{db_path}")
+    await restarted_db.init_db()
+    restarted_app = create_app(restarted_db, settings=settings)
+    restarted_transport = httpx.ASGITransport(app=restarted_app)
+    async with httpx.AsyncClient(transport=restarted_transport, base_url="http://test") as ac:
+        approvals = (await ac.get("/api/v1/projects/proj-task-restart/approvals")).json()
+        assert len(approvals) == 1
+        approval_id = approvals[0]["approval_id"]
+        decision = await ac.post(
+            f"/api/v1/projects/proj-task-restart/approvals/{approval_id}/decision",
+            json={"decision": "approved", "approver_id": "ou_pm"},
+        )
+        assert decision.status_code == 200
+        state = (await ac.get("/api/v1/projects/proj-task-restart/state")).json()
+        assert "回归测试清单" in json.dumps(state, ensure_ascii=False)
     await restarted_db.close()

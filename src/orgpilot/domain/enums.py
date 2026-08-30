@@ -52,6 +52,8 @@ class ActionType(StrEnum):
     NOTIFY_GROUP = "notify_group"
     UPDATE_TASK = "update_task"
     SEND_DIRECTIVE = "send_directive"
+    TASK_CREATE = "task_create"
+    TASK_REASSIGN = "task_reassign"
 
 
 class CommandStatus(StrEnum):

@@ -91,6 +91,25 @@ class IntentResult(StrictModel):
     hints: IntentHint = Field(default_factory=IntentHint)
 
 
+class TaskProposal(StrictModel):
+    """LLM-proposed task operation awaiting grounding checks and human approval.
+
+    All string fields are verbatim quotes from the message (grounding rule):
+    resolution against the member directory and task ledger happens in the
+    TaskManager, never in the model output.
+    """
+
+    operation: str = Field(description='"create" or "reassign"')
+    title: str | None = Field(default=None, description="Proposed task title, verbatim")
+    owner_name: str | None = Field(default=None, description="New owner as written, verbatim")
+    task_ref: str | None = Field(
+        default=None, description="Existing task title/id to reassign, verbatim"
+    )
+    deadline_expr: str | None = Field(
+        default=None, description="Raw deadline expression, e.g. '周五前' (unresolved)"
+    )
+
+
 class ExtractionResult(StrictModel):
     """Structured LLM extraction outcome."""
 
@@ -104,6 +123,10 @@ class ExtractionResult(StrictModel):
     hints: IntentHint | None = Field(
         default=None,
         description="Entity hints from intent routing (targets, tasks, raw time expression)",
+    )
+    task_proposal: TaskProposal | None = Field(
+        default=None,
+        description="Task create/reassign proposal; set only for those intents",
     )
     reasoning: str = Field(default="", description="Brief extraction decision summary")
 

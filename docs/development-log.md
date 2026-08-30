@@ -1,5 +1,23 @@
 # 开发记录
 
+## 2026-08-30：M3 收官——NL 任务创建与改派（升级方案·柱 1 完成）
+
+### 定位
+
+意图层已能准确识别 task_create / task_reassign，但命中后只能回复「下一里程碑启用」。本项补上执行层：PM 自然语言建任务/改派 → 提案 → 审批卡 → 确认 → 落内核事件 → DAG/通知全链路。第 1 期四类领导意图（指令/建任务/改派/改期）至此全部可执行。
+
+### 已交付
+
+- **TaskManager**（`coordination/tasks.py`，与 DirectiveManager 同构）：提案-审批-结算三段式；接地校验（负责人目录解析、同名任务冲突、截止期时区解析）；角色门禁（仅 pm/lead，成员请求拒绝并记录）；确定性任务 ID `task-{sha256(project|title)[:10]}`。
+- **执行即事件**：创建落 `task.created`、改派落 `task.updated.owner_id`（投影器原生支持），零旁表可回放；通知经 outbox（新负责人必达，改派同时通知原负责人交接）。
+- **抽取层**：`TaskProposal` 逐字槽位模型 + 提示词规则 7（接地红线：槽位必须逐字取自原文）；task_create/reassign 不再短路跳过 LLM（槽位抽取复用同一调用，不增调用次数）；Mock 用与路由器一致的邻接纪律解析任务句式——「已交付」的裸「交」不得劫持改派（e2e 当场抓出）。
+- **门禁与结算**：任务提案挂 ApprovalManager（不进 CaseLedger，延续 ADR-0008 分离原则），`settle_task_approvals` 在审批决策后结算；审批卡（飞书 `build_task_action_card`）与沙箱审批条按 proposal_kind 三态渲染；决策响应带 bot_reply 直接回显 PM 窗格。
+- **踩坑记录**：审批请求最初只写进内存 agent 实例——摄入路径从未持久化 approvals store，`/approvals` 回放出的新 agent 拿不到提案；修复为提案落账即 `save_agent_state`。
+
+### 门禁
+
+259 项测试通过、覆盖率 90.14%、场景回放 9/9、离线评测 F1 100% + Intent 100%、ruff 全净。
+
 ## 2026-08-29：M3-R 真实集成可靠性（外部审查驱动，四轨修复）
 
 ### 定位

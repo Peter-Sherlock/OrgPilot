@@ -308,12 +308,6 @@ async def sandbox_chat_endpoint(
         auto_run_turn=True,
     )
     intent_notices = {
-        "task_create": (
-            "已识别为任务创建请求。任务创建需经审批门禁，该链路将在下一里程碑启用，本期已准确识别。"
-        ),
-        "task_reassign": (
-            "已识别为任务改派请求。改派需经审批门禁，该链路将在下一里程碑启用，本期已准确识别。"
-        ),
         "deadline_change": (
             "已识别为截止期变更请求。变更需结合依赖拓扑冲突分析后审批，"
             "该链路将在下一里程碑启用，本期已准确识别。"

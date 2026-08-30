@@ -59,6 +59,7 @@ class ApprovalDecisionResponse(StrictSchema):
     decision: str
     status: str
     turn_termination_reason: str | None = None
+    bot_reply: str | None = None
 
 
 class TurnRunRequest(StrictSchema):

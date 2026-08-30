@@ -36,9 +36,17 @@ class ClaimExtractor:
     ) -> tuple[ExtractionResult, list[OrgEvent]]:
         """Analyzes a message, verifies grounding, and generates typed OrgEvents."""
         routed = self.intent_router.route(message, context)
-        if routed.intent not in (MessageIntent.HEALTH_REPORT, MessageIntent.UNCERTAIN):
+        needs_llm_slots = routed.intent in (
+            MessageIntent.TASK_CREATE,
+            MessageIntent.TASK_REASSIGN,
+        )
+        if routed.intent not in (MessageIntent.HEALTH_REPORT, MessageIntent.UNCERTAIN) and (
+            not needs_llm_slots
+        ):
             # Confident non-report intent (directive, chit_chat, ...): no extraction
             # path exists yet, so skip the LLM call entirely and surface the intent.
+            # Task create/reassign still need the LLM call: their proposal slots
+            # (title/owner/deadline) are extracted in the same invocation.
             return (
                 ExtractionResult(
                     is_actionable=False,
@@ -58,7 +66,11 @@ class ClaimExtractor:
         # Enforce grounding and filter hallucinated claims
         verified_result = self.verifier.filter_and_verify(raw_result, message, context)
         verified_result = verified_result.model_copy(
-            update={"intent": raw_result.intent or routed.intent, "hints": routed.hints}
+            update={
+                "intent": raw_result.intent or routed.intent,
+                "hints": routed.hints,
+                "task_proposal": raw_result.task_proposal,
+            }
         )
 
         events: list[OrgEvent] = []

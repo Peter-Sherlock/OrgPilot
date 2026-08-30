@@ -53,6 +53,16 @@ SYSTEM_PROMPT = """你是一个组织协同状态提取专家。你的职责是�
      普通成员说多为本人进度汇报；
    - 要求自己完成某事的表述（如“我必须明天完成”）属于 `health_report`，不是 `directive`；
    - 无法确定时输出 `uncertain`，严禁猜测。
+
+7. **任务操作提案（仅当意图为 task_create 或 task_reassign 时输出）**：
+   - 在 `task_proposal` 字段输出对象，键为：
+     `operation`（"create" 或 "reassign"）、`title`、`owner_name`、`task_ref`、`deadline_expr`；
+   - `task_create`：`title` 与 `owner_name` 必填，`task_ref` 为 null；
+   - `task_reassign`：`task_ref`（被改派的现有任务名称或ID）与 `owner_name`（新负责人）必填，
+     `title` 为 null；
+   - `deadline_expr` 填消息中的截止时间原文（如“周五前”），没有则为 null；
+   - **接地红线**：title / owner_name / task_ref 必须逐字取自消息原文，禁止改写、翻译或编造；
+     消息中未提到的字段一律为 null；非任务操作消息 `task_proposal` 必须为 null。
 """
 
 

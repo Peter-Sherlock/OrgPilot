@@ -759,12 +759,34 @@
       approvals.forEach(app => {
         const item = document.createElement('div');
         item.className = "p-2.5 bg-slate-800/90 border border-amber-500/30 rounded-lg space-y-1.5 text-[11px]";
-        item.innerHTML = `
+        const kind = app.proposed_command.payload.proposal_kind;
+        let body;
+        if (kind === 'task_create') {
+          body = `
+          <div class="flex items-center justify-between font-semibold">
+            <span class="text-cyan-400">🆕 建任务: ${esc(app.proposed_command.payload.task_title || '')}</span>
+            <span class="text-slate-500">${esc(app.approver_id)}</span>
+          </div>
+          <p class="text-slate-300">负责人：<span class="font-mono text-cyan-300 font-bold">${esc(app.proposed_command.payload.owner_name || app.proposed_command.payload.owner_id || '')}</span>
+          　截止：${esc((app.proposed_command.payload.deadline || '未指定').replace('T', ' ').substring(0, 16))}</p>`;
+        } else if (kind === 'task_reassign') {
+          body = `
+          <div class="flex items-center justify-between font-semibold">
+            <span class="text-violet-400">🔄 改派: ${esc(app.proposed_command.payload.task_title || '')}</span>
+            <span class="text-slate-500">${esc(app.approver_id)}</span>
+          </div>
+          <p class="text-slate-300">${esc(app.proposed_command.payload.previous_owner_name || app.proposed_command.payload.previous_owner_id || '')} →
+          <span class="font-mono text-violet-300 font-bold">${esc(app.proposed_command.payload.owner_name || app.proposed_command.payload.owner_id || '')}</span></p>`;
+        } else {
+          body = `
           <div class="flex items-center justify-between font-semibold">
             <span class="text-amber-400">⚠️ 改期: ${esc(app.proposed_command.payload.task_id || '任务')}</span>
             <span class="text-slate-500">${esc(app.approver_id)}</span>
           </div>
-          <p class="text-slate-300">改期至：<span class="font-mono text-cyan-300 font-bold">${esc(app.proposed_command.payload.new_deadline || '待定')}</span></p>
+          <p class="text-slate-300">改期至：<span class="font-mono text-cyan-300 font-bold">${esc(app.proposed_command.payload.new_deadline || '待定')}</span></p>`;
+        }
+        item.innerHTML = `
+          ${body}
           <div class="flex items-center gap-1.5">
             <button onclick="decideApproval('${esc(app.approval_id)}', 'approved')" class="flex-1 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded">🟢 批准</button>
             <button onclick="decideApproval('${esc(app.approval_id)}', 'rejected')" class="flex-1 py-1 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded">🔴 拒绝</button>
@@ -776,11 +798,15 @@
 
     async function decideApproval(approvalId, decision) {
       const pid = getProjectId();
-      await fetch(`/api/v1/projects/${pid}/approvals/${approvalId}/decision`, {
+      const res = await fetch(`/api/v1/projects/${pid}/approvals/${approvalId}/decision`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ decision: decision, approver_id: OPERATOR_ID || '', reason: 'Web Console Decision' })
       });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.bot_reply) appendChatBubble('chatStreamPM', false, 'OrgPilot 智能体', data.bot_reply);
+      }
       await refreshData();
     }
 

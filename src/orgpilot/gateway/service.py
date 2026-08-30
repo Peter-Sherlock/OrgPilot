@@ -12,7 +12,8 @@ from orgpilot.adapter.mock import MockCollaborationAdapter
 from orgpilot.agent.loop import CoordinationAgent
 from orgpilot.coordination.directives import DirectiveManager, DirectiveNotice
 from orgpilot.coordination.sync_coordinator import ProgressSyncCoordinator
-from orgpilot.domain.enums import MessageIntent
+from orgpilot.coordination.tasks import TaskManager, TaskOutcome
+from orgpilot.domain.enums import ActionType, ApprovalStatus, MessageIntent
 from orgpilot.domain.models import ActionCommand, AgentTurnTrace
 from orgpilot.domain.sync_models import SyncSession
 from orgpilot.events.log import AppendResult
@@ -367,6 +368,37 @@ class GatewayService:
             directive_notices.extend(pending_outcome.notices)
             directive_outbound.extend(pending_outcome.outbound)
             ingest_events.extend(pending_outcome.events)
+        elif extraction_result.intent in (
+            MessageIntent.TASK_CREATE,
+            MessageIntent.TASK_REASSIGN,
+        ):
+            task_manager = self._task_manager_for(agent)
+            if extraction_result.intent is MessageIntent.TASK_CREATE:
+                task_outcome = task_manager.handle_task_create_intent(
+                    message=message,
+                    actor_id=actor_id,
+                    result=extraction_result,
+                    state=agent.projector.state,
+                    occurred_at=ts,
+                )
+            else:
+                task_outcome = task_manager.handle_task_reassign_intent(
+                    message=message,
+                    actor_id=actor_id,
+                    result=extraction_result,
+                    state=agent.projector.state,
+                    occurred_at=ts,
+                )
+            directive_kind = task_outcome.kind
+            directive_reply = task_outcome.bot_reply
+            directive_notices = list(task_outcome.notices)
+            directive_outbound = list(task_outcome.outbound)
+            if task_outcome.events:
+                ingest_events.extend(task_outcome.events)
+            if task_outcome.approval is not None:
+                # The gated proposal lives in the approval store, not the event
+                # log — persist it now or it dies with this agent instance.
+                await self.save_agent_state(agent)
         elif extraction_result.intent is MessageIntent.DIRECTIVE:
             outcome = manager.handle_directive_intent(
                 message=message,
@@ -445,6 +477,68 @@ class GatewayService:
             escalation_after_minutes=self.directive_escalation_minutes,
             reference_timezone=self.reference_timezone,
         )
+
+    def _task_manager_for(self, agent: CoordinationAgent) -> TaskManager:
+        """Builds a stateless task-op manager bound to the agent's adapter and approvals."""
+        return TaskManager(
+            adapter=agent.adapter,
+            approval_manager=agent.approval_manager,
+            reference_timezone=self.reference_timezone,
+        )
+
+    async def settle_task_approvals(self, project_id: str, operator_id: str) -> TaskOutcome | None:
+        """Settles approved/rejected task-operation approvals into kernel events.
+
+        Case-scoped approvals (reschedules) are consumed by the agent loop; task
+        proposals settle here: approved emits task.created/task.updated (which
+        the DAG picks up automatically) and notifies the affected members.
+        """
+        async with self._project_lock(project_id):
+            agent = await self.get_or_replay_agent(project_id)
+            manager = self._task_manager_for(agent)
+            now = datetime.now(UTC)
+            aggregated: TaskOutcome | None = None
+            dirty = False
+            for request in agent.approval_manager.get_all_requests():
+                if request.proposed_command.action_type not in (
+                    ActionType.TASK_CREATE,
+                    ActionType.TASK_REASSIGN,
+                ):
+                    continue
+                if request.consumed:
+                    continue
+                if request.status not in (ApprovalStatus.APPROVED, ApprovalStatus.REJECTED):
+                    continue
+                outcome = manager.settle_approval(agent.projector.state, request, operator_id, now)
+                if outcome is None:
+                    continue
+                dirty = True
+                for evt in outcome.events:
+                    if agent.event_log.append(evt) is AppendResult.APPENDED:
+                        agent.projector.apply(evt)
+                    await self.event_store.append(evt)
+                if aggregated is None:
+                    aggregated = outcome
+                else:
+                    aggregated.notices.extend(outcome.notices)
+                    aggregated.outbound.extend(outcome.outbound)
+                if aggregated.bot_reply and outcome.bot_reply and aggregated is not outcome:
+                    aggregated.bot_reply = f"{aggregated.bot_reply}\n{outcome.bot_reply}"
+                elif aggregated.bot_reply is None:
+                    aggregated.bot_reply = outcome.bot_reply
+            if not dirty:
+                return None
+            delivery_events: list[OrgEvent] = []
+            assert aggregated is not None
+            for command in aggregated.outbound:
+                delivery_events.extend(
+                    await self.outbox_dispatcher.enqueue_and_deliver(
+                        project_id, command, agent.adapter
+                    )
+                )
+            await self._persist_delivery_events(agent, delivery_events)
+            await self.save_agent_state(agent)
+            return aggregated
 
     async def remind_directives(self, project_id: str, operator_id: str) -> MessageIngestResult:
         """Manually nudges every unacknowledged directive and persists the reminders."""

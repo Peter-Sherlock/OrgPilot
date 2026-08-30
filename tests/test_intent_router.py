@@ -107,19 +107,30 @@ def test_uncertain_when_no_rule_fires() -> None:
 
 
 def test_short_circuit_skips_llm_call() -> None:
-    """Confident non-report intents must not spend an LLM extraction call."""
+    """Zero-slot non-report intents (directive, chit_chat) must not spend an LLM
+    extraction call; task_create deliberately reaches the LLM to extract its
+    proposal slots (title/owner/deadline) in the same invocation."""
     client = MockLLMClient()
     extractor = ClaimExtractor(llm_client=client)
     for message, actor in [
         ("告诉Alice，必须在明天上午12点之前完成", "carol"),
         ("收到，辛苦了！", "alice"),
-        ("新增一个任务：网关压测脚本", "carol"),
     ]:
         result, events = extractor.extract_from_message(message, _context(actor))
         assert events == []
         assert result.is_actionable is False
         assert result.intent is not MessageIntent.HEALTH_REPORT
     assert client.call_history == []
+
+    proposal_result, events = extractor.extract_from_message(
+        "新增一个任务：网关压测脚本，由David负责", _context("carol")
+    )
+    assert events == []
+    assert proposal_result.is_actionable is False
+    assert proposal_result.intent is MessageIntent.TASK_CREATE
+    assert proposal_result.task_proposal is not None
+    assert proposal_result.task_proposal.title == "网关压测脚本"
+    assert len(client.call_history) == 1
 
 
 def test_report_message_still_reaches_llm_extraction() -> None:

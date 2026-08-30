@@ -220,8 +220,13 @@ async def get_project_timeline(
             wf_stat = getattr(evt.payload, "workflow_status", "")
             desc = f"负责人: {getattr(evt.payload, 'owner_id', '')}, 状态: {wf_stat}"
         elif evt.event_type == "task.updated":
-            title = f"排期更新: {task_id}"
-            desc = f"最新截止时间: {getattr(evt.payload, 'deadline', '')}"
+            new_owner = getattr(evt.payload, "owner_id", None)
+            if new_owner:
+                title = f"负责人变更: {task_id}"
+                desc = f"任务改派给 {new_owner}（由 {evt.actor_id or 'system'} 批准）"
+            else:
+                title = f"排期更新: {task_id}"
+                desc = f"最新截止时间: {getattr(evt.payload, 'deadline', '')}"
         elif evt.event_type.startswith("directive."):
             action = evt.event_type.split(".", 1)[1]
             action_labels = {

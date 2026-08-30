@@ -38,6 +38,11 @@ class CollaborationAdapter(ABC):
             case ActionType.PROPOSE_RESCHEDULE:
                 approver = command.targets[0] if command.targets else "approver"
                 return self.request_approval(command, approver)
+            case ActionType.TASK_CREATE | ActionType.TASK_REASSIGN:
+                # NL task proposals ride the approval-card path too: the card IS
+                # the delivery of the gated proposal to its approver.
+                approver = command.targets[0] if command.targets else "approver"
+                return self.request_approval(command, approver)
             case ActionType.UPDATE_TASK:
                 return self.update_task(command)
             case ActionType.NOTIFY_GROUP:

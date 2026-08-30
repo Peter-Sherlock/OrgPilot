@@ -26,6 +26,7 @@ from orgpilot.feishu.cards import (
     build_executive_briefing_card,
     build_inquiry_card,
     build_notification_card,
+    build_task_action_card,
 )
 from orgpilot.feishu.client import FeishuClient, MockFeishuClient
 
@@ -105,21 +106,37 @@ class FeishuCollaborationAdapter(CollaborationAdapter):
         )
 
     def request_approval(self, command: ActionCommand, approver_id: str) -> ActionResult:
-        """Sends an interactive approval card with [Approve] and [Reject] action buttons."""
-        try:
-            proposal = RescheduleProposal.from_payload(command.payload)
-        except PayloadContractError as exc:
-            return self._failed(command, exc)
+        """Sends an interactive approval card: reschedule proposals use the risk
+        card; NL task create/reassign proposals use the task-action card."""
+        proposal_kind = command.payload.get("proposal_kind")
+        if proposal_kind in ("task_create", "task_reassign"):
+            card = build_task_action_card(
+                approval_id=command.payload.get("approval_id", f"appr:{command.command_id}"),
+                case_id=command.payload.get("case_id", "case:unknown"),
+                proposal_kind=str(proposal_kind),
+                task_title=str(command.payload.get("task_title", "")),
+                owner_name=str(
+                    command.payload.get("owner_name", command.payload.get("owner_id", ""))
+                ),
+                deadline_str=command.payload.get("deadline"),
+                previous_owner_name=command.payload.get("previous_owner_name"),
+                proposed_by=str(command.payload.get("proposed_by", "")),
+            )
+        else:
+            try:
+                proposal = RescheduleProposal.from_payload(command.payload)
+            except PayloadContractError as exc:
+                return self._failed(command, exc)
 
-        card = build_approval_card(
-            approval_id=command.payload.get("approval_id", f"appr:{command.command_id}"),
-            case_id=command.payload.get("case_id", "case:unknown"),
-            task_id=proposal.task_id,
-            task_title=proposal.task_title,
-            proposed_deadline_str=format_deadline_for_card(proposal.new_deadline),
-            impacted_tasks=proposal.impacted_tasks,
-            risk_level=proposal.risk_level,
-        )
+            card = build_approval_card(
+                approval_id=command.payload.get("approval_id", f"appr:{command.command_id}"),
+                case_id=command.payload.get("case_id", "case:unknown"),
+                task_id=proposal.task_id,
+                task_title=proposal.task_title,
+                proposed_deadline_str=format_deadline_for_card(proposal.new_deadline),
+                impacted_tasks=proposal.impacted_tasks,
+                risk_level=proposal.risk_level,
+            )
 
         self._run_async(self.client.send_card(receive_id=approver_id, card=card))
         return self._result(command, CommandStatus.SUCCESS, approver_id=approver_id, card=card)

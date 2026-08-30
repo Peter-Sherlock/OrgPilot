@@ -1,6 +1,7 @@
 """Provider-agnostic LLM clients supporting deterministic mock, replay, and live APIs."""
 
 import json
+import re
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -14,8 +15,15 @@ from orgpilot.extraction.models import (
     ExtractedHealthClaim,
     ExtractionResult,
     MessageContext,
+    TaskProposal,
 )
 from orgpilot.extraction.verifier import TemporalResolver
+
+_TASK_OP_CREATE_RE = re.compile(
+    r"(新增|新建|创建|建个|立个|加个|排一?个|开一?个)[一个项]*任务|new\s+task", re.IGNORECASE
+)
+_TASK_OP_REASSIGN_RE = re.compile(r"改派给?|移交给?|负责人?换成?|转给?|交给?|重新指派给?")
+_TIME_HINT_RE = re.compile(r"周|天|号|点|月|底")
 
 
 class LLMUnavailableError(RuntimeError):
@@ -301,6 +309,24 @@ class MockLLMClient(LLMClient):
                 reasoning="Casual chat",
             )
 
+        # 1b. Task operation proposals (create / reassign) — deterministic parse of
+        # the canonical phrasings; slots stay verbatim for the TaskManager to ground.
+        proposal = self._heuristic_task_proposal(message, context, matched_task_id)
+        if proposal is not None:
+            intent = (
+                MessageIntent.TASK_CREATE
+                if proposal.operation == "create"
+                else MessageIntent.TASK_REASSIGN
+            )
+            return ExtractionResult(
+                is_actionable=False,
+                claims=[],
+                commitments=[],
+                intent=intent,
+                task_proposal=proposal,
+                reasoning="Task operation proposal (awaiting grounding + approval)",
+            )
+
         if matched_task_id is None:
             return ExtractionResult(
                 is_actionable=False,
@@ -406,6 +432,81 @@ class MockLLMClient(LLMClient):
             intent=MessageIntent.UNCERTAIN,
             reasoning="No actionable state found",
         )
+
+    def _heuristic_task_proposal(
+        self, message: str, context: MessageContext, matched_task_id: str | None
+    ) -> TaskProposal | None:
+        """Parses canonical task create/reassign phrasings into a verbatim-slot
+        proposal; the TaskManager grounds slots against the directory and ledger."""
+        create_match = _TASK_OP_CREATE_RE.search(message)
+        reassign_match = _TASK_OP_REASSIGN_RE.search(message)
+        if create_match is None and reassign_match is None:
+            return None
+
+        if create_match is not None:
+            parts = re.split(r"任务[：:]", message, maxsplit=1)
+            body = parts[1] if len(parts) == 2 else message
+            segments = [seg.strip() for seg in re.split(r"[，,;；]", body) if seg.strip()]
+            title = segments[0] if segments else None
+            owner_name: str | None = None
+            deadline_expr: str | None = None
+            for seg in segments[1:]:
+                if owner_name is None and "负责" in seg:
+                    owner_name = seg.replace("由", "").replace("负责", "").strip() or None
+                elif deadline_expr is None and _TIME_HINT_RE.search(seg):
+                    deadline_expr = re.sub(r"(完成|交付|搞定)$", "", seg).strip() or seg
+            if owner_name is None:
+                owner_name = self._owner_token_after(message, context, 0)
+            return TaskProposal(
+                operation="create",
+                title=title,
+                owner_name=owner_name,
+                task_ref=None,
+                deadline_expr=deadline_expr,
+            )
+
+        owner_name = self._owner_token_after(message, context, reassign_match.end(), max_gap=3)
+        if owner_name is None:
+            # 「已交付」「提交」etc. contain a bare 交; without a member right
+            # after the keyword this is not a reassignment — fall through to
+            # the normal claim-extraction path.
+            return None
+        task_ref = None
+        if matched_task_id is not None:
+            task_ref = context.known_tasks.get(matched_task_id, matched_task_id)
+        return TaskProposal(
+            operation="reassign",
+            title=None,
+            owner_name=owner_name,
+            task_ref=task_ref,
+            deadline_expr=None,
+        )
+
+    @staticmethod
+    def _owner_token_after(
+        message: str, context: MessageContext, search_from: int, max_gap: int | None = None
+    ) -> str | None:
+        """Finds the member token (id or id suffix) nearest after search_from.
+
+        With ``max_gap`` the token must start within that many characters of
+        search_from — the adjacency discipline that keeps transfer verbs in
+        完成/交付 phrasings from hijacking the message.
+        """
+        lower = message.lower()
+        best: tuple[int, str] | None = None
+        for member_id in context.known_members:
+            tokens = {member_id.lower(), member_id.lower().split("_")[-1]}
+            for token in tokens:
+                if len(token) < 2:
+                    continue
+                idx = lower.find(token, max(0, search_from))
+                if idx >= 0 and (best is None or idx < best[0]):
+                    best = (idx, token)
+        if best is None:
+            return None
+        if max_gap is not None and best[0] - max(0, search_from) > max_gap:
+            return None
+        return best[1]
 
 
 class RecordedReplayClient(LLMClient):
