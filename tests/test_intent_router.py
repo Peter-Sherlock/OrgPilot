@@ -140,8 +140,21 @@ def test_short_circuit_skips_llm_call() -> None:
     assert deadline_result.task_proposal is not None
     assert deadline_result.task_proposal.operation == "deadline_change"
     assert deadline_result.task_proposal.task_ref == "Backend API"
-    assert deadline_result.task_proposal.deadline_expr == "Backend API截止时间改到后天下午5点"
+    assert deadline_result.task_proposal.deadline_expr == "后天下午5点"
     assert len(client.call_history) == 2
+
+
+def test_mock_deadline_proposal_keeps_only_verbatim_time_slot() -> None:
+    client = MockLLMClient()
+    extractor = ClaimExtractor(llm_client=client)
+    message = "Backend API 截止日期调整到 后天 下午 5 点完成；请同步风险"
+
+    result, events = extractor.extract_from_message(message, _context("carol"))
+
+    assert events == []
+    assert result.task_proposal is not None
+    assert result.task_proposal.deadline_expr == "后天 下午 5 点"
+    assert result.task_proposal.deadline_expr in message
 
 
 def test_report_message_still_reaches_llm_extraction() -> None:

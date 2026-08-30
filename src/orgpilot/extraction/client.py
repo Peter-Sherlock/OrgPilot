@@ -196,9 +196,7 @@ class AnthropicCompatibleLLMClient(LLMClient):
         ]
         if not text_blocks:
             block_types = [
-                str(block.get("type", "unknown"))
-                for block in content
-                if isinstance(block, dict)
+                str(block.get("type", "unknown")) for block in content if isinstance(block, dict)
             ]
             raise LLMResponseError(
                 "LLM response did not contain a text block "
@@ -519,12 +517,16 @@ class MockLLMClient(LLMClient):
                     or candidate.lower().replace(" ", "") in compact_message
                 ):
                     task_ref = candidate
+            deadline_expr = re.split(r"[，。;；\n]", message[deadline_match.end() :], maxsplit=1)[
+                0
+            ].strip()
+            deadline_expr = re.sub(r"\s*(完成|交付|搞定)$", "", deadline_expr).strip()
             return TaskProposal(
                 operation="deadline_change",
                 title=None,
                 owner_name=None,
                 task_ref=task_ref,
-                deadline_expr=message,
+                deadline_expr=deadline_expr or None,
             )
 
         assert reassign_match is not None

@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 
 from orgpilot.adapter.base import CollaborationAdapter
 from orgpilot.domain.enums import ActionType, DirectiveStatus
+from orgpilot.domain.errors import DomainInvariantError
 from orgpilot.domain.models import (
     ActionCommand,
     DirectiveState,
@@ -340,6 +341,11 @@ class DirectiveManager:
         occurred_at: datetime,
     ) -> DirectiveOutcome:
         """Manually nudges every still-unacknowledged directive."""
+        operator = state.members.get(operator_id)
+        if operator is None or operator.role not in PRIVILEGED_ROLES:
+            raise DomainInvariantError(
+                f"member {operator_id!r} is not authorized to remind directives"
+            )
         notices: list[DirectiveNotice] = []
         outbound: list[ActionCommand] = []
         events: list[OrgEvent] = []

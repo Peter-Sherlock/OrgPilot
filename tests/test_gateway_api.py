@@ -512,10 +512,40 @@ async def test_directive_remind_before_ack(client: httpx.AsyncClient) -> None:
     remind_data = remind.json()
     assert remind_data["type"] == "reminded"
     assert any(n["actor_id"] == "ou_david" for n in remind_data["notices"])
+    events = (await client.get(f"{base}/events")).json()
+    reminded = [event for event in events if event["event_type"] == "directive.reminded"]
+    assert reminded[-1]["payload"]["reminded_by"] == "ou_pm"
 
     # A second reminder pass reminds again (reminder_count increments).
     again = await client.post(f"{base}/directives/remind")
     assert again.json()["type"] == "reminded"
+
+
+async def test_directive_remind_requires_project_operator(
+    client: httpx.AsyncClient,
+) -> None:
+    base = "/api/v1/projects/proj-remind-no-operator"
+    event = {
+        "schema_version": 1,
+        "project_id": "proj-remind-no-operator",
+        "event_id": "evt-only-engineer",
+        "event_type": "member.registered",
+        "source": "human",
+        "source_ref": "setup",
+        "occurred_at": NOW.isoformat(),
+        "received_at": NOW.isoformat(),
+        "payload": {
+            "member_id": "alice",
+            "display_name": "Alice",
+            "role": "engineer",
+        },
+    }
+    assert (await client.post(f"{base}/events", json={"events": [event]})).status_code == 200
+
+    remind = await client.post(f"{base}/directives/remind")
+
+    assert remind.status_code == 409
+    assert remind.json()["detail"] == "Project has no PM/lead operator"
 
 
 async def test_directive_state_survives_gateway_restart(tmp_path) -> None:

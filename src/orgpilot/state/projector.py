@@ -359,6 +359,7 @@ class OrgProjector:
 
     def _deliver_directive(self, event: DirectiveDeliveredEvent) -> None:
         directive = self._require_directive(event.payload.directive_id)
+        self._validate_directive_delivery_target(directive, event.payload.target_id)
         self.state.directives[event.payload.directive_id] = directive.model_copy(
             update={
                 "delivery_status": "delivered",
@@ -369,6 +370,7 @@ class OrgProjector:
 
     def _fail_directive_delivery(self, event: DirectiveDeliveryFailedEvent) -> None:
         directive = self._require_directive(event.payload.directive_id)
+        self._validate_directive_delivery_target(directive, event.payload.target_id)
         self.state.directives[event.payload.directive_id] = directive.model_copy(
             update={
                 "delivery_status": "failed",
@@ -376,6 +378,16 @@ class OrgProjector:
                 "last_update_at": event.occurred_at,
             }
         )
+
+    @staticmethod
+    def _validate_directive_delivery_target(
+        directive: DirectiveState, event_target_id: str
+    ) -> None:
+        if event_target_id != directive.target_id:
+            raise DomainInvariantError(
+                f"directive delivery target {event_target_id!r} does not match "
+                f"directive target {directive.target_id!r}"
+            )
 
     def _request_directive_clarification(self, event: DirectiveClarificationRequestedEvent) -> None:
         payload = event.payload

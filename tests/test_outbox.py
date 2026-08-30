@@ -126,10 +126,15 @@ async def test_failed_relay_is_retried_and_then_delivered(tmp_path) -> None:
     assert swept == 1
     rows = await service.outbox_store.list_rows(project_id)
     assert rows[0]["status"] == OUTBOX_DELIVERED
+    assert rows[0]["attempts"] == 2
 
     agent = await service.get_or_replay_agent(project_id)
     directive = next(iter(agent.projector.state.directives.values()))
     assert directive.delivery_status == "delivered"
+    events = await service.event_store.get_events(project_id)
+    delivered = [event for event in events if event.event_type == "directive.delivered"]
+    assert len(delivered) == 1
+    assert delivered[0].payload.attempts == 2
     await db.close()
 
 

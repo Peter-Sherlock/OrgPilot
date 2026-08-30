@@ -1,8 +1,9 @@
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from orgpilot.domain.enums import WorkflowStatus
+from orgpilot.domain.models import MemberState
 from orgpilot.events.log import AppendResult
 from orgpilot.events.models import (
     EventSource,
@@ -24,6 +25,18 @@ router = APIRouter(prefix="/api/v1/projects/{project_id}", tags=["coordination"]
 
 def get_service(request: Request) -> GatewayService:
     return request.app.state.gateway_service
+
+
+async def _project_operator(project_id: str, service: GatewayService) -> MemberState | None:
+    agent = await service.get_or_replay_agent(project_id)
+    return next(
+        (
+            member
+            for member in agent.projector.state.members.values()
+            if member.role in ("pm", "lead")
+        ),
+        None,
+    )
 
 
 @router.post("/run-turn", response_model=TurnRunResponse)
@@ -339,7 +352,10 @@ async def remind_directives_endpoint(
     service: GatewayService = Depends(get_service),
 ) -> dict:
     """Nudges every still-unacknowledged directive (manual escalation button)."""
-    result = await service.remind_directives(project_id, operator_id="pm_web_operator")
+    operator = await _project_operator(project_id, service)
+    if operator is None:
+        raise HTTPException(status_code=409, detail="Project has no PM/lead operator")
+    result = await service.remind_directives(project_id, operator_id=operator.member_id)
     response: dict = {
         "type": result.directive_kind or "none",
         "bot_reply": result.bot_reply or "当前没有待确认的指令。",
@@ -367,11 +383,7 @@ async def project_context_endpoint(
 ) -> dict:
     """Server-provided operator identity for this console session: the project's
     PM/lead member. The web console must not impersonate a hardcoded id."""
-    agent = await service.get_or_replay_agent(project_id)
-    operator = next(
-        (m for m in agent.projector.state.members.values() if m.role in ("pm", "lead")),
-        None,
-    )
+    operator = await _project_operator(project_id, service)
     if operator is None:
         return {"operator_id": None, "display_name": None}
     return {"operator_id": operator.member_id, "display_name": operator.display_name}

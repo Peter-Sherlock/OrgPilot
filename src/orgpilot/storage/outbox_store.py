@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from orgpilot.domain.models import ActionCommand
 from orgpilot.storage.database import Database
@@ -181,12 +181,15 @@ class SqlOutboxStore:
     async def pending_count(self, project_id: str) -> int:
         """Counts undelivered rows (pending retries plus dead letters)."""
         async with self.db.session() as session:
-            stmt = select(OutboxRecord).where(
-                OutboxRecord.project_id == project_id,
-                OutboxRecord.status.in_((OUTBOX_PENDING, OUTBOX_DEAD)),
+            stmt = (
+                select(func.count())
+                .select_from(OutboxRecord)
+                .where(
+                    OutboxRecord.project_id == project_id,
+                    OutboxRecord.status.in_((OUTBOX_PENDING, OUTBOX_DEAD)),
+                )
             )
-            rows = (await session.execute(stmt)).scalars().all()
-            return len(list(rows))
+            return int((await session.execute(stmt)).scalar_one())
 
     @staticmethod
     def decode_command(row: OutboxRecord) -> ActionCommand:

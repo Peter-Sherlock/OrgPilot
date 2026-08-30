@@ -276,6 +276,12 @@ def test_remind_with_no_open_directives() -> None:
     assert "没有待确认" in (outcome.bot_reply or "")
 
 
+def test_remind_rejects_non_privileged_operator() -> None:
+    projector, manager, _outcome = _issue_to_alice()
+    with pytest.raises(DomainInvariantError, match="not authorized"):
+        manager.remind_open_directives(projector.state, "alice", NOW)
+
+
 # ------------------------------------------------- multi-turn clarification
 
 

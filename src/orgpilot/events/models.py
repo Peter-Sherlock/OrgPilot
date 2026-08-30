@@ -149,6 +149,7 @@ class DirectiveDeliveredPayload(FrozenModel):
     directive_id: str
     command_id: str
     target_id: str
+    attempts: int = 1
 
 
 class DirectiveDeliveryFailedPayload(FrozenModel):

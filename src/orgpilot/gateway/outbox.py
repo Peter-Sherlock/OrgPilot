@@ -97,6 +97,7 @@ class OutboxDispatcher:
         adapter: CollaborationAdapter,
         now: datetime,
     ) -> list[OrgEvent]:
+        attempts = await self.store.attempts_of(project_id, command.idempotency_key) + 1
         try:
             # The adapter interface is synchronous and may block on IO.
             await asyncio.to_thread(adapter.execute, command)
@@ -104,7 +105,6 @@ class OutboxDispatcher:
             # Transport failures are recoverable (backoff, then dead-letter);
             # permanent rejections (bad target, 4xx) dead-letter immediately —
             # burning retries on a request that can never succeed is noise.
-            attempts = await self.store.attempts_of(project_id, command.idempotency_key) + 1
             dead = _is_permanent(exc) or attempts >= self.max_attempts
             retry_at = now if dead else now + timedelta(seconds=self.retry_seconds * attempts)
             await self.store.settle(
@@ -127,13 +127,13 @@ class OutboxDispatcher:
             project_id,
             command.idempotency_key,
             delivered=True,
-            attempts=1,
+            attempts=attempts,
             error=None,
             retry_at=now,
             now=now,
         )
         return self._delivery_event(
-            project_id, command, success=True, attempts=1, error=None, now=now
+            project_id, command, success=True, attempts=attempts, error=None, now=now
         )
 
     def _delivery_event(
@@ -169,6 +169,7 @@ class OutboxDispatcher:
                         "directive_id": directive_id,
                         "command_id": command.command_id,
                         "target_id": target_id,
+                        "attempts": attempts,
                     },
                     **common,
                 )
