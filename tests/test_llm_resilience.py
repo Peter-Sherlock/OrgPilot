@@ -79,6 +79,25 @@ def test_transient_failure_recovers_on_retry() -> None:
     assert len(calls) == 2
 
 
+def test_invalid_structured_output_recovers_on_retry() -> None:
+    attempts = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            return httpx.Response(
+                200,
+                json={"content": [{"type": "text", "text": "not-json"}]},
+            )
+        return httpx.Response(200, json=_llm_response())
+
+    client, calls = _client_with(handler)
+    result = client.extract("s", "u", "hello", _context())
+
+    assert result.is_actionable is False
+    assert len(calls) == 2
+
+
 def test_circuit_breaker_opens_and_fails_fast() -> None:
     client, calls = _client_with(lambda request: (_ for _ in ()).throw(httpx.ReadTimeout("t")))
     for _ in range(2):  # threshold=2

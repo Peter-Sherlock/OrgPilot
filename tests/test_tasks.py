@@ -105,7 +105,7 @@ def test_pm_create_proposal_is_gated_not_executed() -> None:
     assert payload["deadline"] is not None
     # The card command rides the approval path to the approver.
     assert outcome.outbound[0].action_type.value == "task_create"
-    assert outcome.outbound[0].targets == ("david",)
+    assert outcome.outbound[0].targets == ("carol",)
 
 
 def test_member_cannot_propose_task_creation() -> None:
@@ -133,6 +133,29 @@ def test_create_with_unresolvable_owner_clarifies() -> None:
     )
     assert outcome.kind == "clarify"
     assert "张三" in (outcome.bot_reply or "")
+
+
+def test_hallucinated_create_slots_cannot_reach_approval() -> None:
+    projector = _setup()
+    hallucinated_title = _manager(projector).handle_task_create_intent(
+        message="新增任务，由David负责",
+        actor_id="carol",
+        result=_create_result(title="模型凭空生成的任务", owner_name="David"),
+        state=projector.state,
+        occurred_at=NOW,
+    )
+    assert hallucinated_title.kind == "clarify"
+    assert hallucinated_title.approval is None
+
+    hallucinated_owner = _manager(projector).handle_task_create_intent(
+        message="新增任务：网关压测脚本，由张三负责",
+        actor_id="carol",
+        result=_create_result(title="网关压测脚本", owner_name="David"),
+        state=projector.state,
+        occurred_at=NOW,
+    )
+    assert hallucinated_owner.kind == "clarify"
+    assert hallucinated_owner.approval is None
 
 
 def test_create_with_duplicate_title_clarifies() -> None:
@@ -184,7 +207,7 @@ def test_rejected_create_notifies_and_marks_consumed() -> None:
     projector = _setup()
     manager = _manager(projector)
     proposal = manager.handle_task_create_intent(
-        message="新增任务：网关压测脚本",
+        message="新增任务：网关压测脚本，由David负责",
         actor_id="carol",
         result=_create_result(),
         state=projector.state,
@@ -251,6 +274,127 @@ def test_reassign_proposal_and_settlement() -> None:
                 payload={"task_id": "task-100", "owner_id": "ghost"},
             )
         )
+
+
+def test_deadline_change_proposal_analyzes_dependencies_and_settles() -> None:
+    projector = _setup()
+    for task_id, title, owner_id, deadline, dependencies in (
+        ("task-upstream", "支付SDK接入", "alice", NOW + timedelta(days=1), ()),
+        (
+            "task-downstream",
+            "收银台前端结账",
+            "bob",
+            NOW + timedelta(days=2),
+            ("task-upstream",),
+        ),
+        (
+            "task-qa",
+            "支付全链路验收",
+            "david",
+            NOW + timedelta(days=4),
+            ("task-downstream",),
+        ),
+    ):
+        projector.apply(
+            TaskCreatedEvent(
+                project_id=PROJECT,
+                event_id=f"evt-{task_id}",
+                event_type="task.created",
+                source=EventSource.TASK,
+                source_ref="setup",
+                occurred_at=NOW,
+                received_at=NOW,
+                payload={
+                    "task_id": task_id,
+                    "title": title,
+                    "owner_id": owner_id,
+                    "deadline": deadline,
+                    "dependencies": dependencies,
+                },
+            )
+        )
+
+    manager = _manager(projector)
+    result = ExtractionResult(
+        is_actionable=False,
+        task_proposal=TaskProposal(
+            operation="deadline_change",
+            title=None,
+            owner_name=None,
+            task_ref="支付SDK接入",
+            deadline_expr="后天下午5点",
+        ),
+        hints=IntentHint(mentioned_task_ids=("task-upstream",), raw_time_expr="后天下午5点"),
+    )
+    proposal = manager.handle_deadline_change_intent(
+        message="支付SDK接入截止时间改到后天下午5点",
+        actor_id="carol",
+        result=result,
+        state=projector.state,
+        occurred_at=NOW,
+    )
+
+    assert proposal.kind == "proposed"
+    assert proposal.approval is not None
+    assert proposal.outbound[0].targets == ("carol",)
+    payload = proposal.approval.proposed_command.payload
+    assert payload["proposal_kind"] == "deadline_change"
+    assert payload["impacted_tasks"] == ["task-downstream", "task-qa"]
+    assert payload["conflicting_tasks"] == ["task-downstream"]
+    assert payload["risk_level"] == "HIGH"
+    assert projector.state.tasks["task-upstream"].deadline == NOW + timedelta(days=1)
+
+    manager.approval_manager.approve(proposal.approval.approval_id, "carol", NOW)
+    settled = manager.settle_approval(projector.state, proposal.approval, "carol", NOW)
+    assert settled is not None and settled.kind == "deadline_changed"
+    for event in settled.events:
+        projector.apply(event)
+    assert projector.state.tasks["task-upstream"].deadline == datetime.fromisoformat(
+        payload["new_deadline"]
+    )
+    assert {command.targets[0] for command in settled.outbound} == {"alice", "bob", "david"}
+
+
+def test_deadline_change_requires_task_time_and_privilege() -> None:
+    projector = _setup("支付SDK接入")
+    manager = _manager(projector)
+    missing_task = ExtractionResult(
+        is_actionable=False,
+        task_proposal=TaskProposal(
+            operation="deadline_change",
+            task_ref=None,
+            deadline_expr="后天下午5点",
+        ),
+        hints=IntentHint(raw_time_expr="后天下午5点"),
+    )
+    assert (
+        manager.handle_deadline_change_intent(
+            "截止时间改到后天下午5点", "carol", missing_task, projector.state, NOW
+        ).kind
+        == "clarify"
+    )
+
+    missing_time = ExtractionResult(
+        is_actionable=False,
+        task_proposal=TaskProposal(operation="deadline_change", task_ref="支付SDK接入"),
+        hints=IntentHint(mentioned_task_ids=("task-100",)),
+    )
+    assert (
+        manager.handle_deadline_change_intent(
+            "支付SDK接入需要改期", "carol", missing_time, projector.state, NOW
+        ).kind
+        == "clarify"
+    )
+    assert (
+        manager.handle_deadline_change_intent(
+            "支付SDK接入截止时间改到后天下午5点",
+            "alice",
+            missing_time,
+            projector.state,
+            NOW,
+        ).kind
+        == "declined"
+    )
 
 
 def test_reassign_to_current_owner_is_noop() -> None:
@@ -384,8 +528,6 @@ def test_settle_ignores_non_task_approvals() -> None:
         idempotency_key="idem:1",
         created_at=NOW,
     )
-    request = manager.approval_manager.create_request(
-        "case:1", action, command, "carol", NOW
-    )
+    request = manager.approval_manager.create_request("case:1", action, command, "carol", NOW)
     manager.approval_manager.approve(request.approval_id, "carol", NOW)
     assert manager.settle_approval(projector.state, request, "carol", NOW) is None

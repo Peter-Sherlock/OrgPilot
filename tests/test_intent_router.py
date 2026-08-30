@@ -132,6 +132,17 @@ def test_short_circuit_skips_llm_call() -> None:
     assert proposal_result.task_proposal.title == "网关压测脚本"
     assert len(client.call_history) == 1
 
+    deadline_result, events = extractor.extract_from_message(
+        "Backend API截止时间改到后天下午5点", _context("carol")
+    )
+    assert events == []
+    assert deadline_result.intent is MessageIntent.DEADLINE_CHANGE
+    assert deadline_result.task_proposal is not None
+    assert deadline_result.task_proposal.operation == "deadline_change"
+    assert deadline_result.task_proposal.task_ref == "Backend API"
+    assert deadline_result.task_proposal.deadline_expr == "Backend API截止时间改到后天下午5点"
+    assert len(client.call_history) == 2
+
 
 def test_report_message_still_reaches_llm_extraction() -> None:
     client = MockLLMClient()

@@ -13,7 +13,7 @@ from orgpilot.agent.loop import CoordinationAgent
 from orgpilot.coordination.directives import DirectiveManager, DirectiveNotice
 from orgpilot.coordination.sync_coordinator import ProgressSyncCoordinator
 from orgpilot.coordination.tasks import TaskManager, TaskOutcome
-from orgpilot.domain.enums import ActionType, ApprovalStatus, MessageIntent
+from orgpilot.domain.enums import ApprovalStatus, MessageIntent
 from orgpilot.domain.models import ActionCommand, AgentTurnTrace
 from orgpilot.domain.sync_models import SyncSession
 from orgpilot.events.log import AppendResult
@@ -371,6 +371,7 @@ class GatewayService:
         elif extraction_result.intent in (
             MessageIntent.TASK_CREATE,
             MessageIntent.TASK_REASSIGN,
+            MessageIntent.DEADLINE_CHANGE,
         ):
             task_manager = self._task_manager_for(agent)
             if extraction_result.intent is MessageIntent.TASK_CREATE:
@@ -381,8 +382,16 @@ class GatewayService:
                     state=agent.projector.state,
                     occurred_at=ts,
                 )
-            else:
+            elif extraction_result.intent is MessageIntent.TASK_REASSIGN:
                 task_outcome = task_manager.handle_task_reassign_intent(
+                    message=message,
+                    actor_id=actor_id,
+                    result=extraction_result,
+                    state=agent.projector.state,
+                    occurred_at=ts,
+                )
+            else:
+                task_outcome = task_manager.handle_deadline_change_intent(
                     message=message,
                     actor_id=actor_id,
                     result=extraction_result,
@@ -500,10 +509,8 @@ class GatewayService:
             aggregated: TaskOutcome | None = None
             dirty = False
             for request in agent.approval_manager.get_all_requests():
-                if request.proposed_command.action_type not in (
-                    ActionType.TASK_CREATE,
-                    ActionType.TASK_REASSIGN,
-                ):
+                proposal_kind = request.proposed_command.payload.get("proposal_kind")
+                if proposal_kind not in ("task_create", "task_reassign", "deadline_change"):
                     continue
                 if request.consumed:
                     continue

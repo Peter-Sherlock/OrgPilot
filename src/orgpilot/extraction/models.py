@@ -99,11 +99,13 @@ class TaskProposal(StrictModel):
     TaskManager, never in the model output.
     """
 
-    operation: str = Field(description='"create" or "reassign"')
+    operation: Literal["create", "reassign", "deadline_change"] = Field(
+        description="Requested task operation"
+    )
     title: str | None = Field(default=None, description="Proposed task title, verbatim")
     owner_name: str | None = Field(default=None, description="New owner as written, verbatim")
     task_ref: str | None = Field(
-        default=None, description="Existing task title/id to reassign, verbatim"
+        default=None, description="Existing task title/id to reassign or reschedule, verbatim"
     )
     deadline_expr: str | None = Field(
         default=None, description="Raw deadline expression, e.g. '周五前' (unresolved)"
@@ -126,7 +128,7 @@ class ExtractionResult(StrictModel):
     )
     task_proposal: TaskProposal | None = Field(
         default=None,
-        description="Task create/reassign proposal; set only for those intents",
+        description="Task create/reassign/deadline proposal; set only for those intents",
     )
     reasoning: str = Field(default="", description="Brief extraction decision summary")
 

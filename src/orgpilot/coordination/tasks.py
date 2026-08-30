@@ -1,6 +1,6 @@
-"""Task operation manager: NL task creation and reassignment behind approval gates.
+"""Task operation manager: NL task creation, reassignment, and deadline changes.
 
-The intent router classifies ``task_create`` / ``task_reassign``; the extractor
+The intent router classifies the supported task operations; the extractor
 produces a verbatim-slot ``TaskProposal`` in the same LLM call. This manager
 grounds the proposal against the live directory and task ledger, then gates the
 operation behind a human approval (governance red line: NL task operations are
@@ -42,7 +42,7 @@ from orgpilot.extraction.verifier import TemporalResolver
 class TaskOutcome:
     """Result of a task-operation step for gateway surfacing."""
 
-    # proposed | declined | clarify | created | reassigned | rejected | none
+    # proposed | declined | clarify | created | reassigned | deadline_changed | rejected | none
     kind: str
     bot_reply: str | None = None
     notices: list[DirectiveNotice] = field(default_factory=list)
@@ -80,6 +80,8 @@ class TaskManager:
             return gate
 
         proposal = result.task_proposal
+        if proposal is not None and proposal.operation != "create":
+            proposal = None
         title = (proposal.title if proposal else None) or ""
         title = title.strip()
         if not title:
@@ -87,8 +89,13 @@ class TaskManager:
                 kind="clarify",
                 bot_reply="请告诉我新任务的名称（例如：新增任务：网关压测，David 负责）。",
             )
+        if not self._is_verbatim_slot(title, message):
+            return TaskOutcome(
+                kind="clarify",
+                bot_reply="提取出的任务名称无法与原消息逐字对齐，请重新明确任务名称。",
+            )
 
-        owner_id, owner_note = self._resolve_owner(state, proposal, result)
+        owner_id, owner_note = self._resolve_owner(state, proposal, result, message)
         if owner_id is None:
             return TaskOutcome(
                 kind="clarify",
@@ -127,7 +134,9 @@ class TaskManager:
         approval, command = self._create_approval(
             state,
             actor_id=actor_id,
-            action_id=f"action:task-create:{task_id}",
+            action_id=self._proposal_action_id(
+                "task-create", task_id, actor_id, payload, occurred_at
+            ),
             payload=payload,
             occurred_at=occurred_at,
         )
@@ -168,7 +177,9 @@ class TaskManager:
             return gate
 
         proposal = result.task_proposal
-        task_id = self._resolve_task_ref(state, proposal, result)
+        if proposal is not None and proposal.operation != "reassign":
+            proposal = None
+        task_id = self._resolve_task_ref(state, proposal, result, message)
         if task_id is None:
             return TaskOutcome(
                 kind="clarify",
@@ -177,7 +188,7 @@ class TaskManager:
                 ),
             )
 
-        owner_id, owner_note = self._resolve_owner(state, proposal, result)
+        owner_id, owner_note = self._resolve_owner(state, proposal, result, message)
         if owner_id is None:
             return TaskOutcome(
                 kind="clarify",
@@ -205,7 +216,9 @@ class TaskManager:
         approval, command = self._create_approval(
             state,
             actor_id=actor_id,
-            action_id=f"action:task-reassign:{task_id}",
+            action_id=self._proposal_action_id(
+                "task-reassign", task_id, actor_id, payload, occurred_at
+            ),
             payload=payload,
             occurred_at=occurred_at,
         )
@@ -230,6 +243,108 @@ class TaskManager:
             approval=approval,
         )
 
+    # -------------------------------------------------------- deadline change
+
+    def handle_deadline_change_intent(
+        self,
+        message: str,
+        actor_id: str,
+        result: ExtractionResult,
+        state: OrgState,
+        occurred_at: datetime,
+    ) -> TaskOutcome:
+        """Turns a deadline-change intent into a grounded, gated proposal."""
+        gate = self._authority_gate(state, actor_id, "变更任务截止期")
+        if gate is not None:
+            return gate
+
+        proposal = result.task_proposal
+        if proposal is not None and proposal.operation != "deadline_change":
+            proposal = None
+        task_id = self._resolve_task_ref(state, proposal, result, message)
+        if task_id is None:
+            return TaskOutcome(
+                kind="clarify",
+                bot_reply="没认出要改期的任务，请指明任务名称或 ID。",
+            )
+
+        proposed_time = proposal.deadline_expr if proposal else None
+        if proposed_time and not self._is_verbatim_slot(proposed_time, message):
+            proposed_time = None
+        time_expr = proposed_time or (result.hints.raw_time_expr if result.hints else None)
+        deadline = self._resolve_deadline(time_expr or message, occurred_at)
+        if deadline is None:
+            return TaskOutcome(
+                kind="clarify",
+                bot_reply=(
+                    f"已找到任务「{state.tasks[task_id].title}」，但没认出新的截止时间。"
+                    "请说明完整日期和时刻，例如“改到后天下午 5 点”。"
+                ),
+            )
+
+        task = state.tasks[task_id]
+        if task.deadline == deadline:
+            return TaskOutcome(
+                kind="none",
+                bot_reply=(
+                    f"「{task.title}」当前截止时间已经是 {self._format_deadline(deadline)}，"
+                    "无需改期。"
+                ),
+            )
+
+        impacted_tasks = self._downstream_tasks(state, task_id)
+        conflicts = tuple(
+            impacted_id
+            for impacted_id in impacted_tasks
+            if state.tasks[impacted_id].deadline is not None
+            and state.tasks[impacted_id].deadline <= deadline
+        )
+        payload = {
+            "proposal_kind": "deadline_change",
+            "task_id": task_id,
+            "task_title": task.title,
+            "owner_id": task.owner_id,
+            "owner_name": self._display_name(state, task.owner_id),
+            "previous_deadline": task.deadline.isoformat() if task.deadline else None,
+            "new_deadline": deadline.isoformat(),
+            "impacted_tasks": list(impacted_tasks),
+            "conflicting_tasks": list(conflicts),
+            "risk_level": "HIGH" if conflicts else "MEDIUM",
+            "proposed_by": actor_id,
+        }
+        approval, command = self._create_approval(
+            state,
+            actor_id=actor_id,
+            action_id=self._proposal_action_id(
+                "deadline-change", task_id, actor_id, payload, occurred_at
+            ),
+            payload=payload,
+            occurred_at=occurred_at,
+        )
+
+        impact_note = "无下游任务"
+        if impacted_tasks:
+            impact_note = f"影响 {len(impacted_tasks)} 个下游任务"
+            if conflicts:
+                impact_note += f"，其中 {len(conflicts)} 个存在截止冲突"
+            else:
+                impact_note += "，暂未发现截止冲突"
+        reply = (
+            "📅 已生成任务改期提案，等待您在审批卡确认：\n"
+            f"• 任务：{task.title}\n"
+            f"• 截止：{self._format_deadline(task.deadline) or '未指定'} → "
+            f"{self._format_deadline(deadline)}\n"
+            f"• 依赖分析：{impact_note}\n"
+            "批准后立即更新任务账本，并通知受影响负责人。"
+        )
+        return TaskOutcome(
+            kind="proposed",
+            bot_reply=reply,
+            notices=[DirectiveNotice(actor_id=actor_id, text=f"📅 改期提案待审批：{task.title}")],
+            outbound=[command],
+            approval=approval,
+        )
+
     # ---------------------------------------------------------------- settle
 
     def settle_approval(
@@ -246,10 +361,16 @@ class TaskManager:
         both outcomes notify the affected members.
         """
         action_type = request.proposed_command.action_type
-        if action_type not in (ActionType.TASK_CREATE, ActionType.TASK_REASSIGN):
+        payload = request.proposed_command.payload
+        proposal_kind = payload.get("proposal_kind")
+        expected_types = {
+            "task_create": ActionType.TASK_CREATE,
+            "task_reassign": ActionType.TASK_REASSIGN,
+            "deadline_change": ActionType.PROPOSE_RESCHEDULE,
+        }
+        if expected_types.get(proposal_kind) is not action_type:
             return None
 
-        payload = request.proposed_command.payload
         task_title = str(payload.get("task_title", payload.get("task_id", "")))
 
         if request.status is ApprovalStatus.REJECTED:
@@ -306,10 +427,57 @@ class TaskManager:
                 ],
             )
 
+        if proposal_kind == "deadline_change":
+            deadline = datetime.fromisoformat(str(payload["new_deadline"]))
+            event_suffix = hashlib.sha256(request.approval_id.encode("utf-8")).hexdigest()[:10]
+            event = TaskUpdatedEvent(
+                project_id=state.project_id,
+                event_id=f"evt-task-deadline-{payload['task_id']}-{event_suffix}",
+                event_type="task.updated",
+                source=EventSource.TASK,
+                source_ref=f"approval:{request.approval_id}",
+                actor_id=operator_id,
+                occurred_at=occurred_at,
+                received_at=occurred_at,
+                payload={"task_id": payload["task_id"], "deadline": deadline},
+            )
+            notices: list[DirectiveNotice] = []
+            outbound: list[ActionCommand] = []
+            affected_by_owner: dict[str, list[str]] = {}
+            affected_by_owner.setdefault(str(payload["owner_id"]), []).append(task_title)
+            for impacted_id in payload.get("impacted_tasks", []):
+                impacted = state.tasks.get(str(impacted_id))
+                if impacted is not None:
+                    affected_by_owner.setdefault(impacted.owner_id, []).append(impacted.title)
+            for owner_id, titles in affected_by_owner.items():
+                if owner_id == str(payload["owner_id"]):
+                    text = (
+                        f"📅 任务「{task_title}」截止时间已调整为 "
+                        f"{self._format_deadline(deadline)}，请据此更新计划。"
+                    )
+                else:
+                    text = (
+                        f"⚠️ 上游任务「{task_title}」已改期至 "
+                        f"{self._format_deadline(deadline)}，可能影响：{'、'.join(titles)}。"
+                    )
+                notices.append(DirectiveNotice(actor_id=owner_id, text=text))
+                outbound.append(self._notify_command(state.project_id, owner_id, text, occurred_at))
+            return TaskOutcome(
+                kind="deadline_changed",
+                bot_reply=(
+                    f"✅ 任务「{task_title}」截止时间已更新为 "
+                    f"{self._format_deadline(deadline)}，已通知受影响负责人。"
+                ),
+                notices=notices,
+                events=[event],
+                outbound=outbound,
+            )
+
         # Reassignment
+        event_suffix = hashlib.sha256(request.approval_id.encode("utf-8")).hexdigest()[:10]
         event = TaskUpdatedEvent(
             project_id=state.project_id,
-            event_id=f"evt-task-reassign-{payload['task_id']}",
+            event_id=f"evt-task-reassign-{payload['task_id']}-{event_suffix}",
             event_type="task.updated",
             source=EventSource.TASK,
             source_ref=f"approval:{request.approval_id}",
@@ -377,14 +545,16 @@ class TaskManager:
         force a human review of LLM-proposed parameters before they land, not to
         cross-approve between people.
         """
+        action_types = {
+            "task_create": ActionType.TASK_CREATE,
+            "task_reassign": ActionType.TASK_REASSIGN,
+            "deadline_change": ActionType.PROPOSE_RESCHEDULE,
+        }
+        action_type = action_types[payload["proposal_kind"]]
         action = CoordinationAction(
             action_id=action_id,
-            action_type=(
-                ActionType.TASK_CREATE
-                if payload["proposal_kind"] == "task_create"
-                else ActionType.TASK_REASSIGN
-            ),
-            targets=(str(payload["owner_id"]),),
+            action_type=action_type,
+            targets=(actor_id,),
             reason_refs=(),
             expected_effect=f"NL task operation proposed by {actor_id}",
             payload=dict(payload),
@@ -421,11 +591,15 @@ class TaskManager:
         return request or approval, command
 
     def _resolve_owner(
-        self, state: OrgState, proposal, result: ExtractionResult
+        self, state: OrgState, proposal, result: ExtractionResult, message: str
     ) -> tuple[str | None, str]:
         """Resolves the proposed owner name to a directory member id."""
         candidates: list[str] = []
-        if proposal is not None and proposal.owner_name:
+        if (
+            proposal is not None
+            and proposal.owner_name
+            and self._is_verbatim_slot(proposal.owner_name, message)
+        ):
             candidates.append(proposal.owner_name.strip())
         if result.hints and result.hints.mentioned_member_ids:
             candidates.extend(result.hints.mentioned_member_ids)
@@ -441,10 +615,16 @@ class TaskManager:
                         return member_id, ""
         return None, "、".join(candidates) or "未提供负责人"
 
-    def _resolve_task_ref(self, state: OrgState, proposal, result: ExtractionResult) -> str | None:
+    def _resolve_task_ref(
+        self, state: OrgState, proposal, result: ExtractionResult, message: str
+    ) -> str | None:
         """Resolves the referenced existing task from the proposal or hints."""
         refs: list[str] = []
-        if proposal is not None and proposal.task_ref:
+        if (
+            proposal is not None
+            and proposal.task_ref
+            and self._is_verbatim_slot(proposal.task_ref, message)
+        ):
             refs.append(proposal.task_ref)
         if result.hints and result.hints.mentioned_task_ids:
             refs.extend(result.hints.mentioned_task_ids)
@@ -456,6 +636,11 @@ class TaskManager:
                 if task_id.lower() in compact or task.title.lower().replace(" ", "") in compact:
                     return task_id
         return None
+
+    @staticmethod
+    def _is_verbatim_slot(value: str, message: str) -> bool:
+        """Checks the prompt's grounding red line with case-insensitive matching."""
+        return value.strip().casefold() in message.casefold()
 
     @staticmethod
     def _task_id_for_title(state: OrgState, title: str) -> str | None:
@@ -479,6 +664,36 @@ class TaskManager:
             anchor = occurred_at
         return TemporalResolver.resolve_relative_time(time_expr, anchor)
 
+    @staticmethod
+    def _proposal_action_id(
+        operation: str,
+        task_id: str,
+        actor_id: str,
+        payload: dict,
+        occurred_at: datetime,
+    ) -> str:
+        """Makes retries idempotent without overwriting a later proposal for the same task."""
+        fields = "|".join(f"{key}={payload[key]}" for key in sorted(payload))
+        identity = f"{actor_id}|{occurred_at.isoformat()}|{fields}"
+        suffix = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:10]
+        return f"action:{operation}:{task_id}:{suffix}"
+
+    @staticmethod
+    def _downstream_tasks(state: OrgState, source_task_id: str) -> tuple[str, ...]:
+        """Returns every transitive task whose dependency chain includes source_task_id."""
+        impacted: list[str] = []
+        seen = {source_task_id}
+        frontier = [source_task_id]
+        while frontier:
+            upstream = frontier.pop(0)
+            for task_id, task in state.tasks.items():
+                if task_id in seen or upstream not in task.dependencies:
+                    continue
+                seen.add(task_id)
+                impacted.append(task_id)
+                frontier.append(task_id)
+        return tuple(impacted)
+
     def _notify_command(
         self, project_id: str, target_id: str, text: str, occurred_at: datetime
     ) -> ActionCommand:
@@ -498,12 +713,11 @@ class TaskManager:
         member = state.members.get(member_id)
         return member.display_name if member else member_id
 
-    @staticmethod
-    def _format_deadline(deadline: datetime | None) -> str | None:
+    def _format_deadline(self, deadline: datetime | None) -> str | None:
         if deadline is None:
             return None
         try:
-            local = deadline.astimezone(ZoneInfo("Asia/Shanghai"))
+            local = deadline.astimezone(ZoneInfo(self.reference_timezone))
         except Exception:
             return deadline.isoformat()
         return local.strftime("%m-%d %H:%M")

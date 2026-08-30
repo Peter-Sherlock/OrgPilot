@@ -41,6 +41,7 @@ def create_app(
             api_key=runtime_settings.aihubmix_api_key or "",
             base_url=runtime_settings.aihubmix_base_url,
             model=runtime_settings.aihubmix_model,
+            reasoning_effort=runtime_settings.llm_reasoning_effort,
         )
     extractor = ClaimExtractor(llm_client=llm_client)
 

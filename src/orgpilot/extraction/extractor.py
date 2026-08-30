@@ -39,13 +39,14 @@ class ClaimExtractor:
         needs_llm_slots = routed.intent in (
             MessageIntent.TASK_CREATE,
             MessageIntent.TASK_REASSIGN,
+            MessageIntent.DEADLINE_CHANGE,
         )
         if routed.intent not in (MessageIntent.HEALTH_REPORT, MessageIntent.UNCERTAIN) and (
             not needs_llm_slots
         ):
             # Confident non-report intent (directive, chit_chat, ...): no extraction
             # path exists yet, so skip the LLM call entirely and surface the intent.
-            # Task create/reassign still need the LLM call: their proposal slots
+            # Task operations still need the LLM call: their proposal slots
             # (title/owner/deadline) are extracted in the same invocation.
             return (
                 ExtractionResult(
@@ -67,7 +68,10 @@ class ClaimExtractor:
         verified_result = self.verifier.filter_and_verify(raw_result, message, context)
         verified_result = verified_result.model_copy(
             update={
-                "intent": raw_result.intent or routed.intent,
+                # A confident rule-routed task operation owns the route; the
+                # model supplies slots but cannot silently turn it into another
+                # intent (or suppress the governance gate).
+                "intent": routed.intent if needs_llm_slots else raw_result.intent or routed.intent,
                 "hints": routed.hints,
                 "task_proposal": raw_result.task_proposal,
             }

@@ -308,10 +308,6 @@ async def sandbox_chat_endpoint(
         auto_run_turn=True,
     )
     intent_notices = {
-        "deadline_change": (
-            "已识别为截止期变更请求。变更需结合依赖拓扑冲突分析后审批，"
-            "该链路将在下一里程碑启用，本期已准确识别。"
-        ),
         "question": (
             "已识别为提问。智能问答链路将在后续版本启用；当前可由 PM 发起全员进度同步获取最新状态。"
         ),

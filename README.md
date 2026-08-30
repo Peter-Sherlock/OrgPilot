@@ -8,7 +8,7 @@ OrgPilot is a stateful organizational coordination agent kernel.
 - **P1 prototype**: Async SQL persistence and a FastAPI event gateway. Local persistent SQLite is the default; PostgreSQL deployment still requires environment-specific integration validation.
 - **F1 integration layer**: Feishu OpenAPI client, HTTP Webhook handler, adapter, and interactive cards. A real-account smoke test is still required before calling this production-ready.
 - **W1 Web console**: Embedded Single-Page management console and real-time interactive DAG topology visualizer served directly at `http://localhost:8000/`.
-- **M3 complete**: Role-aware intent routing, event-sourced directive execution (issue → relay → ack → complete → remind → escalate), closed multi-turn clarifications, gated NL task creation & reassignment (proposal → approval card → task.created/task.updated events → DAG + notifications), and M3-R real-integration reliability (typed adapter contract, transactional outbox with retry/dead-letter/delivery ledger, LLM circuit breaker, per-project ingest serialization, server-bound approval identity, XSS escaping).
+- **M3 complete**: Role-aware intent routing, event-sourced directive execution (issue → relay → ack → complete → remind → escalate), closed multi-turn clarifications, gated NL task creation/reassignment/deadline changes (grounded proposal → dependency analysis → approval card → task.created/task.updated events → DAG + notifications), and M3-R real-integration reliability (typed adapter contract, transactional outbox with retry/dead-letter/delivery ledger, LLM circuit breaker, per-project ingest serialization, server-bound approval identity, XSS escaping).
 
 ---
 
@@ -28,23 +28,27 @@ uv run uvicorn orgpilot.gateway.app:create_app --factory --port 8000
 ```
 Open `http://localhost:8000/` in your browser: the multi-role split-screen sandbox lets one person role-play PM + engineers (4 windows) through probe fan-out, autonomous clarification, and DAG briefing synthesis; the interactive DAG topology, the Explainability Timeline, and the PM approval strip (inside the PM window) sit on the adjacent tabs. If a probed member never replies, `POST /api/v1/projects/{id}/sync/complete` (the PM window's「⏭️ 未响应成员直接出简报」button) closes the session with `no_response` markers and delivers the briefing anyway.
 
-External integrations are opt-in. For AIHubMix:
+External integrations are opt-in. The provider selector and `AIHUBMIX_*` names are retained for
+backward compatibility, but the client accepts any Anthropic Messages-compatible endpoint. For
+official DeepSeek:
 
 ```powershell
 $env:ORGPILOT_LLM_PROVIDER = "aihubmix"
-$env:AIHUBMIX_API_KEY = "<set securely>"
-$env:AIHUBMIX_MODEL = "gpt-5.6-luna"
+$env:AIHUBMIX_API_KEY = "<DeepSeek key; set securely>"
+$env:AIHUBMIX_BASE_URL = "https://api.deepseek.com/anthropic"
+$env:AIHUBMIX_MODEL = "deepseek-v4-flash"
+$env:ORGPILOT_LLM_REASONING_EFFORT = "none"
 uv run uvicorn orgpilot.gateway.app:create_app --factory --port 8000
 ```
 
 - The offline 34-sample extraction result (`--provider mock`) is a deterministic regression benchmark, not an accuracy claim.
-- Live-model benchmark via `uv run orgpilot eval-extraction --provider aihubmix` (requires `AIHUBMIX_API_KEY`): measured **F1 100%**, task-id accuracy 100%, slot-datetime accuracy 100%, false alarms 0%, grounding 100%, **intent accuracy 100%** (92.9–100% across runs; gate ≥90%) on `gpt-5.6-luna` (2026-08-29, temperature 0). Relative times resolve against the team reference timezone (`ORGPILOT_TIMEZONE`, default `Asia/Shanghai`). The role-aware intent router (directives, task create/reassign, deadline change, question, chit-chat) runs on deterministic rules before the LLM call and short-circuits non-report messages at zero LLM cost.
+- Live-model benchmark via `uv run orgpilot eval-extraction --provider aihubmix` (requires `AIHUBMIX_API_KEY`): official `deepseek-v4-flash` measured **F1 100%**, task-id accuracy 100%, slot-datetime accuracy 100%, false alarms 0%, grounding 100%, and **intent accuracy 92.86%** over all 34 synthetic gold samples (2026-08-30, Anthropic format, thinking disabled). Earlier `gpt-5.6-luna` runs measured intent accuracy 92.9–100%. Relative times resolve against the team reference timezone (`ORGPILOT_TIMEZONE`, default `Asia/Shanghai`). The role-aware intent router (directives, task create/reassign, deadline change, question, chit-chat) runs on deterministic rules before the LLM call and short-circuits non-report messages at zero LLM cost.
 
 - Feishu HTTP Webhook setup guide lives in `docs/feishu-setup-guide.md`.
 - The solo-tester demo task chain injected on a first Feishu message is opt-in: set `ORGPILOT_DEMO_BOOTSTRAP=true` (off by default).
 - Outbound delivery is durable: commands persist in an outbox before sending, failed transports retry with backoff (`ORGPILOT_OUTBOX_*` settings) and dead-letter after the attempt cap; a startup/periodic sweep re-sends anything a crash stranded between "event persisted" and "sent". `GET /api/v1/projects/{id}/outbox` exposes the delivery ledger, and the console shows a backlog badge.
 - Ground-truth replay scenarios (4 P0 + 5 M1) live in `evals/scenarios/`.
-- 20-sample natural language extraction gold dataset lives in `evals/extraction/gold_dataset.yaml`.
+- 34-sample natural language extraction gold dataset lives in `evals/extraction/gold_dataset.yaml`.
 - Architecture and design specifications live in `docs/`.
 
 ---

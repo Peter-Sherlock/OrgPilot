@@ -841,6 +841,44 @@ async def test_nl_task_reassign_full_approval_loop(client: httpx.AsyncClient) ->
     assert "收银台前端结账" in nodes
 
 
+async def test_nl_deadline_change_full_approval_loop(client: httpx.AsyncClient) -> None:
+    """PM chat -> dependency-aware approval -> deadline event + notifications."""
+    base = "/api/v1/projects/proj-task-deadline"
+    await client.post(f"{base}/bootstrap-sandbox")
+
+    propose = await client.post(
+        f"{base}/sandbox-chat",
+        params={"actor_id": "ou_pm", "message": "支付SDK接入截止时间改到后天下午5点"},
+    )
+    data = propose.json()
+    assert data["intent"] == "deadline_change"
+    assert data["directive"] == "proposed"
+    assert "依赖分析" in data["bot_reply"]
+
+    approvals = (await client.get(f"{base}/approvals")).json()
+    assert len(approvals) == 1
+    approval = approvals[0]
+    payload = approval["proposed_command"]["payload"]
+    assert payload["proposal_kind"] == "deadline_change"
+    assert payload["task_id"] == "task-payment"
+    assert payload["impacted_tasks"] == ["task-checkout", "task-qa"]
+    assert approval["proposed_command"]["targets"] == ["ou_pm"]
+
+    decision = await client.post(
+        f"{base}/approvals/{approval['approval_id']}/decision",
+        json={"decision": "approved", "approver_id": "ou_pm"},
+    )
+    assert decision.status_code == 200
+    assert "截止时间已更新" in (decision.json()["bot_reply"] or "")
+
+    state = (await client.get(f"{base}/state")).json()
+    assert state["tasks"]["task-payment"]["deadline"] == payload["new_deadline"]
+    outbox = (await client.get(f"{base}/outbox")).json()
+    delivered = [row for row in outbox["rows"] if row["status"] == "delivered"]
+    assert sum(row["action_type"] == "send_directive" for row in delivered) == 3
+    assert any(row["action_type"] == "propose_reschedule" for row in delivered)
+
+
 async def test_task_approval_survives_gateway_restart(tmp_path) -> None:
     """A pending task proposal persists; approval after a restart still lands."""
     db_path = tmp_path / "task-approval.db"

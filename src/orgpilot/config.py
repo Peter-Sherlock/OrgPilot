@@ -40,6 +40,7 @@ class OrgPilotSettings:
     aihubmix_api_key: str | None = field(default=None, repr=False)
     aihubmix_base_url: str = "https://aihubmix.com"
     aihubmix_model: str = "gpt-5.6-luna"
+    llm_reasoning_effort: str | None = None
     collaboration_adapter: str = "mock"
     demo_bootstrap: bool = False
     feishu_use_ws: bool = True
@@ -79,6 +80,7 @@ class OrgPilotSettings:
             aihubmix_api_key=_optional_env("AIHUBMIX_API_KEY"),
             aihubmix_base_url=os.getenv("AIHUBMIX_BASE_URL", "https://aihubmix.com").rstrip("/"),
             aihubmix_model=os.getenv("AIHUBMIX_MODEL", "gpt-5.6-luna"),
+            llm_reasoning_effort=_optional_env("ORGPILOT_LLM_REASONING_EFFORT"),
             collaboration_adapter=os.getenv("ORGPILOT_COLLABORATION_ADAPTER", "mock")
             .strip()
             .lower(),

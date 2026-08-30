@@ -1,17 +1,51 @@
 # 开发记录
 
+## 2026-08-30：M3 真正收官——自然语言改期闭环与审批身份修复
+
+### 定位
+
+复核上一笔“收官”实现时发现，`deadline_change` 仍只返回“下一里程碑启用”，并未进入
+TaskManager；同时任务创建/改派审批请求虽然把 PM 记为 `approver_id`，审批卡命令却投递给
+拟任负责人，真实飞书中会出现“收到卡的人无权批准、能批准的人收不到卡”。本项一次修完
+这两个同属任务审批闭环的问题。
+
+### 已交付
+
+- **自然语言改期**：`deadline_change` 进入与建任务/改派一致的槽位抽取、接地、角色门禁、
+  提案、审批、结算链；批准后落 `task.updated.deadline`，拒绝不改账。
+- **依赖影响分析**：改期提案遍历全部传递下游；新截止不早于下游截止时列为冲突并把审批
+  风险提升为 HIGH；审批卡展示影响列表，批准后通过 outbox 通知上游及下游负责人。
+- **审批身份一致**：三类任务审批命令统一投递给服务端登记的提案人/审批人，不再误投拟任
+  负责人；单测直接锁定 card target。
+- **重复提案与时区修复**：action/approval/event ID 加提案摘要，后续新提案不覆盖旧记录；
+  截止显示使用项目参考时区；修复“下周五”被解析成本周五的周偏移错误。
+- **边界隔离**：NL 改期虽复用 `PROPOSE_RESCHEDULE` 适配器契约，但只结算
+  `proposal_kind=deadline_change`；原 CaseLedger 风险改期审批仍由 Agent Loop 独立处理。
+
+### 门禁
+
+267 项测试通过、分支覆盖率 90.29%、场景回放 9/9、离线评测 34 样本
+F1/任务/时间/接地/意图均 100%、False Alarm 0%、Ruff 与 `git diff --check` 全净。
+
+经用户明确授权，将同一组 34 条版本库合成金标发送到 DeepSeek 官方 Anthropic 兼容接口，
+`deepseek-v4-flash` 在线评测通过：健康状态 Precision/Recall/F1 100%，任务 ID 100%，
+时间槽 100%，False Alarm 0%，接地 100%，意图 92.86%（门槛 ≥90%）。接入过程中捕获并修复：
+DeepSeek V4 默认思考导致 `thinking-only` 响应；Anthropic 格式应使用
+`thinking.type=disabled`，而非 Responses API 的 `reasoning.effort=none`；结构化输出偶发漂移
+现纳入一次有界重试并只报告块类型/停止原因等安全元数据。未调用真实飞书公网接口。
+
 ## 2026-08-30：M3 收官——NL 任务创建与改派（升级方案·柱 1 完成）
 
 ### 定位
 
-意图层已能准确识别 task_create / task_reassign，但命中后只能回复「下一里程碑启用」。本项补上执行层：PM 自然语言建任务/改派 → 提案 → 审批卡 → 确认 → 落内核事件 → DAG/通知全链路。第 1 期四类领导意图（指令/建任务/改派/改期）至此全部可执行。
+意图层已能准确识别 task_create / task_reassign，但命中后只能回复「下一里程碑启用」。本项补上执行层：PM 自然语言建任务/改派 → 提案 → 审批卡 → 确认 → 落内核事件 → DAG/通知全链路。当时记录为“四类全部可执行”，后续复核确认改期仍未接入执行层，已由上方“自然语言改期闭环”补齐。
 
 ### 已交付
 
 - **TaskManager**（`coordination/tasks.py`，与 DirectiveManager 同构）：提案-审批-结算三段式；接地校验（负责人目录解析、同名任务冲突、截止期时区解析）；角色门禁（仅 pm/lead，成员请求拒绝并记录）；确定性任务 ID `task-{sha256(project|title)[:10]}`。
 - **执行即事件**：创建落 `task.created`、改派落 `task.updated.owner_id`（投影器原生支持），零旁表可回放；通知经 outbox（新负责人必达，改派同时通知原负责人交接）。
 - **抽取层**：`TaskProposal` 逐字槽位模型 + 提示词规则 7（接地红线：槽位必须逐字取自原文）；task_create/reassign 不再短路跳过 LLM（槽位抽取复用同一调用，不增调用次数）；Mock 用与路由器一致的邻接纪律解析任务句式——「已交付」的裸「交」不得劫持改派（e2e 当场抓出）。
-- **门禁与结算**：任务提案挂 ApprovalManager（不进 CaseLedger，延续 ADR-0008 分离原则），`settle_task_approvals` 在审批决策后结算；审批卡（飞书 `build_task_action_card`）与沙箱审批条按 proposal_kind 三态渲染；决策响应带 bot_reply 直接回显 PM 窗格。
+- **门禁与结算**：任务提案挂 ApprovalManager（不进 CaseLedger，延续 ADR-0008 分离原则），`settle_task_approvals` 在审批决策后结算；飞书建任务/改派使用 `build_task_action_card`，改期使用风险改期卡；决策响应带 bot_reply 直接回显 PM 窗格。
 - **踩坑记录**：审批请求最初只写进内存 agent 实例——摄入路径从未持久化 approvals store，`/approvals` 回放出的新 agent 拿不到提案；修复为提案落账即 `save_agent_state`。
 
 ### 门禁

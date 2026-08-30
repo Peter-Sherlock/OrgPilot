@@ -93,15 +93,19 @@ def _eval_extraction(dataset_path: Path, provider: str = "mock") -> int:
             api_key=settings.aihubmix_api_key,
             base_url=settings.aihubmix_base_url,
             model=settings.aihubmix_model,
+            reasoning_effort=settings.llm_reasoning_effort,
         )
-        print(f"[*] Live benchmark against {settings.aihubmix_model} via AIHubMix...")
+        print(
+            f"[*] Live benchmark against {settings.aihubmix_model} "
+            "via configured Anthropic-compatible endpoint..."
+        )
     extractor = ClaimExtractor(llm_client=live_client)
     try:
         metrics = evaluate_extractor(extractor, samples)
     finally:
         if live_client is not None:
             live_client.close()
-    label = f"{provider} ({settings.aihubmix_model})" if provider == "aihubmix" else provider
+    label = f"live ({settings.aihubmix_model})" if provider == "aihubmix" else provider
     status = "PASS" if metrics.passed else "FAIL"
     print(
         f"[{status}] Natural Language Extraction Benchmark "
