@@ -6,6 +6,13 @@ from datetime import UTC, datetime
 from typing import Any
 
 from orgpilot.adapter.base import CollaborationAdapter
+from orgpilot.adapter.contracts import (
+    DeadlineUpdate,
+    PayloadContractError,
+    RescheduleProposal,
+    TextMessage,
+    format_deadline_for_card,
+)
 from orgpilot.domain.enums import CommandStatus
 from orgpilot.domain.models import ActionCommand, ActionResult
 from orgpilot.events.models import (
@@ -19,6 +26,7 @@ from orgpilot.feishu.cards import (
     build_executive_briefing_card,
     build_inquiry_card,
     build_notification_card,
+    build_task_action_card,
 )
 from orgpilot.feishu.client import FeishuClient, MockFeishuClient
 
@@ -56,25 +64,35 @@ class FeishuCollaborationAdapter(CollaborationAdapter):
                 return executor.submit(asyncio.run, coro).result()
         return asyncio.run(coro)
 
+    def _result(self, command: ActionCommand, status: CommandStatus, **output: Any) -> ActionResult:
+        result = ActionResult(
+            command_id=command.command_id,
+            action_id=command.action_id,
+            status=status,
+            output=output,
+            executed_at=command.created_at,
+        )
+        self.audit_log.append((command, result))
+        return result
+
     def send_private_message(self, command: ActionCommand) -> ActionResult:
-        """Sends a private inquiry card or direct clarification message to team members."""
-        clarification_text = command.payload.get("clarification_text")
-        inquiry_text = command.payload.get("inquiry_text")
+        """Sends a private text message, or a task inquiry card when no text is present."""
+        message = TextMessage.from_payload(command.payload)
+        if message is None:
+            return self._send_inquiry_card(command)
 
-        if clarification_text or inquiry_text:
-            msg_text = clarification_text or inquiry_text
-            for target in command.targets:
-                self._run_async(self.client.send_message(receive_id=target, content=msg_text))
-            result = ActionResult(
-                command_id=command.command_id,
-                action_id=command.action_id,
-                status=CommandStatus.SUCCESS,
-                output={"sent_to": command.targets, "text": msg_text},
-                executed_at=command.created_at,
+        for target in command.targets:
+            # Feishu IM contract: msg_type="text" requires content {"text": "..."}.
+            self._run_async(
+                self.client.send_message(
+                    receive_id=target, msg_type="text", content={"text": message.text}
+                )
             )
-            self.audit_log.append((command, result))
-            return result
+        return self._result(
+            command, CommandStatus.SUCCESS, sent_to=list(command.targets), text=message.text
+        )
 
+    def _send_inquiry_card(self, command: ActionCommand) -> ActionResult:
         task_id = command.payload.get("task_id", "unknown_task")
         title = command.payload.get("title", "")
         reason = command.payload.get("reason", "检测到排期延误或阻塞风险")
@@ -83,60 +101,60 @@ class FeishuCollaborationAdapter(CollaborationAdapter):
 
         for target in command.targets:
             self._run_async(self.client.send_card(receive_id=target, card=card))
-
-        result = ActionResult(
-            command_id=command.command_id,
-            action_id=command.action_id,
-            status=CommandStatus.SUCCESS,
-            output={"sent_to": command.targets, "card": card},
-            executed_at=command.created_at,
+        return self._result(
+            command, CommandStatus.SUCCESS, sent_to=list(command.targets), card=card
         )
-        self.audit_log.append((command, result))
-        return result
 
     def request_approval(self, command: ActionCommand, approver_id: str) -> ActionResult:
-        """Sends an interactive approval card with [Approve] and [Reject] action buttons."""
-        approval_id = command.payload.get("approval_id", f"appr:{command.command_id}")
-        case_id = command.payload.get("case_id", "case:unknown")
-        task_id = command.payload.get("task_id", "unknown_task")
-        task_title = command.payload.get("task_title", task_id)
-        proposed_deadline = command.payload.get("proposed_deadline", "未指定")
-        impacted_tasks = command.payload.get("impacted_tasks", [])
-        risk_level = command.payload.get("risk_level", "HIGH")
+        """Sends an interactive approval card: reschedule proposals use the risk
+        card; NL task create/reassign proposals use the task-action card."""
+        proposal_kind = command.payload.get("proposal_kind")
+        if proposal_kind in ("task_create", "task_reassign"):
+            card = build_task_action_card(
+                approval_id=command.payload.get("approval_id", f"appr:{command.command_id}"),
+                case_id=command.payload.get("case_id", "case:unknown"),
+                proposal_kind=str(proposal_kind),
+                task_title=str(command.payload.get("task_title", "")),
+                owner_name=str(
+                    command.payload.get("owner_name", command.payload.get("owner_id", ""))
+                ),
+                deadline_str=command.payload.get("deadline"),
+                previous_owner_name=command.payload.get("previous_owner_name"),
+                proposed_by=str(command.payload.get("proposed_by", "")),
+            )
+        else:
+            try:
+                proposal = RescheduleProposal.from_payload(command.payload)
+            except PayloadContractError as exc:
+                return self._failed(command, exc)
 
-        card = build_approval_card(
-            approval_id=approval_id,
-            case_id=case_id,
-            task_id=task_id,
-            task_title=task_title,
-            proposed_deadline_str=str(proposed_deadline),
-            impacted_tasks=impacted_tasks,
-            risk_level=risk_level,
-        )
+            card = build_approval_card(
+                approval_id=command.payload.get("approval_id", f"appr:{command.command_id}"),
+                case_id=command.payload.get("case_id", "case:unknown"),
+                task_id=proposal.task_id,
+                task_title=proposal.task_title,
+                proposed_deadline_str=format_deadline_for_card(proposal.new_deadline),
+                impacted_tasks=proposal.impacted_tasks,
+                risk_level=proposal.risk_level,
+            )
 
         self._run_async(self.client.send_card(receive_id=approver_id, card=card))
-
-        result = ActionResult(
-            command_id=command.command_id,
-            action_id=command.action_id,
-            status=CommandStatus.SUCCESS,
-            output={"approver_id": approver_id, "card": card},
-            executed_at=command.created_at,
-        )
-        self.audit_log.append((command, result))
-        return result
+        return self._result(command, CommandStatus.SUCCESS, approver_id=approver_id, card=card)
 
     def update_task(self, command: ActionCommand) -> ActionResult:
-        """Calls Feishu Task OpenAPI to update task deadline and generates a TaskUpdatedEvent."""
-        task_id = command.payload.get("task_id", "task")
-        deadline_str = command.payload.get("deadline")
-        deadline_dt = (
-            datetime.fromisoformat(deadline_str)
-            if isinstance(deadline_str, str)
-            else (deadline_str or datetime.now(UTC))
-        )
+        """Calls Feishu Task OpenAPI to update task deadline and generates a TaskUpdatedEvent.
 
-        self._run_async(self.client.update_task_deadline(task_guid=task_id, deadline=deadline_dt))
+        Fail-closed: a payload without a parsable ``new_deadline`` is rejected
+        outright instead of writing the current time as the task deadline.
+        """
+        try:
+            update = DeadlineUpdate.from_payload(command.payload)
+        except PayloadContractError as exc:
+            return self._failed(command, exc)
+
+        self._run_async(
+            self.client.update_task_deadline(task_guid=update.task_id, deadline=update.new_deadline)
+        )
 
         # Generate local projection event
         now = datetime.now(UTC)
@@ -149,21 +167,18 @@ class FeishuCollaborationAdapter(CollaborationAdapter):
             occurred_at=now,
             received_at=now,
             payload=TaskUpdatedPayload(
-                task_id=task_id,
-                deadline=deadline_dt,
+                task_id=update.task_id,
+                deadline=update.new_deadline,
             ),
         )
         self._generated_events.append(evt)
 
-        result = ActionResult(
-            command_id=command.command_id,
-            action_id=command.action_id,
-            status=CommandStatus.SUCCESS,
-            output={"task_id": task_id, "deadline": deadline_dt.isoformat()},
-            executed_at=command.created_at,
+        return self._result(
+            command,
+            CommandStatus.SUCCESS,
+            task_id=update.task_id,
+            deadline=update.new_deadline.isoformat(),
         )
-        self.audit_log.append((command, result))
-        return result
 
     def notify_group(self, command: ActionCommand) -> ActionResult:
         """Sends a broadcast notification card or executive briefing to target members."""
@@ -189,12 +204,16 @@ class FeishuCollaborationAdapter(CollaborationAdapter):
 
         for target in command.targets:
             self._run_async(self.client.send_card(receive_id=target, card=card))
+        return self._result(
+            command, CommandStatus.SUCCESS, sent_to=list(command.targets), card=card
+        )
 
+    def _failed(self, command: ActionCommand, exc: PayloadContractError) -> ActionResult:
         result = ActionResult(
             command_id=command.command_id,
             action_id=command.action_id,
-            status=CommandStatus.SUCCESS,
-            output={"sent_to": command.targets, "card": card},
+            status=CommandStatus.FAILED,
+            error=str(exc),
             executed_at=command.created_at,
         )
         self.audit_log.append((command, result))

@@ -326,3 +326,53 @@ def test_task_updated_event_handling() -> None:
     )
     with pytest.raises(DomainInvariantError, match="unknown task"):
         projector.apply(bad_task_evt)
+
+
+@pytest.mark.parametrize(
+    ("event_type", "payload"),
+    [
+        (
+            "directive.delivered",
+            {
+                "directive_id": "directive-1",
+                "command_id": "command-1",
+                "target_id": "bob",
+                "attempts": 1,
+            },
+        ),
+        (
+            "directive.delivery_failed",
+            {
+                "directive_id": "directive-1",
+                "command_id": "command-1",
+                "target_id": "bob",
+                "error": "transport failed",
+                "attempts": 1,
+            },
+        ),
+    ],
+)
+def test_directive_delivery_target_must_match_issued_target(
+    event_type: str, payload: dict[str, object]
+) -> None:
+    projector = OrgProjector("test-project")
+    _register(projector, "carol")
+    _register(projector, "alice", minute=1)
+    _register(projector, "bob", minute=2)
+    projector.apply(
+        make_event(
+            "evt-directive",
+            "directive.issued",
+            {
+                "directive_id": "directive-1",
+                "text": "ship it",
+                "issuer_id": "carol",
+                "target_id": "alice",
+            },
+            actor_id="carol",
+            minute=3,
+        )
+    )
+
+    with pytest.raises(DomainInvariantError, match="delivery target.*does not match"):
+        projector.apply(make_event("evt-delivery", event_type, payload, minute=4))

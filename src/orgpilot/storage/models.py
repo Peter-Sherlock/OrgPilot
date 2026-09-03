@@ -78,3 +78,44 @@ class StateSnapshotRecord(Base):
     project_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     state_json: Mapped[str] = mapped_column(Text, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class SyncSessionRecord(Base):
+    """Persistent progress sync session so scatter-gather survives gateway restarts."""
+
+    __tablename__ = "sync_sessions"
+
+    session_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    initiated_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    data_json: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class OutboxRecord(Base):
+    """Durable outbound command so delivery survives crashes and adapter outages.
+
+    Lifecycle: pending -> delivered, or pending -> (retry with backoff) -> dead.
+    The idempotency key makes enqueueing the same command twice a no-op, so
+    crash windows between "event persisted" and "command sent" always recover.
+    """
+
+    __tablename__ = "outbox"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    command_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    action_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(256), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), index=True, nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    command_json: Mapped[str] = mapped_column(Text, nullable=False)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("project_id", "idempotency_key", name="uq_outbox_idempotency"),
+    )

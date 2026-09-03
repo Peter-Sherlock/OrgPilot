@@ -109,6 +109,73 @@ class CommitmentSupersededPayload(FrozenModel):
     replacement_commitment_id: str | None = None
 
 
+class DirectiveIssuedPayload(FrozenModel):
+    directive_id: str
+    text: str
+    issuer_id: str
+    target_id: str
+    task_id: str | None = None
+    deadline: datetime | None = None
+
+    _deadline_timezone_required = field_validator("deadline")(
+        lambda value: _require_timezone(value) if value is not None else value
+    )
+
+
+class DirectiveAcknowledgedPayload(FrozenModel):
+    directive_id: str
+    ack_by: str
+    response_text: str | None = None
+
+
+class DirectiveCompletedPayload(FrozenModel):
+    directive_id: str
+    completed_by: str
+    note: str | None = None
+
+
+class DirectiveRemindedPayload(FrozenModel):
+    directive_id: str
+    reminded_by: str
+    reminder_index: int
+
+
+class DirectiveEscalatedPayload(FrozenModel):
+    directive_id: str
+    reason: str
+
+
+class DirectiveDeliveredPayload(FrozenModel):
+    directive_id: str
+    command_id: str
+    target_id: str
+    attempts: int = 1
+
+
+class DirectiveDeliveryFailedPayload(FrozenModel):
+    directive_id: str
+    command_id: str
+    target_id: str
+    error: str
+    attempts: int
+
+
+class DirectiveClarificationRequestedPayload(FrozenModel):
+    clarification_id: str
+    issuer_id: str
+    draft_text: str
+    missing_slots: tuple[str, ...]
+    targets: tuple[str, ...] = ()
+    task_id: str | None = None
+    time_expr: str | None = None
+
+
+class DirectiveClarificationResolvedPayload(FrozenModel):
+    clarification_id: str
+    # Empty when the issuer cancelled the clarification outright.
+    directive_id: str = ""
+
+
 class MemberRegisteredEvent(EventBase):
     event_type: Literal["member.registered"]
     payload: MemberRegisteredPayload
@@ -144,6 +211,51 @@ class CommitmentSupersededEvent(EventBase):
     payload: CommitmentSupersededPayload
 
 
+class DirectiveIssuedEvent(EventBase):
+    event_type: Literal["directive.issued"]
+    payload: DirectiveIssuedPayload
+
+
+class DirectiveAcknowledgedEvent(EventBase):
+    event_type: Literal["directive.acknowledged"]
+    payload: DirectiveAcknowledgedPayload
+
+
+class DirectiveCompletedEvent(EventBase):
+    event_type: Literal["directive.completed"]
+    payload: DirectiveCompletedPayload
+
+
+class DirectiveRemindedEvent(EventBase):
+    event_type: Literal["directive.reminded"]
+    payload: DirectiveRemindedPayload
+
+
+class DirectiveEscalatedEvent(EventBase):
+    event_type: Literal["directive.escalated"]
+    payload: DirectiveEscalatedPayload
+
+
+class DirectiveDeliveredEvent(EventBase):
+    event_type: Literal["directive.delivered"]
+    payload: DirectiveDeliveredPayload
+
+
+class DirectiveDeliveryFailedEvent(EventBase):
+    event_type: Literal["directive.delivery_failed"]
+    payload: DirectiveDeliveryFailedPayload
+
+
+class DirectiveClarificationRequestedEvent(EventBase):
+    event_type: Literal["directive.clarification_requested"]
+    payload: DirectiveClarificationRequestedPayload
+
+
+class DirectiveClarificationResolvedEvent(EventBase):
+    event_type: Literal["directive.clarification_resolved"]
+    payload: DirectiveClarificationResolvedPayload
+
+
 type OrgEvent = Annotated[
     MemberRegisteredEvent
     | TaskCreatedEvent
@@ -151,7 +263,16 @@ type OrgEvent = Annotated[
     | TaskUpdatedEvent
     | TaskHealthReportedEvent
     | CommitmentMadeEvent
-    | CommitmentSupersededEvent,
+    | CommitmentSupersededEvent
+    | DirectiveIssuedEvent
+    | DirectiveAcknowledgedEvent
+    | DirectiveCompletedEvent
+    | DirectiveRemindedEvent
+    | DirectiveEscalatedEvent
+    | DirectiveDeliveredEvent
+    | DirectiveDeliveryFailedEvent
+    | DirectiveClarificationRequestedEvent
+    | DirectiveClarificationResolvedEvent,
     Field(discriminator="event_type"),
 ]
 

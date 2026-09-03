@@ -15,10 +15,11 @@ def test_gold_dataset_evaluation_details() -> None:
 
     metrics = evaluate_extractor(extractor, samples, known_tasks=tasks, known_members=members)
 
-    assert metrics.total_samples == 20
+    assert metrics.total_samples == 34
     assert metrics.passed is True
     assert metrics.health_status_f1 == 1.0
     assert metrics.task_id_accuracy == 1.0
     assert metrics.slot_datetime_accuracy == 1.0
     assert metrics.false_alarm_rate == 0.0
     assert metrics.grounding_valid_rate == 1.0
+    assert metrics.intent_accuracy == 1.0

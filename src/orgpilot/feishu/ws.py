@@ -32,6 +32,7 @@ class FeishuWebSocketListener:
         gateway_service: Any,
         project_id: str = "feishu-project",
         loop: asyncio.AbstractEventLoop | None = None,
+        demo_bootstrap: bool = False,
     ) -> None:
         self.app_id = app_id
         self.app_secret = app_secret
@@ -40,6 +41,7 @@ class FeishuWebSocketListener:
         self.webhook_handler = FeishuWebhookHandler(
             service=gateway_service,
             project_id=project_id,
+            demo_bootstrap=demo_bootstrap,
         )
         try:
             self._loop = loop or asyncio.get_running_loop()
@@ -181,3 +183,25 @@ class FeishuWebSocketListener:
         self._ws_thread.start()
         logger.info("Feishu WebSocket long connection client thread launched successfully!")
         return self._ws_client
+
+    def stop(self) -> None:
+        """Closes the WebSocket connection and joins the listener thread.
+
+        lark-oapi's ws.Client exposes no public stop, so disconnect is invoked
+        reflectively when available; the daemon thread is joined best-effort so
+        shutdown neither hangs nor leaks the connection silently.
+        """
+        client = self._ws_client
+        if client is not None:
+            disconnect = getattr(client, "disconnect", None) or getattr(client, "stop", None)
+            if callable(disconnect):
+                try:
+                    disconnect()
+                except Exception as exc:
+                    logger.warning("Feishu WS disconnect raised: %s", exc)
+        thread = self._ws_thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=5.0)
+        self._ws_client = None
+        self._ws_thread = None
+        logger.info("Feishu WebSocket listener stopped")

@@ -1,9 +1,9 @@
 """Mock Collaboration Adapter for deterministic closed-loop simulation."""
 
 from collections.abc import Callable
-from datetime import datetime
 
 from orgpilot.adapter.base import CollaborationAdapter
+from orgpilot.adapter.contracts import DeadlineUpdate, PayloadContractError
 from orgpilot.domain.enums import CommandStatus
 from orgpilot.domain.models import ActionCommand, ActionResult
 from orgpilot.events.models import (
@@ -82,9 +82,18 @@ class MockCollaborationAdapter(CollaborationAdapter):
             self.audit_log.append((command, result))
             return result
 
-        task_id = str(command.payload.get("task_id", ""))
-        deadline_str = command.payload.get("new_deadline")
-        deadline = datetime.fromisoformat(deadline_str) if deadline_str else None
+        try:
+            update = DeadlineUpdate.from_payload(command.payload)
+        except PayloadContractError as exc:
+            result = ActionResult(
+                command_id=command.command_id,
+                action_id=command.action_id,
+                status=CommandStatus.FAILED,
+                error=str(exc),
+                executed_at=command.created_at,
+            )
+            self.audit_log.append((command, result))
+            return result
 
         event = TaskUpdatedEvent(
             project_id=self.project_id,
@@ -96,8 +105,8 @@ class MockCollaborationAdapter(CollaborationAdapter):
             occurred_at=command.created_at,
             received_at=command.created_at,
             payload=TaskUpdatedPayload(
-                task_id=task_id,
-                deadline=deadline,
+                task_id=update.task_id,
+                deadline=update.new_deadline,
             ),
         )
         self._generated_events.append(event)
@@ -106,7 +115,7 @@ class MockCollaborationAdapter(CollaborationAdapter):
             command_id=command.command_id,
             action_id=command.action_id,
             status=CommandStatus.SUCCESS,
-            output={"task_id": task_id, "updated_fields": command.payload},
+            output={"task_id": update.task_id, "updated_fields": command.payload},
             executed_at=command.created_at,
         )
         self.audit_log.append((command, result))

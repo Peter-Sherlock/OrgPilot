@@ -119,6 +119,79 @@ def build_approval_card(
     }
 
 
+def build_task_action_card(
+    approval_id: str,
+    case_id: str,
+    proposal_kind: str,
+    task_title: str,
+    owner_name: str,
+    deadline_str: str | None = None,
+    previous_owner_name: str | None = None,
+    proposed_by: str = "",
+) -> dict[str, Any]:
+    """Generates the approval card for NL task creation / reassignment proposals."""
+    if proposal_kind == "task_create":
+        header = "🆕 任务创建提案审批"
+        fields = [
+            ("新任务", task_title),
+            ("负责人", owner_name),
+            ("截止", deadline_str or "未指定"),
+            ("发起人", proposed_by or "-"),
+        ]
+    else:
+        header = "🔄 任务改派提案审批"
+        fields = [
+            ("任务", task_title),
+            ("原负责人", previous_owner_name or "-"),
+            ("新负责人", owner_name),
+            ("发起人", proposed_by or "-"),
+        ]
+    element_fields = [
+        {
+            "is_short": True,
+            "text": {"tag": "lark_md", "content": f"**{label}**\n`{value}`"},
+        }
+        for label, value in fields
+    ]
+    elements: list[dict[str, Any]] = [
+        {"tag": "div", "fields": element_fields},
+        {"tag": "hr"},
+        {
+            "tag": "action",
+            "actions": [
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "🟢 批准"},
+                    "type": "primary",
+                    "value": {
+                        "action": "approved",
+                        "approval_id": approval_id,
+                        "case_id": case_id,
+                    },
+                },
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "🔴 拒绝"},
+                    "type": "danger",
+                    "value": {
+                        "action": "rejected",
+                        "approval_id": approval_id,
+                        "case_id": case_id,
+                    },
+                },
+            ],
+        },
+    ]
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"tag": "plain_text", "content": header},
+            "template": "blue",
+        },
+        "elements": elements,
+    }
+
+
 def build_approval_updated_card(
     task_id: str,
     task_title: str,

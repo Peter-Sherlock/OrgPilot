@@ -19,12 +19,14 @@ def test_settings_from_env_and_validation(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setenv("ORGPILOT_LLM_PROVIDER", "aihubmix")
     monkeypatch.setenv("AIHUBMIX_API_KEY", "test-key")
     monkeypatch.setenv("AIHUBMIX_MODEL", "gpt-5.6-luna")
+    monkeypatch.setenv("ORGPILOT_LLM_REASONING_EFFORT", "none")
 
     settings = OrgPilotSettings.from_env()
 
     assert settings.database_url == "postgresql+asyncpg://db.example/orgpilot"
     assert settings.llm_provider == "aihubmix"
     assert settings.aihubmix_model == "gpt-5.6-luna"
+    assert settings.llm_reasoning_effort == "none"
     assert "test-key" not in repr(settings)
 
     with pytest.raises(ValueError, match="ORGPILOT_LLM_PROVIDER"):
@@ -33,6 +35,24 @@ def test_settings_from_env_and_validation(monkeypatch: pytest.MonkeyPatch) -> No
         OrgPilotSettings(llm_provider="aihubmix").validate()
     with pytest.raises(ValueError, match="Missing required Feishu settings"):
         OrgPilotSettings(collaboration_adapter="feishu").validate()
+
+
+def test_demo_bootstrap_env_parsing(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert OrgPilotSettings().demo_bootstrap is False
+    for value in ("1", "true", "yes", "on"):
+        monkeypatch.setenv("ORGPILOT_DEMO_BOOTSTRAP", value)
+        assert OrgPilotSettings.from_env().demo_bootstrap is True
+    for value in ("false", "0", "no", "off"):
+        monkeypatch.setenv("ORGPILOT_DEMO_BOOTSTRAP", value)
+        assert OrgPilotSettings.from_env().demo_bootstrap is False
+
+
+def test_reference_timezone_validation(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ORGPILOT_TIMEZONE", "Asia/Shanghai")
+    assert OrgPilotSettings.from_env().reference_timezone == "Asia/Shanghai"
+    monkeypatch.setenv("ORGPILOT_TIMEZONE", "Not/AZone")
+    with pytest.raises(ValueError, match="ORGPILOT_TIMEZONE"):
+        OrgPilotSettings.from_env()
 
 
 def test_aihubmix_client_is_only_enabled_explicitly() -> None:
@@ -45,10 +65,12 @@ def test_aihubmix_client_is_only_enabled_explicitly() -> None:
         settings=OrgPilotSettings(
             llm_provider="aihubmix",
             aihubmix_api_key="test-key",
+            llm_reasoning_effort="none",
         ),
     )
     live_client = live_app.state.gateway_service.extractor.llm_client
     assert isinstance(live_client, AnthropicCompatibleLLMClient)
+    assert live_client.reasoning_effort == "none"
     live_client.close()
 
 

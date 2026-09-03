@@ -1,7 +1,9 @@
 """FastAPI application factory and lifecycle management."""
 
+import asyncio
 import contextlib
 import hmac
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -21,6 +23,8 @@ from orgpilot.gateway.routes import approvals, cases, coordination, dag, events,
 from orgpilot.gateway.service import GatewayService
 from orgpilot.storage.database import Database
 
+logger = logging.getLogger("orgpilot.gateway.app")
+
 
 def create_app(
     db: Database | None = None,
@@ -37,6 +41,7 @@ def create_app(
             api_key=runtime_settings.aihubmix_api_key or "",
             base_url=runtime_settings.aihubmix_base_url,
             model=runtime_settings.aihubmix_model,
+            reasoning_effort=runtime_settings.llm_reasoning_effort,
         )
     extractor = ClaimExtractor(llm_client=llm_client)
 
@@ -58,10 +63,18 @@ def create_app(
         database,
         extractor=extractor,
         adapter_factory=adapter_factory,
+        reference_timezone=runtime_settings.reference_timezone,
+        directive_reminder_minutes=runtime_settings.directive_reminder_minutes,
+        directive_escalation_minutes=runtime_settings.directive_escalation_minutes,
+        outbox_max_attempts=runtime_settings.outbox_max_attempts,
+        outbox_retry_seconds=runtime_settings.outbox_retry_seconds,
     )
+    ws_listener: FeishuWebSocketListener | None = None
+    outbox_task: asyncio.Task | None = None
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        nonlocal ws_listener, outbox_task
         await database.init_db()
         if (
             runtime_settings.collaboration_adapter == "feishu"
@@ -74,13 +87,40 @@ def create_app(
                 app_secret=runtime_settings.feishu_app_secret,
                 gateway_service=gateway_service,
                 project_id=runtime_settings.feishu_project_id,
+                demo_bootstrap=runtime_settings.demo_bootstrap,
             )
             with contextlib.suppress(Exception):
                 ws_listener.start()
 
+        # Outbox recovery: deliver anything a previous process crashed between
+        # "event persisted" and "command sent", then keep sweeping on a timer.
+        try:
+            await gateway_service.sweep_outbox()
+        except Exception:
+            logger.exception("Startup outbox sweep failed")
+
+        async def outbox_sweeper() -> None:
+            while True:
+                await asyncio.sleep(runtime_settings.outbox_sweep_seconds)
+                try:
+                    await gateway_service.sweep_outbox()
+                except Exception:
+                    logger.exception("Outbox sweep failed")
+
+        outbox_task = asyncio.create_task(outbox_sweeper(), name="outbox-sweeper")
+
         try:
             yield
         finally:
+            if outbox_task is not None:
+                outbox_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await outbox_task
+            if ws_listener is not None:
+                stop = getattr(ws_listener, "stop", None)
+                if callable(stop):
+                    with contextlib.suppress(Exception):
+                        stop()
             if isinstance(llm_client, AnthropicCompatibleLLMClient):
                 llm_client.close()
             await database.close()

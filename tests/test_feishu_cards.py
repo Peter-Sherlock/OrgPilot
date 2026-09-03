@@ -3,6 +3,7 @@
 from orgpilot.feishu.cards import (
     build_approval_card,
     build_approval_updated_card,
+    build_executive_briefing_card,
     build_inquiry_card,
     build_notification_card,
 )
@@ -85,3 +86,45 @@ def test_build_notification_card() -> None:
     )
     assert card["header"]["title"]["content"] == "📢 团队任务排期对齐通知"
     assert "frontend_ui" in card["elements"][0]["text"]["content"]
+
+
+def test_build_executive_briefing_card_with_risks_and_recommendations() -> None:
+    briefing = {
+        "delayed_count": 1,
+        "at_risk_count": 1,
+        "on_track_count": 1,
+        "total_active_tasks": 3,
+        "topological_risks": [
+            {
+                "source_task_id": "task-payment",
+                "source_task_title": "支付SDK接入",
+                "owner_name": "Alice",
+                "health_status": "delayed",
+                "cascading_impact_tasks": ["task-checkout"],
+            }
+        ],
+        "recommended_actions": ["优先处理支付SDK延期", "关注前端联调进展"],
+    }
+    card = build_executive_briefing_card(briefing, project_id="proj-x")
+    assert card["header"]["template"] == "red"
+    assert card["header"]["title"]["content"] == "📊 项目全景进度与拓扑风险简报"
+
+    div_contents = [
+        e["text"]["content"] for e in card["elements"] if e.get("tag") == "div" and "text" in e
+    ]
+    risk_block = next(c for c in div_contents if "关键拓扑阻塞" in c)
+    assert "支付SDK接入" in risk_block
+    assert "task-checkout" in risk_block
+    rec_block = next(c for c in div_contents if "智能体协同建议" in c)
+    assert "1. 优先处理支付SDK延期" in rec_block
+    assert "2. 关注前端联调进展" in rec_block
+
+    action_elem = [e for e in card["elements"] if e.get("tag") == "action"][0]
+    assert "DAG" in action_elem["actions"][0]["text"]["content"]
+
+
+def test_build_executive_briefing_card_healthy_defaults() -> None:
+    card = build_executive_briefing_card({})
+    assert card["header"]["template"] == "green"
+    assert not any("关键拓扑阻塞" in str(e) for e in card["elements"])
+    assert not any("智能体协同建议" in str(e) for e in card["elements"])

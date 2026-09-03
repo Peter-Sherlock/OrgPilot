@@ -33,6 +33,7 @@ async def handle_feishu_webhook(
         service=service,
         project_id=resolved_project_id,
         verification_token=settings.feishu_verification_token,
+        demo_bootstrap=settings.demo_bootstrap,
     )
     try:
         return await handler.handle_event(body)

@@ -48,6 +48,7 @@ class GroundingVerifier:
             is_actionable=is_act,
             claims=valid_claims,
             commitments=valid_commitments,
+            intent=result.intent,
             reasoning=result.reasoning,
         )
 
@@ -103,8 +104,8 @@ class TemporalResolver:
             target_wd = weekday_map[weekday_match.group(2)]
             current_wd = anchor.weekday()
             days_ahead = (target_wd - current_wd) % 7
-            if days_ahead == 0 and "下周" in text:
-                days_ahead = 7
+            if "下周" in text:
+                days_ahead = (7 - current_wd) + target_wd
             target_date = anchor.date() + timedelta(days=days_ahead)
             hour, minute = TemporalResolver._parse_hour_minute(text, default_hour)
             return datetime.combine(target_date, time(hour, minute), tzinfo=tz)

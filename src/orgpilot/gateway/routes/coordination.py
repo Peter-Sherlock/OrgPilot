@@ -1,8 +1,10 @@
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from orgpilot.domain.enums import WorkflowStatus
+from orgpilot.domain.models import MemberState
+from orgpilot.events.log import AppendResult
 from orgpilot.events.models import (
     EventSource,
     MemberRegisteredEvent,
@@ -23,6 +25,18 @@ router = APIRouter(prefix="/api/v1/projects/{project_id}", tags=["coordination"]
 
 def get_service(request: Request) -> GatewayService:
     return request.app.state.gateway_service
+
+
+async def _project_operator(project_id: str, service: GatewayService) -> MemberState | None:
+    agent = await service.get_or_replay_agent(project_id)
+    return next(
+        (
+            member
+            for member in agent.projector.state.members.values()
+            if member.role in ("pm", "lead")
+        ),
+        None,
+    )
 
 
 @router.post("/run-turn", response_model=TurnRunResponse)
@@ -99,12 +113,21 @@ async def bootstrap_sandbox_endpoint(
     project_id: str,
     service: GatewayService = Depends(get_service),
 ) -> dict:
-    """Initializes or resets a demo sandbox with PM, Alice, Bob, and dependent task chain."""
+    """Initializes or tops up a demo sandbox with PM, Alice, Bob, and a dependent task chain.
+
+    Idempotent: entities already present in the projection are skipped, so double
+    clicks or repeated initializations never append unprojectable duplicate
+    registration events (which would permanently brick the project replay).
+    """
     now = datetime.now(UTC)
+    agent = await service.get_or_replay_agent(project_id)
+    known_members = set(agent.projector.state.members)
+    known_tasks = set(agent.projector.state.tasks)
+
     events: list[OrgEvent] = [
         MemberRegisteredEvent(
             project_id=project_id,
-            event_id=f"boot-m-pm-{now.timestamp()}",
+            event_id=f"boot-m-pm-{project_id}",
             event_type="member.registered",
             source=EventSource.HUMAN,
             source_ref="sandbox-init",
@@ -116,7 +139,7 @@ async def bootstrap_sandbox_endpoint(
         ),
         MemberRegisteredEvent(
             project_id=project_id,
-            event_id=f"boot-m-alice-{now.timestamp()}",
+            event_id=f"boot-m-alice-{project_id}",
             event_type="member.registered",
             source=EventSource.HUMAN,
             source_ref="sandbox-init",
@@ -128,7 +151,7 @@ async def bootstrap_sandbox_endpoint(
         ),
         MemberRegisteredEvent(
             project_id=project_id,
-            event_id=f"boot-m-bob-{now.timestamp()}",
+            event_id=f"boot-m-bob-{project_id}",
             event_type="member.registered",
             source=EventSource.HUMAN,
             source_ref="sandbox-init",
@@ -140,7 +163,7 @@ async def bootstrap_sandbox_endpoint(
         ),
         MemberRegisteredEvent(
             project_id=project_id,
-            event_id=f"boot-m-david-{now.timestamp()}",
+            event_id=f"boot-m-david-{project_id}",
             event_type="member.registered",
             source=EventSource.HUMAN,
             source_ref="sandbox-init",
@@ -152,7 +175,7 @@ async def bootstrap_sandbox_endpoint(
         ),
         TaskCreatedEvent(
             project_id=project_id,
-            event_id=f"boot-t-pay-{now.timestamp()}",
+            event_id=f"boot-t-pay-{project_id}",
             event_type="task.created",
             source=EventSource.TASK,
             source_ref="sandbox-init",
@@ -168,7 +191,7 @@ async def bootstrap_sandbox_endpoint(
         ),
         TaskCreatedEvent(
             project_id=project_id,
-            event_id=f"boot-t-checkout-{now.timestamp()}",
+            event_id=f"boot-t-checkout-{project_id}",
             event_type="task.created",
             source=EventSource.TASK,
             source_ref="sandbox-init",
@@ -185,7 +208,7 @@ async def bootstrap_sandbox_endpoint(
         ),
         TaskCreatedEvent(
             project_id=project_id,
-            event_id=f"boot-t-qa-{now.timestamp()}",
+            event_id=f"boot-t-qa-{project_id}",
             event_type="task.created",
             source=EventSource.TASK,
             source_ref="sandbox-init",
@@ -201,12 +224,26 @@ async def bootstrap_sandbox_endpoint(
             ),
         ),
     ]
+    events = [
+        e
+        for e in events
+        if not (isinstance(e, MemberRegisteredEvent) and e.payload.member_id in known_members)
+        and not (isinstance(e, TaskCreatedEvent) and e.payload.task_id in known_tasks)
+    ]
+
+    # Project in memory first; only then persist. A domain rejection leaves the
+    # event log fully replayable instead of bricking the project.
+    for e in events:
+        if agent.event_log.append(e) is AppendResult.APPENDED:
+            agent.projector.apply(e)
     for e in events:
         await service.event_store.append(e)
 
-    agent = await service.get_or_replay_agent(project_id)
-    await service.state_store.save_state(project_id, agent.projector.state)
-    return {"status": "initialized", "members_count": 4, "tasks_count": 3}
+    return {
+        "status": "initialized",
+        "members_count": sum(isinstance(e, MemberRegisteredEvent) for e in events),
+        "tasks_count": sum(isinstance(e, TaskCreatedEvent) for e in events),
+    }
 
 
 @router.post("/sandbox-chat")
@@ -276,19 +313,98 @@ async def sandbox_chat_endpoint(
         }
 
     # Normal message
-    is_act, ext_events, agent, reason, round_num = await service.ingest_message(
+    result = await service.ingest_message(
         project_id=project_id,
         message=message,
         actor_id=actor_id,
         occurred_at=now,
         auto_run_turn=True,
     )
-    return {
-        "type": "normal_turn",
-        "is_actionable": is_act,
-        "extracted_events_count": len(ext_events),
-        "bot_reply": (
-            "已识别任务状态变更并更新项目账本" if is_act else "收到消息，当前无需要变更的任务状态"
+    intent_notices = {
+        "question": (
+            "已识别为提问。智能问答链路将在后续版本启用；当前可由 PM 发起全员进度同步获取最新状态。"
         ),
-        "turn_reason": reason,
+    }
+    bot_reply = result.bot_reply or (
+        "已识别任务状态变更并更新项目账本"
+        if result.is_actionable
+        else intent_notices.get(result.intent or "", "收到消息，当前无需要变更的任务状态")
+    )
+    response: dict = {
+        "type": "normal_turn",
+        "is_actionable": result.is_actionable,
+        "intent": result.intent,
+        "directive": result.directive_kind,
+        "extracted_events_count": len(result.events),
+        "bot_reply": bot_reply,
+        "turn_reason": result.turn_reason,
+    }
+    if result.notices:
+        response["notices"] = [
+            {"actor_id": notice.actor_id, "text": notice.text} for notice in result.notices
+        ]
+    return response
+
+
+@router.post("/directives/remind")
+async def remind_directives_endpoint(
+    project_id: str,
+    service: GatewayService = Depends(get_service),
+) -> dict:
+    """Nudges every still-unacknowledged directive (manual escalation button)."""
+    operator = await _project_operator(project_id, service)
+    if operator is None:
+        raise HTTPException(status_code=409, detail="Project has no PM/lead operator")
+    result = await service.remind_directives(project_id, operator_id=operator.member_id)
+    response: dict = {
+        "type": result.directive_kind or "none",
+        "bot_reply": result.bot_reply or "当前没有待确认的指令。",
+    }
+    if result.notices:
+        response["notices"] = [
+            {"actor_id": notice.actor_id, "text": notice.text} for notice in result.notices
+        ]
+    return response
+
+
+@router.get("/outbox")
+async def outbox_overview_endpoint(
+    project_id: str,
+    service: GatewayService = Depends(get_service),
+) -> dict:
+    """Outbound delivery ledger: pending retries, dead letters, and recent rows."""
+    return await service.outbox_overview(project_id)
+
+
+@router.get("/context")
+async def project_context_endpoint(
+    project_id: str,
+    service: GatewayService = Depends(get_service),
+) -> dict:
+    """Server-provided operator identity for this console session: the project's
+    PM/lead member. The web console must not impersonate a hardcoded id."""
+    operator = await _project_operator(project_id, service)
+    if operator is None:
+        return {"operator_id": None, "display_name": None}
+    return {"operator_id": operator.member_id, "display_name": operator.display_name}
+
+
+@router.post("/sync/complete")
+async def force_complete_sync_endpoint(
+    project_id: str,
+    service: GatewayService = Depends(get_service),
+) -> dict:
+    """Force-closes the live sync session: unresponsive probes are marked no_response
+    and the executive briefing is synthesized from collected replies immediately."""
+    session = await service.force_complete_sync(project_id)
+    if session is None or session.briefing is None:
+        return {
+            "type": "no_active_session",
+            "bot_reply": "当前没有进行中的同步会话，请先由 PM 发起全员进度同步。",
+        }
+    return {
+        "type": "sync_completed",
+        "bot_reply": "⏭️ 未响应成员已标记，已基于已回收信息生成项目决策简报！",
+        "session": session.model_dump(mode="json"),
+        "briefing": session.briefing.model_dump(mode="json"),
     }

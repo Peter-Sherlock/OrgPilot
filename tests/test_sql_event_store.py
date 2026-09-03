@@ -1,6 +1,6 @@
 """Tests for SqlEventStore idempotency, conflict rejection, and query operations."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -46,6 +46,29 @@ async def test_sql_event_store_append_and_duplicate(db: Database) -> None:
     # Exact duplicate append: DUPLICATE
     res2 = await store.append(event)
     assert res2 is AppendResult.DUPLICATE
+    assert await store.count("proj-1") == 1
+
+
+async def test_sql_event_store_roundtrip_timezone_is_duplicate(db: Database) -> None:
+    """A replayed event reconstructed in UTC must dedupe against the original
+    appended in a non-UTC offset, not raise a false content conflict."""
+    store = SqlEventStore(db)
+    event = MemberRegisteredEvent(
+        project_id="proj-1",
+        event_id="evt-tz-roundtrip",
+        event_type="member.registered",
+        source=EventSource.HUMAN,
+        source_ref="setup",
+        occurred_at=NOW,
+        received_at=NOW,
+        payload=MemberRegisteredPayload(member_id="alice", display_name="Alice", role="backend"),
+    )
+    assert await store.append(event) is AppendResult.APPENDED
+
+    replayed = (await store.get_events("proj-1"))[0]
+    assert replayed.occurred_at.utcoffset() == timedelta(0)
+
+    assert await store.append(replayed) is AppendResult.DUPLICATE
     assert await store.count("proj-1") == 1
 
 

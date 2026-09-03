@@ -1,19 +1,79 @@
 """Provider-agnostic LLM clients supporting deterministic mock, replay, and live APIs."""
 
 import json
+import re
+import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from typing import Any
 
 import httpx
+from pydantic import ValidationError
 
-from orgpilot.domain.enums import HealthStatus
+from orgpilot.domain.enums import HealthStatus, MessageIntent
 from orgpilot.extraction.models import (
     ExtractedCommitment,
     ExtractedHealthClaim,
     ExtractionResult,
     MessageContext,
+    TaskProposal,
 )
 from orgpilot.extraction.verifier import TemporalResolver
+
+_TASK_OP_CREATE_RE = re.compile(
+    r"(新增|新建|创建|建个|立个|加个|排一?个|开一?个)[一个项]*任务|new\s+task", re.IGNORECASE
+)
+_TASK_OP_REASSIGN_RE = re.compile(r"改派给?|移交给?|负责人?换成?|转给?|交给?|重新指派给?")
+_TASK_OP_DEADLINE_RE = re.compile(
+    r"(截止(时间|日期)?|deadline|交付时间|完成时间)[^，。;；\n]{0,6}"
+    r"(改到|改为|改成|变更为?|调整到?|提前到?|推迟到?)"
+    r"|把[^，。;；\n]{0,12}改到",
+    re.IGNORECASE,
+)
+_TIME_HINT_RE = re.compile(r"周|天|号|点|月|底")
+
+
+class LLMUnavailableError(RuntimeError):
+    """The LLM provider is unreachable: retries exhausted or circuit open."""
+
+
+class LLMResponseError(RuntimeError):
+    """The LLM provider returned a response that cannot satisfy the extraction contract."""
+
+
+class CircuitBreaker:
+    """Fail-fast guard after repeated consecutive provider failures."""
+
+    def __init__(
+        self,
+        failure_threshold: int = 3,
+        cooldown_seconds: float = 60.0,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self.failure_threshold = failure_threshold
+        self.cooldown_seconds = cooldown_seconds
+        self._clock = clock
+        self._consecutive_failures = 0
+        self._opened_at: float | None = None
+
+    def allow(self) -> bool:
+        if self._opened_at is None:
+            return True
+        if self._clock() - self._opened_at >= self.cooldown_seconds:
+            # Half-open: give the provider one probe window.
+            self._opened_at = None
+            self._consecutive_failures = self.failure_threshold - 1
+            return True
+        return False
+
+    def record_success(self) -> None:
+        self._consecutive_failures = 0
+        self._opened_at = None
+
+    def record_failure(self) -> None:
+        self._consecutive_failures += 1
+        if self._consecutive_failures >= self.failure_threshold:
+            self._opened_at = self._clock()
 
 
 class LLMClient(ABC):
@@ -37,6 +97,10 @@ class AnthropicCompatibleLLMClient(LLMClient):
         max_tokens: int = 1024,
         timeout: float = 30.0,
         client: httpx.Client | None = None,
+        reasoning_effort: str | None = None,
+        max_retries: int = 1,
+        breaker_failure_threshold: int = 3,
+        breaker_cooldown_seconds: float = 60.0,
     ) -> None:
         if not api_key:
             raise ValueError("api_key must not be empty")
@@ -44,10 +108,45 @@ class AnthropicCompatibleLLMClient(LLMClient):
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.max_tokens = max_tokens
+        self.reasoning_effort = reasoning_effort
         self._owns_client = client is None
         self._client = client or httpx.Client(timeout=timeout)
+        self.max_retries = max_retries
+        self.breaker = CircuitBreaker(
+            failure_threshold=breaker_failure_threshold,
+            cooldown_seconds=breaker_cooldown_seconds,
+        )
 
     def extract(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        raw_message: str,
+        context: MessageContext,
+    ) -> ExtractionResult:
+        if not self.breaker.allow():
+            raise LLMUnavailableError("LLM circuit breaker open; failing fast")
+        last_error: Exception | None = None
+        for _attempt in range(1 + self.max_retries):
+            try:
+                result = self._extract_once(system_prompt, user_prompt, raw_message, context)
+                self.breaker.record_success()
+                return result
+            except (
+                httpx.TimeoutException,
+                httpx.TransportError,
+                httpx.HTTPStatusError,
+                LLMResponseError,
+            ) as exc:
+                last_error = exc
+        self.breaker.record_failure()
+        if isinstance(last_error, LLMResponseError):
+            raise LLMUnavailableError(
+                f"LLM returned invalid structured output after retries: {last_error}"
+            ) from last_error
+        raise LLMUnavailableError(f"LLM unavailable after retries: {last_error}") from last_error
+
+    def _extract_once(
         self,
         system_prompt: str,
         user_prompt: str,
@@ -65,8 +164,16 @@ class AnthropicCompatibleLLMClient(LLMClient):
                 }
             ],
             "max_tokens": self.max_tokens,
+            # Greedy decoding keeps the extraction benchmark reproducible.
+            "temperature": 0,
             "stream": False,
         }
+        if self.reasoning_effort is not None:
+            if self.reasoning_effort == "none":
+                payload["thinking"] = {"type": "disabled"}
+            else:
+                payload["thinking"] = {"type": "enabled"}
+                payload["output_config"] = {"effort": self.reasoning_effort}
         response = self._client.post(
             f"{self.base_url}/v1/messages",
             headers={
@@ -77,15 +184,28 @@ class AnthropicCompatibleLLMClient(LLMClient):
             json=payload,
         )
         response.raise_for_status()
-        data: dict[str, Any] = response.json()
+        try:
+            data: dict[str, Any] = response.json()
+        except ValueError as exc:
+            raise LLMResponseError("LLM response body was not valid JSON") from exc
+        content = data.get("content", [])
         text_blocks = [
             block.get("text", "")
-            for block in data.get("content", [])
-            if block.get("type") == "text"
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
         ]
         if not text_blocks:
-            raise ValueError("LLM response did not contain a text block")
-        return ExtractionResult.model_validate_json(self._extract_json(text_blocks[0]))
+            block_types = [
+                str(block.get("type", "unknown")) for block in content if isinstance(block, dict)
+            ]
+            raise LLMResponseError(
+                "LLM response did not contain a text block "
+                f"(block_types={block_types}, stop_reason={data.get('stop_reason')!r})"
+            )
+        try:
+            return ExtractionResult.model_validate_json(self._extract_json(text_blocks[0]))
+        except ValidationError as exc:
+            raise LLMResponseError("LLM JSON did not match ExtractionResult schema") from exc
 
     @staticmethod
     def _extract_json(text: str) -> str:
@@ -96,7 +216,7 @@ class AnthropicCompatibleLLMClient(LLMClient):
         start = stripped.find("{")
         end = stripped.rfind("}")
         if start < 0 or end < start:
-            raise ValueError("LLM text block did not contain a JSON object")
+            raise LLMResponseError("LLM text block did not contain a JSON object")
         return stripped[start : end + 1]
 
     def close(self) -> None:
@@ -223,7 +343,29 @@ class MockLLMClient(LLMClient):
             ]
         ):
             return ExtractionResult(
-                is_actionable=False, claims=[], commitments=[], reasoning="Casual chat"
+                is_actionable=False,
+                claims=[],
+                commitments=[],
+                intent=MessageIntent.CHIT_CHAT,
+                reasoning="Casual chat",
+            )
+
+        # 1b. Task operation proposals — deterministic parse of
+        # the canonical phrasings; slots stay verbatim for the TaskManager to ground.
+        proposal = self._heuristic_task_proposal(message, context, matched_task_id)
+        if proposal is not None:
+            intent = {
+                "create": MessageIntent.TASK_CREATE,
+                "reassign": MessageIntent.TASK_REASSIGN,
+                "deadline_change": MessageIntent.DEADLINE_CHANGE,
+            }[proposal.operation]
+            return ExtractionResult(
+                is_actionable=False,
+                claims=[],
+                commitments=[],
+                intent=intent,
+                task_proposal=proposal,
+                reasoning="Task operation proposal (awaiting grounding + approval)",
             )
 
         if matched_task_id is None:
@@ -231,6 +373,7 @@ class MockLLMClient(LLMClient):
                 is_actionable=False,
                 claims=[],
                 commitments=[],
+                intent=MessageIntent.UNCERTAIN,
                 reasoning="No unambiguous task reference found",
             )
 
@@ -247,7 +390,11 @@ class MockLLMClient(LLMClient):
                 source_quote=message,
             )
             return ExtractionResult(
-                is_actionable=True, claims=[], commitments=[commitment], reasoning="Commitment made"
+                is_actionable=True,
+                claims=[],
+                commitments=[commitment],
+                intent=MessageIntent.HEALTH_REPORT,
+                reasoning="Commitment made",
             )
 
         # 3. Check for resolved recovery status
@@ -273,7 +420,11 @@ class MockLLMClient(LLMClient):
                 source_quote=message,
             )
             return ExtractionResult(
-                is_actionable=True, claims=[claim], commitments=[], reasoning="Task recovered"
+                is_actionable=True,
+                claims=[claim],
+                commitments=[],
+                intent=MessageIntent.HEALTH_REPORT,
+                reasoning="Task recovered",
             )
 
         # 4. Check for delayed / at_risk
@@ -308,12 +459,119 @@ class MockLLMClient(LLMClient):
                 source_quote=message,
             )
             return ExtractionResult(
-                is_actionable=True, claims=[claim], commitments=[], reasoning="Risk/delay reported"
+                is_actionable=True,
+                claims=[claim],
+                commitments=[],
+                intent=MessageIntent.HEALTH_REPORT,
+                reasoning="Risk/delay reported",
             )
 
         return ExtractionResult(
-            is_actionable=False, claims=[], commitments=[], reasoning="No actionable state found"
+            is_actionable=False,
+            claims=[],
+            commitments=[],
+            intent=MessageIntent.UNCERTAIN,
+            reasoning="No actionable state found",
         )
+
+    def _heuristic_task_proposal(
+        self, message: str, context: MessageContext, matched_task_id: str | None
+    ) -> TaskProposal | None:
+        """Parses canonical task-operation phrasings into a verbatim-slot
+        proposal; the TaskManager grounds slots against the directory and ledger."""
+        create_match = _TASK_OP_CREATE_RE.search(message)
+        reassign_match = _TASK_OP_REASSIGN_RE.search(message)
+        deadline_match = _TASK_OP_DEADLINE_RE.search(message)
+        if create_match is None and reassign_match is None and deadline_match is None:
+            return None
+
+        if create_match is not None:
+            parts = re.split(r"任务[：:]", message, maxsplit=1)
+            body = parts[1] if len(parts) == 2 else message
+            segments = [seg.strip() for seg in re.split(r"[，,;；]", body) if seg.strip()]
+            title = segments[0] if segments else None
+            owner_name: str | None = None
+            deadline_expr: str | None = None
+            for seg in segments[1:]:
+                if owner_name is None and "负责" in seg:
+                    owner_name = seg.replace("由", "").replace("负责", "").strip() or None
+                elif deadline_expr is None and _TIME_HINT_RE.search(seg):
+                    deadline_expr = re.sub(r"(完成|交付|搞定)$", "", seg).strip() or seg
+            if owner_name is None:
+                owner_name = self._owner_token_after(message, context, 0)
+            return TaskProposal(
+                operation="create",
+                title=title,
+                owner_name=owner_name,
+                task_ref=None,
+                deadline_expr=deadline_expr,
+            )
+
+        if deadline_match is not None:
+            task_ref = None
+            if matched_task_id is not None:
+                candidate = context.known_tasks.get(matched_task_id, matched_task_id)
+                compact_message = message.lower().replace(" ", "")
+                if (
+                    matched_task_id.lower() in compact_message
+                    or candidate.lower().replace(" ", "") in compact_message
+                ):
+                    task_ref = candidate
+            deadline_expr = re.split(r"[，。;；\n]", message[deadline_match.end() :], maxsplit=1)[
+                0
+            ].strip()
+            deadline_expr = re.sub(r"\s*(完成|交付|搞定)$", "", deadline_expr).strip()
+            return TaskProposal(
+                operation="deadline_change",
+                title=None,
+                owner_name=None,
+                task_ref=task_ref,
+                deadline_expr=deadline_expr or None,
+            )
+
+        assert reassign_match is not None
+        owner_name = self._owner_token_after(message, context, reassign_match.end(), max_gap=3)
+        if owner_name is None:
+            # 「已交付」「提交」etc. contain a bare 交; without a member right
+            # after the keyword this is not a reassignment — fall through to
+            # the normal claim-extraction path.
+            return None
+        task_ref = None
+        if matched_task_id is not None:
+            task_ref = context.known_tasks.get(matched_task_id, matched_task_id)
+        return TaskProposal(
+            operation="reassign",
+            title=None,
+            owner_name=owner_name,
+            task_ref=task_ref,
+            deadline_expr=None,
+        )
+
+    @staticmethod
+    def _owner_token_after(
+        message: str, context: MessageContext, search_from: int, max_gap: int | None = None
+    ) -> str | None:
+        """Finds the member token (id or id suffix) nearest after search_from.
+
+        With ``max_gap`` the token must start within that many characters of
+        search_from — the adjacency discipline that keeps transfer verbs in
+        完成/交付 phrasings from hijacking the message.
+        """
+        lower = message.lower()
+        best: tuple[int, str] | None = None
+        for member_id in context.known_members:
+            tokens = {member_id.lower(), member_id.lower().split("_")[-1]}
+            for token in tokens:
+                if len(token) < 2:
+                    continue
+                idx = lower.find(token, max(0, search_from))
+                if idx >= 0 and (best is None or idx < best[0]):
+                    best = (idx, token)
+        if best is None:
+            return None
+        if max_gap is not None and best[0] - max(0, search_from) > max_gap:
+            return None
+        return best[1]
 
 
 class RecordedReplayClient(LLMClient):

@@ -77,3 +77,78 @@ def test_complete_delayed_with_all_slots() -> None:
     )
     assert is_complete is True
     assert missing == []
+
+
+def test_non_actionable_on_track_keyword_is_complete() -> None:
+    result = ExtractionResult(is_actionable=False, claims=[], commitments=[], reasoning="chitchat")
+    is_complete, missing = SlotCompletenessEvaluator.evaluate_completeness(result, "一切顺利")
+    assert is_complete is True
+    assert missing == []
+
+
+def test_non_actionable_without_keyword_requires_followup() -> None:
+    result = ExtractionResult(is_actionable=False, claims=[], commitments=[], reasoning="chitchat")
+    is_complete, missing = SlotCompletenessEvaluator.evaluate_completeness(result, "在忙别的")
+    assert is_complete is False
+    assert missing == ["当前具体进展与预计完成时间"]
+
+
+def test_delayed_without_blocker_asks_for_root_cause() -> None:
+    claim = ExtractedHealthClaim(
+        task_id="task-payment",
+        health_status=HealthStatus.DELAYED,
+        expected_completion=datetime.now(UTC),
+        blocker=None,
+        confidence=0.90,
+        source_quote="要延到明天",
+    )
+    result = ExtractionResult(
+        is_actionable=True,
+        claims=[claim],
+        commitments=[],
+        reasoning="Delayed without blocker",
+    )
+    is_complete, missing = SlotCompletenessEvaluator.evaluate_completeness(result, "要延到明天")
+    assert is_complete is False
+    assert "具体阻塞根因与卡点" in missing
+
+    question = SlotCompletenessEvaluator.generate_clarification_question(
+        task_title="支付SDK接入",
+        missing_slots=missing,
+        raw_reply="要延到明天",
+    )
+    assert "卡点" in question
+
+
+def test_missing_time_and_blocker_generates_combined_question() -> None:
+    claim = ExtractedHealthClaim(
+        task_id="task-payment",
+        health_status=HealthStatus.DELAYED,
+        expected_completion=None,
+        blocker=None,
+        confidence=0.90,
+        source_quote="有困难",
+    )
+    result = ExtractionResult(
+        is_actionable=True,
+        claims=[claim],
+        commitments=[],
+        reasoning="Delayed without time and blocker",
+    )
+    _, missing = SlotCompletenessEvaluator.evaluate_completeness(result, "有困难")
+    question = SlotCompletenessEvaluator.generate_clarification_question(
+        task_title="支付SDK接入",
+        missing_slots=missing,
+        raw_reply="有困难",
+    )
+    assert "什么困难" in question
+    assert "几点" in question
+
+
+def test_unknown_slot_falls_back_to_default_question() -> None:
+    question = SlotCompletenessEvaluator.generate_clarification_question(
+        task_title="支付SDK接入",
+        missing_slots=["未知槽位"],
+        raw_reply="不清楚",
+    )
+    assert "预计完成时间或当前具体进展" in question

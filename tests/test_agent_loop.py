@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta
 
+from orgpilot.adapter.mock import MockCollaborationAdapter
 from orgpilot.agent.loop import CoordinationAgent
 from orgpilot.domain.enums import (
     ActionType,
@@ -192,3 +193,46 @@ def test_agent_run_turn_direct_update_task_action_approval() -> None:
     trace, _ = agent.run_turn([], NOW + timedelta(minutes=6))
     assert trace.termination_reason is AgentTerminationReason.ALL_RESOLVED
     assert case.status is CoordinationCaseStatus.RESOLVED
+
+
+class _ExplodingAdapter(MockCollaborationAdapter):
+    """Simulates a channel outage: every transport call raises."""
+
+    def send_private_message(self, command: ActionCommand):
+        raise ConnectionError("feishu channel down")
+
+    def request_approval(self, command: ActionCommand, approver_id: str):
+        raise ConnectionError("feishu channel down")
+
+
+def test_agent_turn_survives_adapter_transport_failure() -> None:
+    """Regression: a transport-level adapter failure (Feishu 4xx, network outage)
+    used to crash the whole coordination turn with an unhandled exception; it must
+    degrade to a logged error while the case lifecycle continues."""
+    agent = CoordinationAgent(project_id="test-proj", adapter=_ExplodingAdapter("test-proj"))
+    events = _init_events()
+    events.append(
+        TaskHealthReportedEvent(
+            project_id="test-proj",
+            event_id="evt-delay-transport",
+            event_type="task.health_reported",
+            source=EventSource.MESSAGE,
+            source_ref="ref",
+            actor_id="alice",
+            occurred_at=NOW,
+            received_at=NOW,
+            payload=TaskHealthReportedPayload(
+                task_id="t1",
+                health_status=HealthStatus.AT_RISK,
+                blocker="SDK broken",
+                confidence=0.9,
+            ),
+        )
+    )
+
+    trace, _ = agent.run_turn(events, NOW)
+
+    assert trace.termination_reason is AgentTerminationReason.WAITING_RESPONSE
+    cases = agent.case_ledger.get_active_cases()
+    assert len(cases) == 1
+    assert cases[0].status is CoordinationCaseStatus.WAITING_FOR_RESPONSE

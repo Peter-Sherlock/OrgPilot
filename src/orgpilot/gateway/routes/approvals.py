@@ -59,12 +59,17 @@ async def submit_approval_decision(
         # Run an agent turn to execute approved actions or escalate rejected actions
         turn_trace, _ = await service.run_agent_turn(agent, [], now)
 
+        # Case-scoped approvals settle in the agent loop; task create/reassign
+        # proposals settle here (approved -> task.created/task.updated + notify).
+        task_outcome = await service.settle_task_approvals(project_id, body.approver_id)
+
         updated_req = agent.approval_manager.get_request(approval_id)
         return ApprovalDecisionResponse(
             approval_id=approval_id,
             decision=body.decision,
             status=updated_req.status.value if updated_req else "unknown",
             turn_termination_reason=turn_trace.termination_reason.value,
+            bot_reply=task_outcome.bot_reply if task_outcome is not None else None,
         )
     except PermissionError as e:
         raise HTTPException(status_code=403, detail=str(e)) from e

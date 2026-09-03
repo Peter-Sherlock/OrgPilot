@@ -29,9 +29,18 @@ class CollaborationAdapter(ABC):
     def execute(self, command: ActionCommand) -> ActionResult:
         """Dispatches an action command to the appropriate adapter method."""
         match command.action_type:
-            case ActionType.ASK_RECOVERY_ESTIMATE | ActionType.ASK_CLARIFICATION:
+            case (
+                ActionType.ASK_RECOVERY_ESTIMATE
+                | ActionType.ASK_CLARIFICATION
+                | ActionType.SEND_DIRECTIVE
+            ):
                 return self.send_private_message(command)
             case ActionType.PROPOSE_RESCHEDULE:
+                approver = command.targets[0] if command.targets else "approver"
+                return self.request_approval(command, approver)
+            case ActionType.TASK_CREATE | ActionType.TASK_REASSIGN:
+                # NL task proposals ride the approval-card path too: the card IS
+                # the delivery of the gated proposal to its approver.
                 approver = command.targets[0] if command.targets else "approver"
                 return self.request_approval(command, approver)
             case ActionType.UPDATE_TASK:

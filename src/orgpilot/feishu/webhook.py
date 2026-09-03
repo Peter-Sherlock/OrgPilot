@@ -29,10 +29,12 @@ class FeishuWebhookHandler:
         service: Any,
         project_id: str = "feishu-default",
         verification_token: str | None = None,
+        demo_bootstrap: bool = False,
     ) -> None:
         self.service: GatewayService = service
         self.project_id = project_id
         self.verification_token = verification_token
+        self.demo_bootstrap = demo_bootstrap
 
     async def handle_event(self, body: dict[str, Any]) -> dict[str, Any]:
         """Dispatches Feishu webhook payload according to event type."""
@@ -71,6 +73,13 @@ class FeishuWebhookHandler:
         if not hmac.compare_digest(str(supplied), self.verification_token):
             raise PermissionError("Invalid Feishu verification token")
 
+    async def _should_bootstrap_demo(self, actor_id: str | None) -> bool:
+        """Returns True when the opt-in demo bootstrap should inject the starter task chain."""
+        if not self.demo_bootstrap or not actor_id:
+            return False
+        agent_init = await self.service.get_or_replay_agent(self.project_id)
+        return not agent_init.projector.state.tasks
+
     async def _handle_message_received(self, event_data: dict[str, Any]) -> dict[str, Any]:
         """Processes an incoming chat message from a team member."""
         message = event_data.get("message", {})
@@ -95,10 +104,10 @@ class FeishuWebhookHandler:
             else datetime.now(UTC)
         )
 
-        # Auto-bootstrap demo tasks for first-time solo tester
-        agent_init = await self.service.get_or_replay_agent(self.project_id)
-        if not agent_init.projector.state.tasks and actor_id:
+        # Auto-bootstrap demo tasks for first-time solo tester (opt-in via ORGPILOT_DEMO_BOOTSTRAP)
+        if await self._should_bootstrap_demo(actor_id):
             now_ts = occurred_at
+            agent_init = await self.service.get_or_replay_agent(self.project_id)
             bootstrap_events: list[OrgEvent] = [
                 MemberRegisteredEvent(
                     project_id=self.project_id,
@@ -166,6 +175,11 @@ class FeishuWebhookHandler:
                 ),
             ]
             for evt in bootstrap_events:
+                if (
+                    isinstance(evt, MemberRegisteredEvent)
+                    and evt.payload.member_id in agent_init.projector.state.members
+                ):
+                    continue
                 await self.service.event_store.append(evt)
 
         chat_type = message.get("chat_type", "p2p")
@@ -236,7 +250,7 @@ class FeishuWebhookHandler:
                 }
 
         # 3. Standard message ingestion and single-turn coordination
-        is_act, ext_events, agent, reason, round_num = await self.service.ingest_message(
+        ingest_result = await self.service.ingest_message(
             project_id=self.project_id,
             message=raw_text,
             actor_id=actor_id,
@@ -245,22 +259,33 @@ class FeishuWebhookHandler:
             auto_run_turn=True,
         )
 
-        if not is_act and actor_id:
+        if not ingest_result.is_actionable and actor_id:
             adapter = self.service.adapter_factory(self.project_id)
             client = getattr(adapter, "client", None)
             if client and hasattr(client, "send_message"):
-                greeting_text = (
-                    "👋 你好！我是 OrgPilot 组织风险与排期协调智能体。\n\n"
-                    "🎯 已为您自动初始化单人体验项目，您当前身兼「负责人」与「审批人 (PM)」角色：\n"
-                    "• 关联任务链：[支付SDK接入] ➔ [收银台前端结账] ➔ [支付全链路压测与验收]\n\n"
-                    "💬 您现在可以直接向我发送以下测试消息进行体验：\n"
-                    "1️⃣ **发起全员主动协同**：「我要知道当前的项目进度」\n"
-                    "   （机器人将主动给相关负责人发私聊，多轮追问后为您汇总决策简报）\n"
-                    "2️⃣ **汇报阻塞与改期**：「支付 SDK 报错，排查需要到明天下午 5 点」\n"
-                    "   （机器人将识别风险并向您发送交互式改期审批卡片）\n"
-                    "3️⃣ **汇报进度恢复**：「支付 SDK 阻塞已解决，按原计划推进」\n\n"
-                    "📊 浏览器访问 http://localhost:8000/ 可实时查看任务拓扑大盘与关键路径！"
-                )
+                if self.demo_bootstrap:
+                    greeting_text = (
+                        "👋 你好！我是 OrgPilot 组织风险与排期协调智能体。\n\n"
+                        "🎯 已为您自动初始化单人体验项目，"
+                        "您当前身兼「负责人」与「审批人 (PM)」角色：\n"
+                        "• 关联任务链：[支付SDK接入] ➔ [收银台前端结账]"
+                        " ➔ [支付全链路压测与验收]\n\n"
+                        "💬 您现在可以直接向我发送以下测试消息进行体验：\n"
+                        "1️⃣ **发起全员主动协同**：「我要知道当前的项目进度」\n"
+                        "   （机器人将主动给相关负责人发私聊，多轮追问后为您汇总决策简报）\n"
+                        "2️⃣ **汇报阻塞与改期**：「支付 SDK 报错，排查需要到明天下午 5 点」\n"
+                        "   （机器人将识别风险并向您发送交互式改期审批卡片）\n"
+                        "3️⃣ **汇报进度恢复**：「支付 SDK 阻塞已解决，按原计划推进」\n\n"
+                        "📊 浏览器访问 http://localhost:8000/ 可实时查看任务拓扑大盘与关键路径！"
+                    )
+                else:
+                    greeting_text = (
+                        "👋 你好！我是 OrgPilot 组织协调智能体。\n\n"
+                        "💬 直接告诉我任务进展或阻塞，"
+                        "例如：「支付 SDK 报错，排查需要到明天下午 5 点」，"
+                        "我会更新任务账本、评估下游影响并发起协调（高影响操作会先请求审批）。\n"
+                        "发送「我要知道当前的项目进度」可启动全员进度同步并生成决策简报。"
+                    )
                 try:
                     res = client.send_message(
                         receive_id=reply_target,
@@ -276,10 +301,12 @@ class FeishuWebhookHandler:
             "code": 0,
             "msg": "success",
             "data": {
-                "is_actionable": is_act,
-                "extracted_events_count": len(ext_events),
-                "turn_termination_reason": reason,
-                "round_number": round_num,
+                "is_actionable": ingest_result.is_actionable,
+                "extracted_events_count": len(ingest_result.events),
+                "turn_termination_reason": ingest_result.turn_reason,
+                "round_number": ingest_result.round_num,
+                "intent": ingest_result.intent,
+                "directive_kind": ingest_result.directive_kind,
             },
         }
 

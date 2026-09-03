@@ -2,6 +2,7 @@
 
 import hashlib
 
+from orgpilot.domain.enums import MessageIntent
 from orgpilot.events.models import (
     CommitmentMadeEvent,
     CommitmentMadePayload,
@@ -11,6 +12,7 @@ from orgpilot.events.models import (
     TaskHealthReportedPayload,
 )
 from orgpilot.extraction.client import LLMClient, MockLLMClient
+from orgpilot.extraction.intent import IntentRouter
 from orgpilot.extraction.models import ExtractionResult, MessageContext
 from orgpilot.extraction.prompts import SYSTEM_PROMPT, build_extraction_prompt
 from orgpilot.extraction.verifier import GroundingVerifier
@@ -23,19 +25,57 @@ class ClaimExtractor:
         self,
         llm_client: LLMClient | None = None,
         verifier: GroundingVerifier | None = None,
+        intent_router: IntentRouter | None = None,
     ) -> None:
         self.llm_client = llm_client or MockLLMClient()
         self.verifier = verifier or GroundingVerifier()
+        self.intent_router = intent_router or IntentRouter()
 
     def extract_from_message(
         self, message: str, context: MessageContext
     ) -> tuple[ExtractionResult, list[OrgEvent]]:
         """Analyzes a message, verifies grounding, and generates typed OrgEvents."""
+        routed = self.intent_router.route(message, context)
+        needs_llm_slots = routed.intent in (
+            MessageIntent.TASK_CREATE,
+            MessageIntent.TASK_REASSIGN,
+            MessageIntent.DEADLINE_CHANGE,
+        )
+        if routed.intent not in (MessageIntent.HEALTH_REPORT, MessageIntent.UNCERTAIN) and (
+            not needs_llm_slots
+        ):
+            # Confident non-report intent (directive, chit_chat, ...): no extraction
+            # path exists yet, so skip the LLM call entirely and surface the intent.
+            # Task operations still need the LLM call: their proposal slots
+            # (title/owner/deadline) are extracted in the same invocation.
+            return (
+                ExtractionResult(
+                    is_actionable=False,
+                    intent=routed.intent,
+                    hints=routed.hints,
+                    reasoning=(
+                        f"intent={routed.intent.value} via {routed.method} "
+                        f"(conf={routed.confidence:.2f}): {routed.reasoning}"
+                    ),
+                ),
+                [],
+            )
+
         user_prompt = build_extraction_prompt(message, context)
         raw_result = self.llm_client.extract(SYSTEM_PROMPT, user_prompt, message, context)
 
         # Enforce grounding and filter hallucinated claims
         verified_result = self.verifier.filter_and_verify(raw_result, message, context)
+        verified_result = verified_result.model_copy(
+            update={
+                # A confident rule-routed task operation owns the route; the
+                # model supplies slots but cannot silently turn it into another
+                # intent (or suppress the governance gate).
+                "intent": routed.intent if needs_llm_slots else raw_result.intent or routed.intent,
+                "hints": routed.hints,
+                "task_proposal": raw_result.task_proposal,
+            }
+        )
 
         events: list[OrgEvent] = []
         event_counter = 1

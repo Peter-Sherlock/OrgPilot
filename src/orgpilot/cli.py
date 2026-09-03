@@ -27,6 +27,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default=Path("evals/extraction/gold_dataset.yaml"),
         help="path to gold dataset YAML",
     )
+    extract_eval.add_argument(
+        "--provider",
+        choices=["mock", "aihubmix"],
+        default="mock",
+        help="mock = offline deterministic regression; aihubmix = live model benchmark",
+    )
 
     ws_parser = subparsers.add_parser(
         "start-feishu-ws", help="start Feishu WebSocket long connection listener"
@@ -70,14 +76,41 @@ def _replay(paths: tuple[Path, ...]) -> int:
     return 1 if failed else 0
 
 
-def _eval_extraction(dataset_path: Path) -> int:
+def _eval_extraction(dataset_path: Path, provider: str = "mock") -> int:
     if not dataset_path.exists():
         raise SystemExit(f"dataset file not found: {dataset_path}")
     samples = load_gold_dataset(dataset_path)
-    extractor = ClaimExtractor()
-    metrics = evaluate_extractor(extractor, samples)
+
+    live_client = None
+    if provider == "aihubmix":
+        from orgpilot.config import OrgPilotSettings
+        from orgpilot.extraction.client import AnthropicCompatibleLLMClient
+
+        settings = OrgPilotSettings.from_env()
+        if not settings.aihubmix_api_key:
+            raise SystemExit("AIHUBMIX_API_KEY is required for --provider aihubmix")
+        live_client = AnthropicCompatibleLLMClient(
+            api_key=settings.aihubmix_api_key,
+            base_url=settings.aihubmix_base_url,
+            model=settings.aihubmix_model,
+            reasoning_effort=settings.llm_reasoning_effort,
+        )
+        print(
+            f"[*] Live benchmark against {settings.aihubmix_model} "
+            "via configured Anthropic-compatible endpoint..."
+        )
+    extractor = ClaimExtractor(llm_client=live_client)
+    try:
+        metrics = evaluate_extractor(extractor, samples)
+    finally:
+        if live_client is not None:
+            live_client.close()
+    label = f"live ({settings.aihubmix_model})" if provider == "aihubmix" else provider
     status = "PASS" if metrics.passed else "FAIL"
-    print(f"[{status}] Natural Language Extraction Benchmark ({metrics.total_samples} samples):")
+    print(
+        f"[{status}] Natural Language Extraction Benchmark "
+        f"({label}, {metrics.total_samples} samples):"
+    )
     print(
         f"  - Health Status Precision: {metrics.health_status_precision:.2%}, "
         f"Recall: {metrics.health_status_recall:.2%}, F1: {metrics.health_status_f1:.2%}"
@@ -86,6 +119,7 @@ def _eval_extraction(dataset_path: Path) -> int:
     print(f"  - Slot DateTime Accuracy: {metrics.slot_datetime_accuracy:.2%}")
     print(f"  - False Alarm Rate: {metrics.false_alarm_rate:.2%}")
     print(f"  - Grounding Valid Rate: {metrics.grounding_valid_rate:.2%}")
+    print(f"  - Intent Accuracy: {metrics.intent_accuracy:.2%}")
     return 0 if metrics.passed else 1
 
 
@@ -119,6 +153,7 @@ def _start_feishu_ws(project_id: str | None = None) -> int:
         gateway_service=service,
         project_id=target_project,
         loop=loop,
+        demo_bootstrap=settings.demo_bootstrap,
     )
     print(f"[*] Starting Feishu WebSocket Listener for project '{target_project}'...")
     print(f"[*] App ID: {app_id}")
@@ -149,7 +184,7 @@ def main() -> int:
             raise SystemExit("no scenario files found")
         return _replay(paths)
     if args.command == "eval-extraction":
-        return _eval_extraction(args.dataset)
+        return _eval_extraction(args.dataset, args.provider)
     if args.command == "start-feishu-ws":
         return _start_feishu_ws(args.project_id)
     return 2

@@ -1,5 +1,7 @@
 """Prompt templates and dynamic context assembly for structured claim extraction."""
 
+from zoneinfo import ZoneInfo
+
 from orgpilot.extraction.models import MessageContext
 
 SYSTEM_PROMPT = """你是一个组织协同状态提取专家。你的职责是从团队成员的消息中，
@@ -8,30 +10,77 @@ SYSTEM_PROMPT = """你是一个组织协同状态提取专家。你的职责是�
 ### 规则与约束：
 1. **健康状态分类**：
    - `on_track`：任务正常推进、已完成、阻塞已解除或已恢复。
-   - `at_risk`：存在潜在风险、遇到困难、排查中或不确定能否按时完成。
-   - `delayed`：明确延期、无法在原截止日前完成、遇到严重阻碍。
+   - `delayed`：明确延期或受阻推迟（“要延到…”、“卡住必须等到…”、“估计 N 天后才能恢复”），
+     或给出了晚于当前计划的新完成时间点。
+   - `at_risk`：仍在排查、存在风险苗头，但尚未形成明确的延期结论。
    - `unknown`：仅提及任务但无明确健康推断。
 
 2. **引文真实性（强制）**：
    - 提取的每一个声明必须包含 `source_quote`，
      且必须是原消息中**一字不差的真实子串**。严禁捏造或脑补引文！
 
-3. **任务实体消歧**：
-   - 将用户口语化的任务表述（如“支付接口”、“前端部分”）对齐到上下文给定的标准 `task_id`。
-     如果无法对应任何已知任务，不要强行匹配。
+3. **任务实体对齐（强制）**：
+   - `task_id` 只能从「已知任务列表」中**逐字选取**，严禁发明、缩写或新造任何 ID；
+   - 将口语化表述（如“支付接口”、“前端部分”、“第三方网关”）对齐到语义最接近的已知任务；
+   - 仅当消息与任何已知任务都无法对应时，才不输出该声明。
 
 4. **闲聊与非风险过滤**：
    - 对于日常问候、感叹、情绪表达或不涉及项目状态的消息，
      设置 `is_actionable=false`，`claims` 与 `commitments` 为空列表。
+   - 当消息表达的是承诺/保证（输出 `commitments`）时，不要再为同一表述
+     重复输出健康声明：对未来工作的保证（“保证明天前做完”）不是当前健康状态。
 
-5. **时间解析**：
-   - 依据给定的消息发生基准时间（occurred_at），
-     将相对时间解析为带时区的 ISO 8601 字符串格式。
+5. **时间解析（时区强制）**：
+   - 以上下文中给出的「消息发生时间（团队参考时区）」为唯一基准，
+     解析“今天/明天/后天/周N/下午N点”等相对时间；
+   - 输出的 `expected_completion` 与 `due_at` 必须携带与该基准相同的时区偏移
+     （例如参考时区为 +08:00 时，本地下午 5 点必须输出 `T17:00:00+08:00`）；
+   - 严禁把本地墙钟时间直接标成 UTC（例如下午 5 点绝不能输出 `T17:00:00+00:00`）；
+   - 相对时间只给出日期或天数而未指明时刻时，按当天 18:00 处理；
+   - `on_track`（已恢复/已完成）类声明的 `expected_completion` 置 null：
+     “N点前恢复正常/已解决”这类表述描述的是**恢复动作本身**，不是新的交付里程碑；
+     只有消息给出未来某个**新交付物**的时间点（如“已完成，下周三上线新版本”）才填写；
+   - `delayed` 类声明中，“X点/周N N点前搞不定/完不成/无法交付”里的该时间边界
+     就是预计完成时间，必须解析填写 `expected_completion`，不得置 null。
+
+6. **意图分类（同步输出，供路由层使用）**：
+   - 在 `intent` 字段输出该消息的路由意图，取值仅限：
+     `health_report`（本人任务健康/进度汇报）、`directive`（要求**他人**执行或达成的指令，
+     如“告诉Alice必须明天完成”）、`task_create`（提议新建任务）、`task_reassign`（任务改派/换负责人）、
+     `deadline_change`（变更任务截止期）、`question`（向他人提问）、
+     `chit_chat`（寒暄、情绪、与项目工作无关）、`uncertain`（无法判定）；
+   - 必须结合发送人角色判断：同一句涉任务的话，PM/负责人说多为指令或排期变更，
+     普通成员说多为本人进度汇报；
+   - 要求自己完成某事的表述（如“我必须明天完成”）属于 `health_report`，不是 `directive`；
+   - 无法确定时输出 `uncertain`，严禁猜测。
+
+7. **任务操作提案（仅当意图为 task_create、task_reassign 或 deadline_change 时输出）**：
+   - 在 `task_proposal` 字段输出对象，键为：
+     `operation`（"create"、"reassign" 或 "deadline_change"）、`title`、`owner_name`、
+     `task_ref`、`deadline_expr`；
+   - `task_create`：`title` 与 `owner_name` 必填，`task_ref` 为 null；
+   - `task_reassign`：`task_ref`（被改派的现有任务名称或ID）与 `owner_name`（新负责人）必填，
+     `title` 为 null；
+   - `deadline_change`：`task_ref`（被改期的现有任务名称或ID）与
+     `deadline_expr`（新截止时间原文）必填，
+     `title` 与 `owner_name` 为 null；
+   - `deadline_expr` 填消息中的截止时间原文（如“周五前”），没有则为 null；
+   - **接地红线**：title / owner_name / task_ref 必须逐字取自消息原文，禁止改写、翻译或编造；
+     消息中未提到的字段一律为 null；非任务操作消息 `task_proposal` 必须为 null。
 """
 
 
 def build_extraction_prompt(message: str, context: MessageContext) -> str:
     """Builds the full user prompt with injected task and member context."""
+    try:
+        reference_tz = ZoneInfo(context.reference_timezone)
+    except Exception:
+        reference_tz = None
+    local_occurred_at = (
+        context.occurred_at.astimezone(reference_tz).isoformat()
+        if reference_tz is not None
+        else context.occurred_at.isoformat()
+    )
     tasks_desc = (
         "\n".join(f"- {task_id}: {desc}" for task_id, desc in context.known_tasks.items())
         if context.known_tasks
@@ -53,7 +102,8 @@ def build_extraction_prompt(message: str, context: MessageContext) -> str:
     prompt = f"""### 当前项目上下文：
 - 项目 ID: {context.project_id}
 - 发送人 ID: {context.actor_id}
-- 消息发生时间: {context.occurred_at.isoformat()}
+- 团队参考时区: {context.reference_timezone}（相对时间解析的唯一基准）
+- 消息发生时间（参考时区）: {local_occurred_at}
 
 ### 已知任务列表：
 {tasks_desc}

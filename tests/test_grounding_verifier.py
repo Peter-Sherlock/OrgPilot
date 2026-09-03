@@ -149,6 +149,16 @@ def test_temporal_resolver_expressions() -> None:
     assert dt_fri.day == 11
     assert dt_fri.hour == 16
 
+    dt_next_fri = TemporalResolver.resolve_relative_time("下周五下午 4 点", NOW)
+    assert dt_next_fri is not None
+    assert (dt_next_fri.date() - NOW.date()).days == 8
+    assert dt_next_fri.hour == 16
+
+    saturday = datetime.fromisoformat("2026-09-12T10:00:00+08:00")
+    dt_next_week_from_saturday = TemporalResolver.resolve_relative_time("下周五", saturday)
+    assert dt_next_week_from_saturday is not None
+    assert (dt_next_week_from_saturday.date() - saturday.date()).days == 6
+
     # Direct ISO
     iso_str = "2026-09-20T18:00:00+08:00"
     dt_iso = TemporalResolver.resolve_relative_time(iso_str, NOW)

@@ -220,8 +220,38 @@ async def get_project_timeline(
             wf_stat = getattr(evt.payload, "workflow_status", "")
             desc = f"负责人: {getattr(evt.payload, 'owner_id', '')}, 状态: {wf_stat}"
         elif evt.event_type == "task.updated":
-            title = f"排期更新: {task_id}"
-            desc = f"最新截止时间: {getattr(evt.payload, 'deadline', '')}"
+            new_owner = getattr(evt.payload, "owner_id", None)
+            if new_owner:
+                title = f"负责人变更: {task_id}"
+                desc = f"任务改派给 {new_owner}（由 {evt.actor_id or 'system'} 批准）"
+            else:
+                title = f"排期更新: {task_id}"
+                desc = f"最新截止时间: {getattr(evt.payload, 'deadline', '')}"
+        elif evt.event_type.startswith("directive."):
+            action = evt.event_type.split(".", 1)[1]
+            action_labels = {
+                "issued": "📩 指令下达",
+                "acknowledged": "✅ 指令确认",
+                "completed": "🏁 指令完成",
+                "reminded": "⏰ 指令催办",
+                "escalated": "🚨 指令升级",
+                "delivered": "📨 指令送达",
+                "delivery_failed": "⚠️ 指令送达失败",
+                "clarification_requested": "🤔 指令澄清",
+                "clarification_resolved": "💬 指令澄清完成",
+            }
+            payload = evt.payload
+            dir_id = getattr(payload, "directive_id", "") or getattr(
+                payload, "clarification_id", ""
+            )
+            title = f"{action_labels.get(action, evt.event_type)}: {dir_id}"
+            if action == "issued":
+                desc = (
+                    f"{getattr(payload, 'issuer_id', '')} → {getattr(payload, 'target_id', '')}"
+                    f"，截止: {getattr(payload, 'deadline', '未指定')}"
+                )
+            else:
+                desc = f"指令 {dir_id} 状态变更由 {evt.actor_id} 触发"
 
         entries.append(
             TimelineEntry(

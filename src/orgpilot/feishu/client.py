@@ -6,6 +6,8 @@ from typing import Any, Protocol, runtime_checkable
 
 import httpx
 
+from orgpilot.adapter.contracts import PermanentDeliveryError
+
 
 @runtime_checkable
 class FeishuClient(Protocol):
@@ -67,7 +69,11 @@ class AsyncFeishuClient:
         response.raise_for_status()
         data = response.json()
         if data.get("code", 0) != 0:
-            raise RuntimeError(f"Feishu {operation} failed: {data.get('msg', 'unknown error')}")
+            # A Feishu app-level rejection (invalid open_id, bad request, missing
+            # scope) is permanent: surface it as non-retryable to the outbox.
+            raise PermanentDeliveryError(
+                f"Feishu {operation} failed: {data.get('msg', 'unknown error')}"
+            )
         return data
 
     async def get_tenant_access_token(self) -> str:

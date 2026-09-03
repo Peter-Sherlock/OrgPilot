@@ -28,10 +28,11 @@ class ClaimStatus(StrEnum):
 
 
 class CommitmentStatus(StrEnum):
+    """Lifecycle of a tracked commitment. AT_RISK/BROKEN are reserved until
+    commitment risk tracking is implemented (M3); do not persist them today."""
+
     ACTIVE = "active"
     FULFILLED = "fulfilled"
-    AT_RISK = "at_risk"
-    BROKEN = "broken"
     SUPERSEDED = "superseded"
 
 
@@ -39,8 +40,6 @@ class CoordinationCaseStatus(StrEnum):
     OPEN = "open"
     WAITING_FOR_RESPONSE = "waiting_for_response"
     WAITING_FOR_APPROVAL = "waiting_for_approval"
-    APPROVED = "approved"
-    EXECUTING = "executing"
     RESOLVED = "resolved"
     CANCELLED = "cancelled"
     ESCALATED = "escalated"
@@ -52,13 +51,15 @@ class ActionType(StrEnum):
     PROPOSE_RESCHEDULE = "propose_reschedule"
     NOTIFY_GROUP = "notify_group"
     UPDATE_TASK = "update_task"
+    SEND_DIRECTIVE = "send_directive"
+    TASK_CREATE = "task_create"
+    TASK_REASSIGN = "task_reassign"
 
 
 class CommandStatus(StrEnum):
     SUCCESS = "success"
-    FAILED = "failed"
     REJECTED = "rejected"
-    TIMEOUT = "timeout"
+    FAILED = "failed"
 
 
 class ApprovalStatus(StrEnum):
@@ -72,8 +73,6 @@ class AgentTerminationReason(StrEnum):
     ALL_RESOLVED = "all_resolved"
     WAITING_RESPONSE = "waiting_response"
     WAITING_APPROVAL = "waiting_approval"
-    MAX_ROUNDS = "max_rounds"
-    DUPLICATE_BLOCKED = "duplicate_blocked"
     ESCALATED = "escalated"
     NO_ACTION = "no_action"
 
@@ -96,11 +95,32 @@ class SyncSessionStatus(StrEnum):
     CLARIFYING = "clarifying"
     SYNTHESIZING = "synthesizing"
     COMPLETED = "completed"
-    TIMEOUT = "timeout"
+    SUPERSEDED = "superseded"
 
 
 class ProbeMemberStatus(StrEnum):
     PENDING = "pending"
     CLARIFYING = "clarifying"
     COLLECTED = "collected"
-    TIMEOUT = "timeout"
+    NO_RESPONSE = "no_response"
+
+
+class MessageIntent(StrEnum):
+    """Routing-level intent classes recognized before claim extraction."""
+
+    HEALTH_REPORT = "health_report"
+    DIRECTIVE = "directive"
+    TASK_CREATE = "task_create"
+    TASK_REASSIGN = "task_reassign"
+    DEADLINE_CHANGE = "deadline_change"
+    QUESTION = "question"
+    CHIT_CHAT = "chit_chat"
+    UNCERTAIN = "uncertain"
+
+
+class DirectiveStatus(StrEnum):
+    """Lifecycle of a relayed directive from issuer to target member."""
+
+    ISSUED = "issued"
+    ACKNOWLEDGED = "acknowledged"
+    COMPLETED = "completed"
