@@ -373,3 +373,63 @@ async def test_sync_reply_persists_turn_outputs_and_survives_replay() -> None:
     assert cases[0].status == CoordinationCaseStatus.WAITING_FOR_APPROVAL
     assert len(agent.approval_manager.get_all_requests()) == 1
     await db.close()
+
+async def test_probe_reply_with_sync_keyword_is_not_treated_as_new_sync(
+    harness: tuple[httpx.AsyncClient, GatewayService],
+) -> None:
+    """T2: inside an active session a probed member's reply never starts a new session."""
+    client, service = harness
+    project_id = "feishu-project"
+    await client.post(
+        f"/api/v1/projects/{project_id}/events",
+        json={"events": _make_setup_events(project_id)},
+    )
+
+    start = await client.post(
+        "/api/v1/feishu/events",
+        json=_message_payload("ou_carol", "我要知道当前的项目进度", "om_t2_start"),
+        params={"project_id": project_id},
+    )
+    assert start.status_code == 200
+    session_id = start.json()["data"]["session_id"]
+
+    # "当前进度" is a sync keyword, but the sender is a probed member of the
+    # active session, so the message must be handled as that member's reply.
+    reply = await client.post(
+        "/api/v1/feishu/events",
+        json=_message_payload("ou_alice", "我这边当前进度正常", "om_t2_reply"),
+        params={"project_id": project_id},
+    )
+    assert reply.status_code == 200
+    assert reply.json()["msg"] != "sync_session_started"
+
+    coordinator = await service.get_sync_coordinator(project_id)
+    assert len(coordinator._sessions) == 1
+    assert coordinator.get_session(session_id) is not None
+    assert coordinator.get_session(session_id).member_probes["ou_alice"].turns_count == 1
+
+
+async def test_non_pm_member_cannot_trigger_progress_sync(
+    harness: tuple[httpx.AsyncClient, GatewayService],
+) -> None:
+    """T3: a registered non-PM member saying "同步进度" must not open a sync session."""
+    client, service = harness
+    project_id = "feishu-project"
+    await client.post(
+        f"/api/v1/projects/{project_id}/events",
+        json={"events": _make_setup_events(project_id)},
+    )
+
+    resp = await client.post(
+        "/api/v1/feishu/events",
+        json=_message_payload("ou_alice", "同步进度", "om_t3_sync"),
+        params={"project_id": project_id},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["msg"] != "sync_session_started"
+    assert body["data"]["is_actionable"] is False
+
+    coordinator = await service.get_sync_coordinator(project_id)
+    assert len(coordinator._sessions) == 0
+    assert coordinator.get_active_session(project_id) is None

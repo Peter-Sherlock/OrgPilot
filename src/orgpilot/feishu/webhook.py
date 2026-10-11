@@ -97,6 +97,7 @@ class FeishuWebhookHandler:
 
         # Auto-bootstrap demo tasks for first-time solo tester
         agent_init = await self.service.get_or_replay_agent(self.project_id)
+        bootstrapped = False
         if not agent_init.projector.state.tasks and actor_id:
             now_ts = occurred_at
             bootstrap_events: list[OrgEvent] = [
@@ -167,12 +168,38 @@ class FeishuWebhookHandler:
             ]
             for evt in bootstrap_events:
                 await self.service.event_store.append(evt)
+            bootstrapped = True
+
+        # Authoritative member/project state for routing decisions. Bootstrap events
+        # are appended straight to the store, so replay once when they were written.
+        if bootstrapped:
+            state_agent = await self.service.get_or_replay_agent(self.project_id)
+        else:
+            state_agent = agent_init
+        member = state_agent.projector.state.members.get(actor_id)
 
         chat_type = message.get("chat_type", "p2p")
         chat_id = message.get("chat_id")
         reply_target = chat_id if (chat_type == "group" and chat_id) else actor_id
 
-        # 1. Check for PM proactive progress sync intent
+        # 1. Replies to an active sync probe always take priority over intent keywords
+        coordinator = await self.service.get_sync_coordinator(self.project_id)
+        active_session = coordinator.get_active_session(self.project_id)
+        if active_session and actor_id in active_session.member_probes:
+            converged, clarify_q, _session, _new = await self.service.handle_sync_member_reply(
+                project_id=self.project_id,
+                member_id=actor_id,
+                message=raw_text,
+                occurred_at=occurred_at,
+            )
+            if not converged and clarify_q:
+                return {
+                    "code": 0,
+                    "msg": "clarification_sent",
+                    "data": {"question": clarify_q},
+                }
+
+        # 2. Check for PM proactive progress sync intent
         is_sync_intent = any(
             k in raw_text
             for k in [
@@ -186,7 +213,7 @@ class FeishuWebhookHandler:
                 "看看进度",
             ]
         )
-        if is_sync_intent:
+        if is_sync_intent and member is not None and member.role == "pm":
             session = await self.service.start_progress_sync(
                 self.project_id, initiated_by=reply_target
             )
@@ -217,23 +244,6 @@ class FeishuWebhookHandler:
                     "probed_members_count": len(session.member_probes),
                 },
             }
-
-        # 2. Check if this is a reply to an active sync probe
-        coordinator = await self.service.get_sync_coordinator(self.project_id)
-        active_session = coordinator.get_active_session(self.project_id)
-        if active_session and actor_id in active_session.member_probes:
-            converged, clarify_q, _session, _new = await self.service.handle_sync_member_reply(
-                project_id=self.project_id,
-                member_id=actor_id,
-                message=raw_text,
-                occurred_at=occurred_at,
-            )
-            if not converged and clarify_q:
-                return {
-                    "code": 0,
-                    "msg": "clarification_sent",
-                    "data": {"question": clarify_q},
-                }
 
         # 3. Standard message ingestion and single-turn coordination
         is_act, ext_events, agent, reason, round_num = await self.service.ingest_message(
