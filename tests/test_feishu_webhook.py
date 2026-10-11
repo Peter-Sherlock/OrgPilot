@@ -1,7 +1,7 @@
 """Tests for Feishu Webhook event handling, messages, and card callback flows."""
 
 import json
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
@@ -10,7 +10,9 @@ from orgpilot.config import OrgPilotSettings
 from orgpilot.gateway.app import create_app
 from orgpilot.storage.database import Database
 
-NOW = datetime.fromisoformat("2026-09-10T10:00:00+08:00")
+# Anchored to the real clock so approval expiry (created_at + 2 days) never lapses
+# between event ingestion and the card/decision callbacks under test.
+NOW = datetime.now(UTC)
 
 
 @pytest.fixture
