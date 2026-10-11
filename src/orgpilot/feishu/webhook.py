@@ -191,6 +191,7 @@ class FeishuWebhookHandler:
                 member_id=actor_id,
                 message=raw_text,
                 occurred_at=occurred_at,
+                source_ref=message.get("message_id"),
             )
             if not converged and clarify_q:
                 return {
@@ -198,6 +199,13 @@ class FeishuWebhookHandler:
                     "msg": "clarification_sent",
                     "data": {"question": clarify_q},
                 }
+            # Probed replies never fall through to regular extraction, otherwise the
+            # same message would be claimed twice (once per pipeline).
+            return {
+                "code": 0,
+                "msg": "probe_collected",
+                "data": {"session_id": active_session.session_id},
+            }
 
         # 2. Check for PM proactive progress sync intent
         is_sync_intent = any(

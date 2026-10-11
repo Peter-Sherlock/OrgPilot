@@ -433,3 +433,76 @@ async def test_non_pm_member_cannot_trigger_progress_sync(
     coordinator = await service.get_sync_coordinator(project_id)
     assert len(coordinator._sessions) == 0
     assert coordinator.get_active_session(project_id) is None
+
+async def test_converged_probe_reply_is_idempotent_per_message_id(
+    harness: tuple[httpx.AsyncClient, GatewayService],
+) -> None:
+    """T4: one claim set per reply, and redelivery never double-counts a message."""
+    client, service = harness
+    project_id = "feishu-project"
+    await client.post(
+        f"/api/v1/projects/{project_id}/events",
+        json={"events": _make_setup_events(project_id)},
+    )
+
+    async def health_event_count() -> int:
+        events = (await client.get(f"/api/v1/projects/{project_id}/events")).json()
+        return sum(1 for e in events if e["event_type"] == "task.health_reported")
+
+    async def probe_state(message_id: str | None = None):
+        coordinator = await service.get_sync_coordinator(project_id)
+        return coordinator
+
+    start = await client.post(
+        "/api/v1/feishu/events",
+        json=_message_payload("ou_carol", "我要知道当前的项目进度", "om_t4_start"),
+        params={"project_id": project_id},
+    )
+    session_id = start.json()["data"]["session_id"]
+
+    async def turns_count() -> int:
+        coordinator = await service.get_sync_coordinator(project_id)
+        return coordinator.get_session(session_id).member_probes["ou_alice"].turns_count
+
+    # 1. Vague risk report -> autonomous clarification, one ingested claim
+    vague = await client.post(
+        "/api/v1/feishu/events",
+        json=_message_payload("ou_alice", "支付SDK报错卡住了", "om_t4_vague"),
+        params={"project_id": project_id},
+    )
+    assert vague.json()["msg"] == "clarification_sent"
+    assert await health_event_count() == 1
+    assert await turns_count() == 1
+
+    # 2. Feishu redelivers the same message_id -> no new turn, no new events
+    redelivered = await client.post(
+        "/api/v1/feishu/events",
+        json=_message_payload("ou_alice", "支付SDK报错卡住了", "om_t4_vague"),
+        params={"project_id": project_id},
+    )
+    assert redelivered.status_code == 200
+    assert await health_event_count() == 1
+    assert await turns_count() == 1
+
+    # 3. Complete answer converges the probe and yields exactly one claim event
+    full = await client.post(
+        "/api/v1/feishu/events",
+        json=_message_payload("ou_alice", "预计排查需要到明天下午5点", "om_t4_full"),
+        params={"project_id": project_id},
+    )
+    assert full.json()["msg"] == "probe_collected"
+    assert await health_event_count() == 2
+    assert await turns_count() == 2
+
+    # 4. Redelivery of the converged reply must not add anything
+    total_before = len((await client.get(f"/api/v1/projects/{project_id}/events")).json())
+    replayed = await client.post(
+        "/api/v1/feishu/events",
+        json=_message_payload("ou_alice", "预计排查需要到明天下午5点", "om_t4_full"),
+        params={"project_id": project_id},
+    )
+    assert replayed.status_code == 200
+    total_after = len((await client.get(f"/api/v1/projects/{project_id}/events")).json())
+    assert total_after == total_before
+    assert await health_event_count() == 2
+    assert await turns_count() == 2

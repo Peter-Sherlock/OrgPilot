@@ -193,6 +193,7 @@ class GatewayService:
         member_id: str,
         message: str,
         occurred_at: datetime | None = None,
+        source_ref: str | None = None,
     ) -> tuple[bool, str | None, SyncSession | None, list[OrgEvent]]:
         """Handles reply from probed member, driving clarification or DAG briefing delivery.
 
@@ -216,6 +217,7 @@ class GatewayService:
             member_id=member_id,
             message=message,
             occurred_at=occurred_at,
+            source_ref=source_ref,
         )
 
         # Persist only the events this reply produced, then checkpoint the agent.

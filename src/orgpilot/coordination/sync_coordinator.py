@@ -157,6 +157,7 @@ class ProgressSyncCoordinator:
         member_id: str,
         message: str,
         occurred_at: datetime | None = None,
+        source_ref: str | None = None,
     ) -> tuple[bool, str | None, list[OrgEvent]]:
         """Handles reply from a probed member, driving clarification if needed.
 
@@ -181,6 +182,17 @@ class ProgressSyncCoordinator:
             )
             session.member_probes[member_id] = probe
 
+        # Feishu may redeliver the same message; an already-counted reply must not
+        # become another probe turn or regenerate its events.
+        if source_ref and source_ref in probe.processed_source_refs:
+            converged = probe.status is ProbeMemberStatus.COLLECTED
+            pending_question = (
+                probe.clarification_questions[-1]
+                if probe.status is ProbeMemberStatus.CLARIFYING and probe.clarification_questions
+                else None
+            )
+            return converged, pending_question, []
+
         probe.raw_replies.append(message)
         probe.turns_count += 1
         probe.last_reply_at = now
@@ -199,6 +211,7 @@ class ProgressSyncCoordinator:
             project_id=session.project_id,
             actor_id=member_id,
             occurred_at=now,
+            source_ref=source_ref,
             known_tasks=known_tasks,
             known_members={
                 m.member_id: m.role for m in self.agent.projector.state.members.values()
@@ -215,6 +228,8 @@ class ProgressSyncCoordinator:
         if events:
             _, generated_events = self.agent.run_turn(events, now)
         new_events = [*events, *generated_events]
+        if source_ref:
+            probe.processed_source_refs.append(source_ref)
 
         # Evaluate slot completeness
         is_complete, missing_slots = SlotCompletenessEvaluator.evaluate_completeness(
