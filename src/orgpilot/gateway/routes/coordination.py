@@ -276,13 +276,19 @@ async def sandbox_chat_endpoint(
         }
 
     # Normal message
-    is_act, ext_events, agent, reason, round_num = await service.ingest_message(
+    is_act, ext_events, agent, reason, round_num, error = await service.ingest_message(
         project_id=project_id,
         message=message,
         actor_id=actor_id,
         occurred_at=now,
         auto_run_turn=True,
     )
+    if error:
+        return {
+            "type": "message_rejected",
+            "detail": error,
+            "bot_reply": f"消息处理失败：{error}",
+        }
     return {
         "type": "normal_turn",
         "is_actionable": is_act,

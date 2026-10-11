@@ -506,3 +506,64 @@ async def test_converged_probe_reply_is_idempotent_per_message_id(
     assert total_after == total_before
     assert await health_event_count() == 2
     assert await turns_count() == 2
+
+async def test_unregistered_sender_writes_no_events_and_pm_still_works(
+    harness: tuple[httpx.AsyncClient, GatewayService],
+) -> None:
+    """T5: messages from non-members must not poison the log; the PM keeps working."""
+    client, service = harness
+    project_id = "feishu-project"
+    await client.post(
+        f"/api/v1/projects/{project_id}/events",
+        json={"events": _make_setup_events(project_id)},
+    )
+    total_before = len((await client.get(f"/api/v1/projects/{project_id}/events")).json())
+
+    # An unregistered group member reports a blocker; nothing may be recorded
+    outsider = await client.post(
+        "/api/v1/feishu/events",
+        json=_message_payload(
+            "ou_dev", "支付SDK报错卡住了", "om_t5_outsider", chat_type="group", chat_id="oc_dev"
+        ),
+        params={"project_id": project_id},
+    )
+    assert outsider.status_code == 200
+    assert outsider.json()["msg"] == "sender_not_registered"
+
+    total_after = len((await client.get(f"/api/v1/projects/{project_id}/events")).json())
+    assert total_after == total_before
+
+    # The PM's own report must still process normally after the rejection
+    pm = await client.post(
+        "/api/v1/feishu/events",
+        json=_message_payload("ou_carol", "支付 SDK 报错，排查需要到明天下午 5 点", "om_t5_pm"),
+        params={"project_id": project_id},
+    )
+    assert pm.status_code == 200
+    assert pm.json()["data"]["is_actionable"] is True
+    assert pm.json()["data"]["turn_termination_reason"] == "waiting_approval"
+
+async def test_ingest_message_rejects_invalid_events_without_persisting(
+    harness: tuple[httpx.AsyncClient, GatewayService],
+) -> None:
+    """ingest_message validates before persisting, also with auto_run_turn=False."""
+    client, service = harness
+    project_id = "feishu-project"
+    await client.post(
+        f"/api/v1/projects/{project_id}/events",
+        json={"events": _make_setup_events(project_id)},
+    )
+    events_before = await service.event_store.count(project_id)
+
+    is_act, events, agent, reason, round_num, error = await service.ingest_message(
+        project_id=project_id,
+        message="支付SDK报错卡住了",
+        actor_id="ou_stranger",
+        occurred_at=NOW,
+        auto_run_turn=False,
+    )
+    assert error == "unknown event actor 'ou_stranger'"
+    assert is_act is False
+    assert events == []
+    assert reason is None and round_num is None
+    assert await service.event_store.count(project_id) == events_before

@@ -3,6 +3,7 @@
 import asyncio
 import hmac
 import json
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -19,6 +20,8 @@ from orgpilot.feishu.cards import build_approval_updated_card
 
 if TYPE_CHECKING:
     from orgpilot.gateway.service import GatewayService
+
+logger = logging.getLogger(__name__)
 
 
 class FeishuWebhookHandler:
@@ -170,6 +173,10 @@ class FeishuWebhookHandler:
                 await self.service.event_store.append(evt)
             bootstrapped = True
 
+        chat_type = message.get("chat_type", "p2p")
+        chat_id = message.get("chat_id")
+        reply_target = chat_id if (chat_type == "group" and chat_id) else actor_id
+
         # Authoritative member/project state for routing decisions. Bootstrap events
         # are appended straight to the store, so replay once when they were written.
         if bootstrapped:
@@ -177,10 +184,35 @@ class FeishuWebhookHandler:
         else:
             state_agent = agent_init
         member = state_agent.projector.state.members.get(actor_id)
-
-        chat_type = message.get("chat_type", "p2p")
-        chat_id = message.get("chat_id")
-        reply_target = chat_id if (chat_type == "group" and chat_id) else actor_id
+        if member is None:
+            # Never ingest messages from non-members: their events would fail
+            # projection on every replay and permanently break the project.
+            logger.warning(
+                "Ignoring message %s from unregistered sender %s in project %s",
+                message.get("message_id"),
+                actor_id,
+                self.project_id,
+            )
+            adapter = self.service.adapter_factory(self.project_id)
+            client = getattr(adapter, "client", None)
+            if client and hasattr(client, "send_message"):
+                hint_text = (
+                    "你好！你还未加入本项目的成员名单，暂时无法处理你的消息。"
+                    "请联系项目负责人将你添加为项目成员后再试。"
+                )
+                try:
+                    res = client.send_message(
+                        receive_id=reply_target, msg_type="text", content={"text": hint_text}
+                    )
+                    if asyncio.iscoroutine(res):
+                        await res
+                except Exception:
+                    pass
+            return {
+                "code": 0,
+                "msg": "sender_not_registered",
+                "data": {"actor_id": actor_id},
+            }
 
         # 1. Replies to an active sync probe always take priority over intent keywords
         coordinator = await self.service.get_sync_coordinator(self.project_id)
@@ -254,7 +286,7 @@ class FeishuWebhookHandler:
             }
 
         # 3. Standard message ingestion and single-turn coordination
-        is_act, ext_events, agent, reason, round_num = await self.service.ingest_message(
+        is_act, ext_events, agent, reason, round_num, error = await self.service.ingest_message(
             project_id=self.project_id,
             message=raw_text,
             actor_id=actor_id,
@@ -262,6 +294,9 @@ class FeishuWebhookHandler:
             source_ref=message.get("message_id"),
             auto_run_turn=True,
         )
+        if error:
+            # Projection rejected these events; nothing was persisted.
+            return {"code": 0, "msg": "message_rejected", "data": {"error": error}}
 
         if not is_act and actor_id:
             adapter = self.service.adapter_factory(self.project_id)

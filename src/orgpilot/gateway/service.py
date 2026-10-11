@@ -1,6 +1,7 @@
 """Gateway coordination service orchestrating persistence and Agent execution."""
 
 import asyncio
+import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
@@ -9,15 +10,19 @@ from orgpilot.adapter.base import CollaborationAdapter
 from orgpilot.adapter.mock import MockCollaborationAdapter
 from orgpilot.agent.loop import CoordinationAgent
 from orgpilot.coordination.sync_coordinator import ProgressSyncCoordinator
+from orgpilot.domain.errors import DomainInvariantError
 from orgpilot.domain.models import AgentTurnTrace
 from orgpilot.domain.sync_models import SyncSession
 from orgpilot.events.log import AppendResult
 from orgpilot.events.models import OrgEvent, parse_event
 from orgpilot.extraction.extractor import ClaimExtractor
 from orgpilot.extraction.models import MessageContext
+from orgpilot.state.projector import OrgProjector
 from orgpilot.storage.database import Database
 from orgpilot.storage.event_store import SqlEventStore
 from orgpilot.storage.state_store import SqlStateStore
+
+logger = logging.getLogger(__name__)
 
 
 class GatewayService:
@@ -121,9 +126,14 @@ class GatewayService:
         occurred_at: datetime | None = None,
         source_ref: str | None = None,
         auto_run_turn: bool = True,
-    ) -> tuple[bool, list[OrgEvent], CoordinationAgent, str | None, int | None]:
+    ) -> tuple[bool, list[OrgEvent], CoordinationAgent, str | None, int | None, str | None]:
         """Extracts claims from natural language message, persists events, and optionally
         executes a turn.
+
+        Returns an error string as the last element instead of raising when the
+        extracted events fail in-memory projection validation; nothing is persisted
+        in that case, so the durable event log can never be poisoned by an event
+        that replays into a DomainInvariantError.
         """
         ts = occurred_at or datetime.now(UTC)
         agent = await self.get_or_replay_agent(project_id)
@@ -141,6 +151,21 @@ class GatewayService:
         )
 
         extraction_result, extracted_events = self.extractor.extract_from_message(message, context)
+
+        # Validate the whole batch against a throwaway copy of the projection before
+        # any persistence: an event that fails projection (e.g. from an unregistered
+        # actor) must never reach the event store, where every later replay of it
+        # would raise and permanently break the project.
+        validation_projector = OrgProjector(project_id=project_id)
+        validation_projector.state = agent.projector.state.model_copy(deep=True)
+        try:
+            for evt in extracted_events:
+                validation_projector.apply(evt)
+        except DomainInvariantError as exc:
+            logger.warning(
+                "Rejected message from actor %r in project %r: %s", actor_id, project_id, exc
+            )
+            return (False, [], agent, None, None, str(exc))
 
         # Persist extracted events
         for evt in extracted_events:
@@ -160,6 +185,7 @@ class GatewayService:
             agent,
             turn_reason,
             round_num,
+            None,
         )
 
     async def get_sync_coordinator(self, project_id: str) -> ProgressSyncCoordinator:
