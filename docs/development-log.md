@@ -17,7 +17,25 @@
   - 根因：`ingest_message` 先把抽取事件写入事件库再投影，`_report_health` 校验 `unknown event actor` 抛出 `DomainInvariantError` 时事件已落库，此后每次重放必然失败；
   - 修复：抽取事件先在内存投影副本上整批校验，通过后才写事件库；校验失败返回显式错误结果（不抛未处理异常），`auto_run_turn=False` 同样满足；webhook 层对未注册发送者直接拒收（记日志 + 回复简短提示，不产生任何事件），未实现自动注册成员（留待产品决策）；`/messages` 与 sandbox-chat 将校验错误转译为 400 / message_rejected。
 
-### 配套改动（非缺陷本身，如实说明）
+### 追加修复（同分支第二轮）
+
+- **F1 仅等待中的成员按探针回复处理；同步会话增加超时**（`feishu/webhook.py`、`gateway/routes/coordination.py`、`coordination/sync_coordinator.py`）：
+  - 根因：路由仅凭"发送者在 member_probes 中"判定探针回复，已 COLLECTED 的成员再发无关消息会被重新追问，探针状态从 collected 退回 clarifying；会话没有超时，只要有一人不回复就永远活跃；
+  - 修复：仅探针状态为 PENDING / CLARIFYING 的成员消息按探针回复处理，webhook、sandbox-chat 与 `handle_member_reply` 内部防护三处一致；COLLECTED 成员的后续消息走同步关键词判断再走普通抽取；
+  - `ProgressSyncCoordinator` 新增 `session_timeout`（默认 24 小时，可经构造参数与 `GatewayService(sync_session_timeout=...)` 配置），超时判断基于消息的 occurred_at（默认回退墙钟）：空闲超时后会话标记 `SyncSessionStatus.TIMEOUT`、未收敛探针标记 `ProbeMemberStatus.TIMEOUT`，用已收集信息合成简报（推荐项中列出未回复成员）并投递 PM，`get_active_session` 不再返回已超时会话；
+- **F2 飞书适配器探针/追问消息签名错误**（`feishu/adapter.py`）：
+  - 根因：`send_private_message` 文本分支调用 `client.send_message(receive_id=..., content=...)` 缺少必填 `msg_type`，且 content 传纯字符串，真实飞书中立即抛 TypeError，被 sync_coordinator 的 try/except 吞掉仅记日志，探针询问与多轮追问从未送达；
+  - 修复：改为 `msg_type="text"`、`content={"text": msg_text}`；任一目标发送失败即返回 `CommandStatus.FAILED` 并附错误信息（记录审计日志），不再静默成功；成功仍返回 SUCCESS。
+
+#### 追加测试
+
+- `test_collected_member_is_not_re_probed_by_later_messages`：COLLECTED 成员在会话活跃期间的无关消息走普通路由，探针状态不回退、不再追问；
+- `test_session_timeout_briefs_collected_info_and_routes_normally`：25 小时后消息触发会话超时，消息走普通路由，简报基于已收集信息生成并标注未回复成员，`get_active_session` 不再返回该会话；
+- `test_feishu_adapter_sends_probe_and_clarification_text`：探针与追问以 `text` + `{"text": ...}` 结构送达；
+- `test_feishu_adapter_reports_failed_when_text_send_raises`：发送失败返回 FAILED 且携带错误信息；
+- sandbox 端到端测试补充 COLLECTED 成员后续消息走 `normal_turn` 的一致性断言。
+
+#### 配套改动（非缺陷本身，如实说明）
 
 - `tests/test_feishu_webhook.py`、`tests/test_gateway_api.py` 的固定时间基准（2026-09-10）与真实时钟的审批过期窗口冲突，4 个既有测试自 2026-09-12 起在 origin/main 上持续失败；改为锚定真实时钟并动态推导期望改期时间（独立 `test:` 提交）；
 - origin/main 实测覆盖率 86.1%（低于 90% 门槛，开发日志中的 93% 早于 sync 与 ws 模块加入），为恢复门槛补充了 sandbox 端到端、简报卡片、dotenv/配置校验、`/messages` 拒收、审批决策错误分支与飞书 client 回退分支的测试（独立 `test:` 提交）。
