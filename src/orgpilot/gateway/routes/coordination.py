@@ -218,35 +218,19 @@ async def sandbox_chat_endpoint(
 ) -> dict:
     """Handles sandbox chat from any role (PM, Alice, Bob), returning bot responses."""
     now = datetime.now(UTC)
-    is_sync = any(
-        k in message
-        for k in [
-            "跟进进度",
-            "同步进度",
-            "项目进度",
-            "进度汇总",
-            "检查进度",
-            "当前进度",
-            "我要知道当前的项目进度",
-        ]
-    )
-    if is_sync:
-        session = await service.start_progress_sync(project_id, initiated_by=actor_id)
-        probes_cnt = len(session.member_probes)
+    agent = await service.get_or_replay_agent(project_id)
+    member = agent.projector.state.members.get(actor_id)
+    if member is None:
+        # Never ingest messages from non-members: their events would fail
+        # projection on every replay and permanently break the project.
+        detail = f"unknown project member {actor_id!r}"
         return {
-            "type": "sync_started",
-            "session_id": session.session_id,
-            "bot_reply": (
-                f"🚀 **收到指令！已启动全员进度探针与协同工作流**\n\n"
-                f"• **探测范围**：已向 {probes_cnt} 位任务负责人发起 1 对 1 私聊探针\n"
-                f"• **智能追问**：若成员回复存在时间或阻塞模糊，系统将自主多轮追问收敛\n"
-                f"• **拓扑决策**：全员信息就绪后，将自动推演关键路径并呈送【决策简报】！"
-            ),
-            "probed_members": list(session.member_probes.keys()),
-            "session": session.model_dump(mode="json"),
+            "type": "message_rejected",
+            "detail": detail,
+            "bot_reply": f"消息处理失败：{detail}",
         }
 
-    # Check active sync probe
+    # Replies to an active sync probe always take priority over intent keywords
     coordinator = await service.get_sync_coordinator(project_id)
     active_session = coordinator.get_active_session(project_id)
     if active_session and actor_id in active_session.member_probes:
@@ -273,6 +257,34 @@ async def sandbox_chat_endpoint(
             "type": "member_collected",
             "bot_reply": "收到！您的任务进度已登记，等待其余成员同步收敛...",
             "session": session.model_dump(mode="json") if session else None,
+        }
+
+    is_sync = any(
+        k in message
+        for k in [
+            "跟进进度",
+            "同步进度",
+            "项目进度",
+            "进度汇总",
+            "检查进度",
+            "当前进度",
+            "我要知道当前的项目进度",
+        ]
+    )
+    if is_sync and member.role == "pm":
+        session = await service.start_progress_sync(project_id, initiated_by=actor_id)
+        probes_cnt = len(session.member_probes)
+        return {
+            "type": "sync_started",
+            "session_id": session.session_id,
+            "bot_reply": (
+                f"🚀 **收到指令！已启动全员进度探针与协同工作流**\n\n"
+                f"• **探测范围**：已向 {probes_cnt} 位任务负责人发起 1 对 1 私聊探针\n"
+                f"• **智能追问**：若成员回复存在时间或阻塞模糊，系统将自主多轮追问收敛\n"
+                f"• **拓扑决策**：全员信息就绪后，将自动推演关键路径并呈送【决策简报】！"
+            ),
+            "probed_members": list(session.member_probes.keys()),
+            "session": session.model_dump(mode="json"),
         }
 
     # Normal message
