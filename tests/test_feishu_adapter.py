@@ -126,3 +126,62 @@ async def test_feishu_adapter_propagates_async_failure_before_reporting_success(
     with pytest.raises(RuntimeError, match="Feishu unavailable"):
         adapter.execute(command)
     assert adapter.audit_log == []
+
+def test_feishu_adapter_sends_probe_and_clarification_text() -> None:
+    """F2: probe inquiries and clarifications go out as text messages with {"text": ...}."""
+    client = MockFeishuClient()
+    adapter = FeishuCollaborationAdapter(client=client, project_id="feishu-proj")
+
+    probe_cmd = ActionCommand(
+        command_id="cmd:probe:t1",
+        action_id="action:probe:t1",
+        action_type=ActionType.ASK_RECOVERY_ESTIMATE,
+        targets=("ou_alice", "ou_bob"),
+        payload={"inquiry_text": "请问您负责的任务目前进展如何？", "is_sync_probe": True},
+        idempotency_key="idem:probe:t1",
+        created_at=NOW,
+    )
+    result = adapter.execute(probe_cmd)
+    assert result.status is CommandStatus.SUCCESS
+    assert [(m["receive_id"], m["msg_type"], m["content"]) for m in client.sent_messages] == [
+        ("ou_alice", "text", {"text": "请问您负责的任务目前进展如何？"}),
+        ("ou_bob", "text", {"text": "请问您负责的任务目前进展如何？"}),
+    ]
+
+    clarify_cmd = ActionCommand(
+        command_id="cmd:clarify:t1",
+        action_id="action:clarify:t1",
+        action_type=ActionType.ASK_CLARIFICATION,
+        targets=("ou_alice",),
+        payload={"clarification_text": "大概什么时候能恢复？", "is_clarification": True},
+        idempotency_key="idem:clarify:t1",
+        created_at=NOW,
+    )
+    result = adapter.execute(clarify_cmd)
+    assert result.status is CommandStatus.SUCCESS
+    assert client.sent_messages[-1]["content"] == {"text": "大概什么时候能恢复？"}
+
+
+def test_feishu_adapter_reports_failed_when_text_send_raises() -> None:
+    """F2: a failed probe/clarification send must return FAILED, never silent success."""
+
+    class FailingTextClient(MockFeishuClient):
+        async def send_message(self, *args, **kwargs):
+            raise RuntimeError("Feishu unavailable")
+
+    adapter = FeishuCollaborationAdapter(client=FailingTextClient(), project_id="feishu-proj")
+    probe_cmd = ActionCommand(
+        command_id="cmd:probe:fail",
+        action_id="action:probe:fail",
+        action_type=ActionType.ASK_RECOVERY_ESTIMATE,
+        targets=("ou_alice",),
+        payload={"inquiry_text": "请问进展如何？"},
+        idempotency_key="idem:probe:fail",
+        created_at=NOW,
+    )
+
+    result = adapter.execute(probe_cmd)
+    assert result.status is CommandStatus.FAILED
+    assert result.error is not None
+    assert "Feishu unavailable" in result.error
+    assert adapter.audit_log[-1][1].status is CommandStatus.FAILED

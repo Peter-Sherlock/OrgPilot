@@ -63,8 +63,26 @@ class FeishuCollaborationAdapter(CollaborationAdapter):
 
         if clarification_text or inquiry_text:
             msg_text = clarification_text or inquiry_text
-            for target in command.targets:
-                self._run_async(self.client.send_message(receive_id=target, content=msg_text))
+            try:
+                for target in command.targets:
+                    self._run_async(
+                        self.client.send_message(
+                            receive_id=target, msg_type="text", content={"text": msg_text}
+                        )
+                    )
+            except Exception as exc:
+                # A probe or clarification that never reached Feishu must surface as a
+                # failed command, not as a silently "successful" send.
+                result = ActionResult(
+                    command_id=command.command_id,
+                    action_id=command.action_id,
+                    status=CommandStatus.FAILED,
+                    output={"sent_to": command.targets, "text": msg_text},
+                    error=f"send_message to {target} failed: {exc}",
+                    executed_at=command.created_at,
+                )
+                self.audit_log.append((command, result))
+                return result
             result = ActionResult(
                 command_id=command.command_id,
                 action_id=command.action_id,
