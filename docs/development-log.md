@@ -1,5 +1,56 @@
 # 开发记录
 
+## 2026-10-11：修复飞书消息链路 4 个 P0 缺陷（分支 `fix/feishu-sync-routing-p0`）
+
+### 已修复
+
+- **B1 探针回复路径在网关层必然崩溃**（`gateway/service.py`、`coordination/sync_coordinator.py`）：
+  - 根因：`handle_sync_member_reply` 读取了 `InMemoryEventLog` 上不存在的 `.events` 属性（只有 `all()`），并以错误签名调用 `save_state(project_id, state)`；`handle_member_reply` 丢弃 `run_turn` 返回值导致本轮生成的事件从未持久化；缓存的 coordinator agent 落后于数据库；
+  - 修复：`handle_member_reply` 返回（收敛标志、澄清问题、本轮全部新事件）；`handle_sync_member_reply` 在每次处理回复前用 `get_or_replay_agent` 刷新 coordinator 的 agent 与 adapter，仅持久化本轮新事件，并经 `save_agent_state` 保存快照、cases 与 approvals；`bootstrap-sandbox` 路由同类的 `save_state` 签名错误一并改正；
+- **B2 同步意图判断顺序错误且无角色校验**（`feishu/webhook.py`）：
+  - 根因：关键词子串匹配排在"是否为探针回复"之前，探针成员回复含"当前进度"等词时误开新会话；任何人都可触发全员同步；
+  - 修复：存在活跃会话且发送者在 `member_probes` 中时一律按探针回复处理；仅投影角色为 `pm` 的成员可触发同步，其余消息走普通抽取；关键词列表保持不变。sandbox-chat 路由存在同款顺序与角色缺陷，按相同策略修正；
+- **B3 收敛回复被二次处理、重复投递不幂等**（`feishu/webhook.py`、`coordination/sync_coordinator.py`、`domain/sync_models.py`）：
+  - 根因：`handle_sync_member_reply` 返回 converged 后未 return，同一条消息继续走 `ingest_message`，两条路径生成的 event_id 不同（sync 路径的 MessageContext 未带 source_ref），产生重复 claim；飞书重复投递同一 message_id 会重复累加 `turns_count`；
+  - 修复：探针回复处理完一律 return，返回体区分 `clarification_sent` 与 `probe_collected`；飞书 message_id 作为 source_ref 贯穿 sync 路径，两条管线派生相同 event_id 由事件库去重；`MemberProbeState` 记录 `processed_source_refs`，重复投递不再计数、不再产生事件；
+- **B4 未注册发送者写入"毒事件"导致项目永久不可用**（`gateway/service.py`、`feishu/webhook.py`）：
+  - 根因：`ingest_message` 先把抽取事件写入事件库再投影，`_report_health` 校验 `unknown event actor` 抛出 `DomainInvariantError` 时事件已落库，此后每次重放必然失败；
+  - 修复：抽取事件先在内存投影副本上整批校验，通过后才写事件库；校验失败返回显式错误结果（不抛未处理异常），`auto_run_turn=False` 同样满足；webhook 层对未注册发送者直接拒收（记日志 + 回复简短提示，不产生任何事件），未实现自动注册成员（留待产品决策）；`/messages` 与 sandbox-chat 将校验错误转译为 400 / message_rejected。
+
+### 配套改动（非缺陷本身，如实说明）
+
+- `tests/test_feishu_webhook.py`、`tests/test_gateway_api.py` 的固定时间基准（2026-09-10）与真实时钟的审批过期窗口冲突，4 个既有测试自 2026-09-12 起在 origin/main 上持续失败；改为锚定真实时钟并动态推导期望改期时间（独立 `test:` 提交）；
+- origin/main 实测覆盖率 86.1%（低于 90% 门槛，开发日志中的 93% 早于 sync 与 ws 模块加入），为恢复门槛补充了 sandbox 端到端、简报卡片、dotenv/配置校验、`/messages` 拒收、审批决策错误分支与飞书 client 回退分支的测试（独立 `test:` 提交）。
+
+### 新增测试（T1-T6 均为飞书 webhook 端到端，内存 SQLite + mock adapter）
+
+- T1 `test_sync_probe_reply_persists_health_event_and_replays_consistently`：PM 发起同步、探针成员完整回复，事件落库且重放健康度一致；
+- T2 `test_probe_reply_with_sync_keyword_is_not_treated_as_new_sync`：活跃会话中含同步关键词的回复按回复处理，不新建会话；
+- T3 `test_non_pm_member_cannot_trigger_progress_sync`：非 PM 成员发"同步进度"不创建会话；
+- T4 `test_converged_probe_reply_is_idempotent_per_message_id`：收敛回复仅产生一组 claim；同一 message_id 重复投递不改变 turns_count 与事件数；
+- T5 `test_unregistered_sender_writes_no_events_and_pm_still_works`：未注册成员发风险消息零事件，PM 消息正常处理；
+- T6 `test_sync_reply_persists_turn_outputs_and_survives_replay`：sync 路径 run_turn 生成的事件、cases 与 approvals 重放后仍在。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS (4 P0 + 5 M1)
+pytest: 166 passed
+coverage: 90.59% branch-aware total coverage (fail_under=90%)
+ruff: All checks passed
+git diff --check: PASS
+```
+
+### 未覆盖与已知遗留（如实标注）
+
+- `feishu/ws.py`（WebSocket 监听器内部逻辑）覆盖率仍约 47%，本次未扩展；
+- `feishu/adapter.py` 澄清分支调用 `client.send_message(receive_id=..., content=...)` 缺少必填的 `msg_type`，属潜在缺陷，超出本次 4 个缺陷范围未改动、未覆盖；
+- `bootstrap-sandbox` 路由的"重置"语义在二次调用时因 member.registered 幂等冲突会失败（事件 ID 含时间戳），属演示端点遗留问题，未改动；
+- 真实飞书开放平台联调与真实 LLM 抽取未执行，避免未经确认的外部副作用。
+
+---
+
+
 ## 2026-08-26：W1 Web 全局可视化控制台与实时 DAG 拓扑看板
 
 ### 已实现
