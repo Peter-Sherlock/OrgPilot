@@ -111,3 +111,47 @@ async def test_async_feishu_client_token_failure() -> None:
 
     with pytest.raises(RuntimeError, match="tenant token request failed"):
         await client.get_tenant_access_token()
+
+async def test_async_feishu_client_temp_client_and_chat_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without an injected client each request uses a temporary client; chat ids
+    routed as open_id fall back to receive_id_type=chat_id, and cards delegate."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "tenant_access_token" in str(request.url):
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "msg": "ok",
+                    "tenant_access_token": "t-mock-token-12345",
+                    "expire": 7200,
+                },
+            )
+        if "/open-apis/im/v1/messages" in str(request.url):
+            return httpx.Response(
+                200,
+                json={"code": 0, "msg": "success", "data": {"message_id": "om_real_123"}},
+            )
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    real_async_client = httpx.AsyncClient
+
+    def patched_async_client(*args, **kwargs):
+        kwargs.setdefault("transport", transport)
+        return real_async_client(*args, **kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", patched_async_client)
+
+    client = AsyncFeishuClient(app_id="cli_test", app_secret="sec_test")
+
+    token = await client.get_tenant_access_token()
+    assert token == "t-mock-token-12345"
+
+    resp_msg = await client.send_message(receive_id="oc_group_chat", msg_type="text", content="hi")
+    assert resp_msg["code"] == 0
+
+    resp_card = await client.send_card(receive_id="ou_user", card={"header": {"title": "t"}})
+    assert resp_card["code"] == 0

@@ -34,5 +34,10 @@ Thumbs.db
 var/
 *.log
 
+# Local runtime database and SQLite sidecar files
+/orgpilot.db
+/orgpilot.db-wal
+/orgpilot.db-shm
+
 # Git metadata lives here because the desktop sandbox mounts .git read-only.
 .git-data/

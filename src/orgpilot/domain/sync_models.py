@@ -19,6 +19,9 @@ class MemberProbeState(BaseModel):
     raw_replies: list[str] = Field(default_factory=list)
     clarification_questions: list[str] = Field(default_factory=list)
     extracted_claims: list[ExtractedHealthClaim] = Field(default_factory=list)
+    # Upstream message ids already counted as probe turns, so platform redeliveries
+    # of the same message stay idempotent.
+    processed_source_refs: list[str] = Field(default_factory=list)
     inquiry_sent_at: datetime | None = None
     last_reply_at: datetime | None = None
 

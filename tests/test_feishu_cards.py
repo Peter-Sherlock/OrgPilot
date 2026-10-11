@@ -1,8 +1,11 @@
 """Tests for Feishu 2.0 interactive card builders."""
 
+import json
+
 from orgpilot.feishu.cards import (
     build_approval_card,
     build_approval_updated_card,
+    build_executive_briefing_card,
     build_inquiry_card,
     build_notification_card,
 )
@@ -85,3 +88,47 @@ def test_build_notification_card() -> None:
     )
     assert card["header"]["title"]["content"] == "📢 团队任务排期对齐通知"
     assert "frontend_ui" in card["elements"][0]["text"]["content"]
+
+def test_build_executive_briefing_card_with_risks_and_recommendations() -> None:
+    card = build_executive_briefing_card(
+        briefing={
+            "delayed_count": 1,
+            "at_risk_count": 1,
+            "on_track_count": 2,
+            "total_active_tasks": 4,
+            "topological_risks": [
+                {
+                    "source_task_id": "task-payment",
+                    "source_task_title": "支付SDK接入",
+                    "owner_name": "Alice",
+                    "health_status": "delayed",
+                    "cascading_impact_tasks": ["task-checkout"],
+                }
+            ],
+            "recommended_actions": ["优先通过改期卡片完成排期审批。"],
+        },
+        project_id="feishu-project",
+    )
+    assert card["header"]["title"]["content"] == "📊 项目全景进度与拓扑风险简报"
+    flattened = json.dumps(card, ensure_ascii=False)
+    assert "发现关键阻塞" in flattened
+    assert "支付SDK接入" in flattened
+    assert "task-checkout" in flattened
+    assert "智能体协同建议" in flattened
+    assert "查看实时 DAG 拓扑看板" in flattened
+
+
+def test_build_executive_briefing_card_without_risks_is_green() -> None:
+    card = build_executive_briefing_card(
+        briefing={
+            "delayed_count": 0,
+            "at_risk_count": 0,
+            "on_track_count": 3,
+            "total_active_tasks": 3,
+            "topological_risks": [],
+            "recommended_actions": [],
+        },
+    )
+    flattened = json.dumps(card, ensure_ascii=False)
+    assert "全线健康推进" in flattened
+    assert "关键拓扑阻塞" not in flattened

@@ -1,23 +1,28 @@
 """Gateway coordination service orchestrating persistence and Agent execution."""
 
 import asyncio
+import logging
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from orgpilot.adapter.base import CollaborationAdapter
 from orgpilot.adapter.mock import MockCollaborationAdapter
 from orgpilot.agent.loop import CoordinationAgent
 from orgpilot.coordination.sync_coordinator import ProgressSyncCoordinator
+from orgpilot.domain.errors import DomainInvariantError
 from orgpilot.domain.models import AgentTurnTrace
 from orgpilot.domain.sync_models import SyncSession
 from orgpilot.events.log import AppendResult
 from orgpilot.events.models import OrgEvent, parse_event
 from orgpilot.extraction.extractor import ClaimExtractor
 from orgpilot.extraction.models import MessageContext
+from orgpilot.state.projector import OrgProjector
 from orgpilot.storage.database import Database
 from orgpilot.storage.event_store import SqlEventStore
 from orgpilot.storage.state_store import SqlStateStore
+
+logger = logging.getLogger(__name__)
 
 
 class GatewayService:
@@ -30,6 +35,7 @@ class GatewayService:
         db: Database,
         extractor: ClaimExtractor | None = None,
         adapter_factory: Callable[[str], CollaborationAdapter] | None = None,
+        sync_session_timeout: timedelta = timedelta(hours=24),
     ) -> None:
         self.db = db
         self.event_store = SqlEventStore(db)
@@ -38,6 +44,7 @@ class GatewayService:
         self.adapter_factory = adapter_factory or (
             lambda project_id: MockCollaborationAdapter(project_id=project_id)
         )
+        self.sync_session_timeout = sync_session_timeout
         self._sync_coordinators: dict[str, ProgressSyncCoordinator] = {}
 
     async def get_or_replay_agent(self, project_id: str) -> CoordinationAgent:
@@ -121,9 +128,14 @@ class GatewayService:
         occurred_at: datetime | None = None,
         source_ref: str | None = None,
         auto_run_turn: bool = True,
-    ) -> tuple[bool, list[OrgEvent], CoordinationAgent, str | None, int | None]:
+    ) -> tuple[bool, list[OrgEvent], CoordinationAgent, str | None, int | None, str | None]:
         """Extracts claims from natural language message, persists events, and optionally
         executes a turn.
+
+        Returns an error string as the last element instead of raising when the
+        extracted events fail in-memory projection validation; nothing is persisted
+        in that case, so the durable event log can never be poisoned by an event
+        that replays into a DomainInvariantError.
         """
         ts = occurred_at or datetime.now(UTC)
         agent = await self.get_or_replay_agent(project_id)
@@ -141,6 +153,21 @@ class GatewayService:
         )
 
         extraction_result, extracted_events = self.extractor.extract_from_message(message, context)
+
+        # Validate the whole batch against a throwaway copy of the projection before
+        # any persistence: an event that fails projection (e.g. from an unregistered
+        # actor) must never reach the event store, where every later replay of it
+        # would raise and permanently break the project.
+        validation_projector = OrgProjector(project_id=project_id)
+        validation_projector.state = agent.projector.state.model_copy(deep=True)
+        try:
+            for evt in extracted_events:
+                validation_projector.apply(evt)
+        except DomainInvariantError as exc:
+            logger.warning(
+                "Rejected message from actor %r in project %r: %s", actor_id, project_id, exc
+            )
+            return (False, [], agent, None, None, str(exc))
 
         # Persist extracted events
         for evt in extracted_events:
@@ -160,6 +187,7 @@ class GatewayService:
             agent,
             turn_reason,
             round_num,
+            None,
         )
 
     async def get_sync_coordinator(self, project_id: str) -> ProgressSyncCoordinator:
@@ -170,6 +198,7 @@ class GatewayService:
                 agent=agent,
                 adapter=agent.adapter,
                 extractor=self.extractor,
+                session_timeout=self.sync_session_timeout,
             )
         return self._sync_coordinators[project_id]
 
@@ -193,23 +222,35 @@ class GatewayService:
         member_id: str,
         message: str,
         occurred_at: datetime | None = None,
-    ) -> tuple[bool, str | None, SyncSession | None]:
-        """Handles reply from probed member, driving clarification or DAG briefing delivery."""
-        coordinator = await self.get_sync_coordinator(project_id)
-        active_session = coordinator.get_active_session(project_id)
-        if not active_session:
-            return True, None, None
+        source_ref: str | None = None,
+    ) -> tuple[bool, str | None, SyncSession | None, list[OrgEvent]]:
+        """Handles reply from probed member, driving clarification or DAG briefing delivery.
 
-        converged, clarification_q = coordinator.handle_member_reply(
+        Returns the convergence flag, the pending clarification question (if any), the
+        active session, and the events generated by this reply for the caller to
+        persist.
+        """
+        coordinator = await self.get_sync_coordinator(project_id)
+        active_session = coordinator.get_active_session(project_id, now=occurred_at)
+        if not active_session:
+            return True, None, None, []
+
+        # Replay from the event log before every reply so the coordinator never works
+        # from a stale cached agent that missed events written by other paths.
+        agent = await self.get_or_replay_agent(project_id)
+        coordinator.agent = agent
+        coordinator.adapter = agent.adapter
+
+        converged, clarification_q, new_events = coordinator.handle_member_reply(
             session_id=active_session.session_id,
             member_id=member_id,
             message=message,
             occurred_at=occurred_at,
+            source_ref=source_ref,
         )
 
-        # Save any new events generated during the turn
-        for evt in coordinator.agent.event_log.events:
+        # Persist only the events this reply produced, then checkpoint the agent.
+        for evt in new_events:
             await self.event_store.append(evt)
-
-        await self.state_store.save_state(project_id, coordinator.agent.projector.state)
-        return converged, clarification_q, active_session
+        await self.save_agent_state(coordinator.agent)
+        return converged, clarification_q, active_session, new_events

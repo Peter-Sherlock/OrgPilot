@@ -163,3 +163,49 @@ async def test_replay_discards_snapshot_with_unpersisted_event() -> None:
     assert "evt-never-persisted" not in restored.projector.state.processed_event_ids
     assert "backend_api" in restored.projector.state.tasks
     await db.close()
+
+def test_load_dotenv_ignores_existing_and_malformed_lines(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from orgpilot.config import _load_dotenv_if_exists
+
+    monkeypatch.setenv("ORGPILOT_DOTENV_EXISTING", "keep")
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "# comment line\n"
+        "ORGPILOT_DOTENV_EXISTING=overridden\n"
+        'ORGPILOT_DOTENV_NEW="quoted-value"\n'
+        "malformed line without equals\n"
+        "\n",
+        encoding="utf-8",
+    )
+
+    _load_dotenv_if_exists(str(env_file))
+
+    import os
+
+    assert os.environ["ORGPILOT_DOTENV_EXISTING"] == "keep"
+    assert os.environ["ORGPILOT_DOTENV_NEW"] == "quoted-value"
+    monkeypatch.delenv("ORGPILOT_DOTENV_EXISTING")
+    monkeypatch.delenv("ORGPILOT_DOTENV_NEW")
+
+    # A missing file is silently ignored
+    _load_dotenv_if_exists(str(tmp_path / "does-not-exist.env"))
+
+
+def test_settings_validate_rejects_unknown_collaboration_adapter() -> None:
+    settings = OrgPilotSettings(collaboration_adapter="slack")
+    with pytest.raises(ValueError, match="ORGPILOT_COLLABORATION_ADAPTER"):
+        settings.validate()
+
+
+def test_settings_validate_requires_token_when_ws_disabled() -> None:
+    settings = OrgPilotSettings(
+        collaboration_adapter="feishu",
+        feishu_use_ws=False,
+        feishu_app_id="cli_test",
+        feishu_app_secret="sec_test",
+        feishu_verification_token=None,
+    )
+    with pytest.raises(ValueError, match="FEISHU_VERIFICATION_TOKEN"):
+        settings.validate()
