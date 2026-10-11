@@ -28,6 +28,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="path to gold dataset YAML",
     )
 
+    intent_eval = subparsers.add_parser(
+        "eval-intent", help="run the intent behavior evaluation suite (ADR-0008 §8)"
+    )
+    intent_eval.add_argument("--split", choices=["dev", "test"], default="dev")
+    intent_eval.add_argument("--mode", choices=["mock", "replay", "live"], default="mock")
+    intent_eval.add_argument(
+        "--dataset-dir", type=Path, default=Path("evals/intent"), help="dataset directory"
+    )
+    intent_eval.add_argument(
+        "--report-dir", type=Path, default=Path("evals/intent/reports"), help="report output dir"
+    )
+
     ws_parser = subparsers.add_parser(
         "start-feishu-ws", help="start Feishu WebSocket long connection listener"
     )
@@ -87,6 +99,45 @@ def _eval_extraction(dataset_path: Path) -> int:
     print(f"  - False Alarm Rate: {metrics.false_alarm_rate:.2%}")
     print(f"  - Grounding Valid Rate: {metrics.grounding_valid_rate:.2%}")
     return 0 if metrics.passed else 1
+
+
+def _eval_intent(split: str, mode: str, dataset_dir: Path, report_dir: Path) -> int:
+    import asyncio
+
+    from orgpilot.intent.evaluator import run_intent_eval
+
+    if mode != "mock":
+        raise SystemExit(
+            f"eval-intent --mode {mode} needs the intent layer or an online model; "
+            "this step only supports --mode mock (ADR-0008 implementation step 1)"
+        )
+    if not (dataset_dir / f"{split}.yaml").exists():
+        raise SystemExit(f"dataset file not found: {dataset_dir / f'{split}.yaml'}")
+
+    metrics, failures = asyncio.run(
+        run_intent_eval(split=split, mode=mode, dataset_dir=dataset_dir, report_dir=report_dir)
+    )
+    print(f"Intent Behavior Evaluation (split={split}, mode={mode}, no pass gate this step):")
+    print(f"  - Samples: {metrics.total_samples}")
+    print(
+        f"  - Claim precision: {metrics.claim_precision:.2%}, "
+        f"recall: {metrics.claim_recall:.2%}"
+    )
+    print(
+        f"  - Task id accuracy: {metrics.task_id_accuracy:.2%}, "
+        f"health accuracy: {metrics.health_status_accuracy:.2%}, "
+        f"time accuracy: {metrics.time_accuracy:.2%}"
+    )
+    print(
+        f"  - False claim rate: {metrics.false_claim_rate:.2%}, "
+        f"sync false trigger rate: {metrics.sync_false_trigger_rate:.2%}"
+    )
+    print(
+        f"  - Reply category accuracy: {metrics.reply_category_accuracy:.2%}, "
+        f"multi-turn success: {metrics.multi_turn_success_rate:.2%}"
+    )
+    print(f"  - Failures: {len(failures)} (see report for expected-vs-observed details)")
+    return 0
 
 
 def _start_feishu_ws(project_id: str | None = None) -> int:
@@ -150,6 +201,8 @@ def main() -> int:
         return _replay(paths)
     if args.command == "eval-extraction":
         return _eval_extraction(args.dataset)
+    if args.command == "eval-intent":
+        return _eval_intent(args.split, args.mode, args.dataset_dir, args.report_dir)
     if args.command == "start-feishu-ws":
         return _start_feishu_ws(args.project_id)
     return 2
