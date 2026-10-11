@@ -1,5 +1,51 @@
 # 开发记录
 
+## 2026-10-11：意图识别第 1 步——schema、对抗评测集与现有系统基线（分支 `feat/intent-eval-baseline`）
+
+### 已实现（按 ADR-0008 实施顺序第 1 步，不改任何运行时行为）
+
+- **ADR-0008 落库**：从设计工作区复制 `docs/adr/0008-layered-intent-recognition.md`（意图分类、正交属性、三层路由、评测先行原则），作为意图层工作的依据；
+- **意图输出 schema**（`src/orgpilot/intent/models.py`，仅定义未接入运行时）：`IntentType` 覆盖 ADR-0008 第 2 节全部 15 个意图（P0 九个 / P1 五个 / P2 一个）；`IntentItem` 含正交属性 `speech_act`/`polarity`/`certainty` 与槽位（task_id、health_status、原文 time_expression、带时区 expected_completion、blocker、必填 source_quote、confidence）；`IntentResult` 支持一条消息多个条目、answers_pending 与 reasoning；
+- **对抗评测集**（`evals/intent/`）：固定项目夹具（1 PM + 3 工程师，5 个任务，含"支付SDK接入/支付全链路压测""收银台页面改版/商户后台管理端"两组易混淆名称、负责人与依赖）；dev 92 条 / test 53 条共 **145 条**，按类别分层（见下），每条含 id、category、message、sender、occurred_at(+08:00)、可选 pending_question/最近对话上下文，expected 分 behavior（claims/commitments/starts_sync/确认卡片/追问/回复类别）与 intents（意图 + 正交属性）两部分。样本按真实团队中文口语编写，未参考 `MockLLMClient` 关键词；
+- **评测运行器与基线**（`src/orgpilot/intent/evaluator.py` + CLI `orgpilot eval-intent --split dev|test --mode mock|replay|live`）：被测系统协议为"一条样本 → 观测行为"；baseline 通过真实入口 `FeishuWebhookHandler` 驱动现有系统（内存 SQLite + mock adapter + 记录用 Feishu client），从事件库、同步会话与外发消息采集行为；带 pending_question 的样本先构造探针为 CLARIFYING 的活跃会话（updated_at 锚定样本时间，避开 F1 空闲超时）；指标含错误 claim 率、同步误触发率、claim P/R 与 task/健康度/时间准确率、回复类别准确率、多轮补全成功率及按类别统计；意图层指标对 baseline 记 N/A。报告输出 JSON + Markdown（含按类别表与期望/实际失败清单）至 `evals/intent/reports/`。本步不设通过门槛、不接 CI 门禁；replay/live 模式明确报"需意图层/在线模型，当前步骤仅支持 mock"；
+- **LLM 兼容性脚本**（`scripts/llm_compat_check.py`，只写未运行、不入 CI）：三重门槛（provider=aihubmix、AIHUBMIX_API_KEY、--confirm-spend）不满足即退出；探测 (a) 工具调用 tool_use 块、(b) IntentResult schema 写入 prompt 的 N 次 JSON 解析/校验通过率、(c) 延迟 p50/p95、(d) token 用量；单元测试全部经 httpx MockTransport，未发生任何真实外部调用。
+
+### 评测集类别分布（dev + test）
+
+report_status 8、make_commitment 8、answer_pending 8（多轮回答）、query_status 8（疑问）、request_sync 8（同步正例）、acknowledge 8、chitchat 8、help 8、out_of_scope 8、negation 8、hypothetical 6、vague 6、multi_task 8、disambiguation 6、time_chinese 10、substring_trap 6、p1_p2 10、sync_near_negative 6、sync_non_pm 3、multi_turn_topic_shift 4；合计 145（dev:test ≈ 6:4）。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS (4 P0 + 5 M1)
+pytest: 192 passed
+coverage: 90.97% branch-aware total coverage (fail_under=90%)
+ruff: All checks passed
+git diff --check: PASS
+orgpilot eval-intent --split dev --mode mock / --split test --mode mock: 均运行并生成报告
+```
+
+### baseline 核心指标（无门槛，仅记录现状）
+
+```text
+dev (92 条):  claim P 47.06% / R 23.53%；task_id 58.82%；健康度 80.00%；时间 0.00%
+              错误 claim 率 11.29%；同步误触发 0%；回复类别 34.78%；多轮补全 12.50%（8 条多轮）
+test (53 条): claim P 0.00% / R 0.00%；task_id 20.00%；健康度 0.00%；时间 0.00%
+              错误 claim 率 11.11%；同步误触发 0%；回复类别 26.42%；多轮补全 0.00%（8 条多轮）
+失败最集中类别：时间表达解析（time_chinese 10/10）、P1/P2 误处理（p1_p2 10/10 产生副作用或答非所问）、
+report_status/make_commitment/query_status 各 split 的措辞变体、多轮回答未合并进待补全 claim。
+```
+
+### 与任务说明的差异（如实标注）
+
+- 分支基点：任务书写"从最新 origin/main 新建"，但上一轮受"不要 push"约束，F1/F2 合并只存在于本地 main（6bf22a2），origin/main 仍停在没有 F1/F2 的 7a9ed18；为满足"含 F1、F2 已合并"的前提，本分支自本地 main 新建；
+- 回复类别在任务书示例的 7 类之外补充了 `clarify`（机器人追问轮次），示例列表为"例如"性质，已 在 schema docstring 注明；
+- `sends_confirmation_card` 语义锚定 ADR-0008 §4 的"同步确认卡片"（自然语言同步须经确认），不涵盖改期审批卡片；
+- 评测生成的报告文件随本分支提交（作为基线留档），后续运行会覆盖。
+
+---
+
+
 ## 2026-10-11：修复飞书消息链路 4 个 P0 缺陷（分支 `fix/feishu-sync-routing-p0`）
 
 ### 已修复
