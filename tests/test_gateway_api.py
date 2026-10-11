@@ -346,6 +346,10 @@ async def test_coordination_sandbox_endpoints(client: httpx.AsyncClient) -> None
     collected = await chat("ou_alice", "预计排查需要到明天下午5点")
     assert collected["type"] == "member_collected"
 
+    # A collected member's unrelated follow-up routes normally instead of re-probing
+    followup = await chat("ou_alice", "另外支付SDK的文档还没写")
+    assert followup["type"] == "normal_turn"
+
     final = await chat("ou_david", "压测全部调通，按原计划推进")
     assert final["type"] == "sync_completed"
     assert final["briefing"]["total_active_tasks"] == 3

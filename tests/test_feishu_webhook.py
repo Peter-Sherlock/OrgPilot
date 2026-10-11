@@ -8,7 +8,12 @@ import pytest
 
 from orgpilot.adapter.mock import MockCollaborationAdapter
 from orgpilot.config import OrgPilotSettings
-from orgpilot.domain.enums import CoordinationCaseStatus, HealthStatus
+from orgpilot.domain.enums import (
+    CoordinationCaseStatus,
+    HealthStatus,
+    ProbeMemberStatus,
+    SyncSessionStatus,
+)
 from orgpilot.events.models import EventSource, TaskUpdatedEvent, TaskUpdatedPayload
 from orgpilot.feishu.webhook import FeishuWebhookHandler
 from orgpilot.gateway.app import create_app
@@ -51,13 +56,15 @@ def _message_payload(
     message_id: str,
     chat_type: str = "p2p",
     chat_id: str | None = None,
+    occurred_at: datetime | None = None,
 ) -> dict:
     """Builds an im.message.receive_v1 webhook body for a text message."""
+    create_time = str(int((occurred_at or NOW).timestamp() * 1000))
     message: dict = {
         "message_id": message_id,
         "message_type": "text",
         "content": json.dumps({"text": text}),
-        "create_time": str(int(NOW.timestamp() * 1000)),
+        "create_time": create_time,
         "chat_type": chat_type,
     }
     if chat_id:
@@ -66,13 +73,87 @@ def _message_payload(
         "header": {
             "event_id": f"evt-{message_id}",
             "event_type": "im.message.receive_v1",
-            "create_time": str(int(NOW.timestamp() * 1000)),
+            "create_time": create_time,
         },
         "event": {
             "sender": {"sender_id": {"open_id": open_id}, "sender_type": "user"},
             "message": message,
         },
     }
+
+
+def _make_two_owner_setup_events(project_id: str) -> list[dict]:
+    """PM plus two engineers, each owning one active task, so a sync probes both."""
+    return [
+        {
+            "schema_version": 1,
+            "project_id": project_id,
+            "event_id": f"evt-{project_id}-alice",
+            "event_type": "member.registered",
+            "source": "human",
+            "source_ref": "setup",
+            "occurred_at": NOW.isoformat(),
+            "received_at": NOW.isoformat(),
+            "payload": {"member_id": "ou_alice", "display_name": "Alice", "role": "backend"},
+        },
+        {
+            "schema_version": 1,
+            "project_id": project_id,
+            "event_id": f"evt-{project_id}-bob",
+            "event_type": "member.registered",
+            "source": "human",
+            "source_ref": "setup",
+            "occurred_at": NOW.isoformat(),
+            "received_at": NOW.isoformat(),
+            "payload": {"member_id": "ou_bob", "display_name": "Bob", "role": "frontend"},
+        },
+        {
+            "schema_version": 1,
+            "project_id": project_id,
+            "event_id": f"evt-{project_id}-carol",
+            "event_type": "member.registered",
+            "source": "human",
+            "source_ref": "setup",
+            "occurred_at": NOW.isoformat(),
+            "received_at": NOW.isoformat(),
+            "payload": {"member_id": "ou_carol", "display_name": "Carol", "role": "pm"},
+        },
+        {
+            "schema_version": 1,
+            "project_id": project_id,
+            "event_id": f"evt-{project_id}-task-api",
+            "event_type": "task.created",
+            "source": "task",
+            "source_ref": "setup",
+            "occurred_at": NOW.isoformat(),
+            "received_at": NOW.isoformat(),
+            "payload": {
+                "task_id": "backend_api",
+                "title": "Backend API",
+                "owner_id": "ou_alice",
+                "workflow_status": "doing",
+                "deadline": (NOW + timedelta(hours=3)).isoformat(),
+            },
+        },
+        {
+            "schema_version": 1,
+            "project_id": project_id,
+            "event_id": f"evt-{project_id}-task-checkout",
+            "event_type": "task.created",
+            "source": "task",
+            "source_ref": "setup",
+            "occurred_at": NOW.isoformat(),
+            "received_at": NOW.isoformat(),
+            "payload": {
+                "task_id": "checkout_ui",
+                "title": "Checkout UI",
+                "owner_id": "ou_bob",
+                "workflow_status": "todo",
+                "deadline": (NOW + timedelta(days=2)).isoformat(),
+                "dependencies": ("backend_api",),
+            },
+        },
+    ]
 
 
 def _make_setup_events(project_id: str) -> list[dict]:
@@ -567,3 +648,102 @@ async def test_ingest_message_rejects_invalid_events_without_persisting(
     assert events == []
     assert reason is None and round_num is None
     assert await service.event_store.count(project_id) == events_before
+
+async def test_collected_member_is_not_re_probed_by_later_messages(
+    harness: tuple[httpx.AsyncClient, GatewayService],
+) -> None:
+    """F1: once collected, a member's extra messages route normally, never re-probed."""
+    client, service = harness
+    project_id = "feishu-project"
+    await client.post(
+        f"/api/v1/projects/{project_id}/events",
+        json={"events": _make_two_owner_setup_events(project_id)},
+    )
+
+    start = await client.post(
+        "/api/v1/feishu/events",
+        json=_message_payload("ou_carol", "我要知道当前的项目进度", "om_f1_start"),
+        params={"project_id": project_id},
+    )
+    session_id = start.json()["data"]["session_id"]
+
+    first = await client.post(
+        "/api/v1/feishu/events",
+        json=_message_payload("ou_alice", "支付SDK报错，排查需要到明天下午5点", "om_f1_a1"),
+        params={"project_id": project_id},
+    )
+    assert first.json()["msg"] == "probe_collected"
+
+    coordinator = await service.get_sync_coordinator(project_id)
+    session = coordinator.get_session(session_id)
+    assert session.member_probes["ou_alice"].status is ProbeMemberStatus.COLLECTED
+    assert session.member_probes["ou_alice"].turns_count == 1
+    assert session.member_probes["ou_bob"].status is ProbeMemberStatus.PENDING
+
+    # Unrelated follow-up while the session is still active (bob has not replied)
+    followup = await client.post(
+        "/api/v1/feishu/events",
+        json=_message_payload("ou_alice", "另外支付SDK的文档还没写", "om_f1_a2"),
+        params={"project_id": project_id},
+    )
+    assert followup.status_code == 200
+    assert followup.json()["msg"] == "success"
+    assert followup.json()["data"]["is_actionable"] is False
+
+    # The probe state must not regress and no clarification may be re-sent
+    assert session.member_probes["ou_alice"].status is ProbeMemberStatus.COLLECTED
+    assert session.member_probes["ou_alice"].turns_count == 1
+    assert session.member_probes["ou_alice"].clarification_questions == []
+    assert session.member_probes["ou_bob"].status is ProbeMemberStatus.PENDING
+
+
+async def test_session_timeout_briefs_collected_info_and_routes_normally(
+    harness: tuple[httpx.AsyncClient, GatewayService],
+) -> None:
+    """F1: an idle session times out, briefs from collected info, and stops replying."""
+    client, service = harness
+    project_id = "feishu-project"
+    await client.post(
+        f"/api/v1/projects/{project_id}/events",
+        json={"events": _make_two_owner_setup_events(project_id)},
+    )
+
+    start = await client.post(
+        "/api/v1/feishu/events",
+        json=_message_payload("ou_carol", "我要知道当前的项目进度", "om_f1b_start"),
+        params={"project_id": project_id},
+    )
+    session_id = start.json()["data"]["session_id"]
+
+    reply = await client.post(
+        "/api/v1/feishu/events",
+        json=_message_payload("ou_alice", "支付SDK报错，排查需要到明天下午5点", "om_f1b_a1"),
+        params={"project_id": project_id},
+    )
+    assert reply.json()["msg"] == "probe_collected"
+
+    # 25 hours later the silent session has expired; bob's message routes normally
+    late = NOW + timedelta(hours=25)
+    late_msg = await client.post(
+        "/api/v1/feishu/events",
+        json=_message_payload("ou_bob", "周末一起吃饭吗", "om_f1b_b1", occurred_at=late),
+        params={"project_id": project_id},
+    )
+    assert late_msg.status_code == 200
+    assert late_msg.json()["msg"] == "success"
+    assert late_msg.json()["data"]["is_actionable"] is False
+
+    coordinator = await service.get_sync_coordinator(project_id)
+    session = coordinator.get_session(session_id)
+    assert session.status is SyncSessionStatus.TIMEOUT
+    assert coordinator.get_active_session(project_id) is None
+
+    briefing = session.briefing
+    assert briefing is not None
+    assert briefing.delayed_count == 1
+    statuses = {m.member_id: m.status for m in briefing.member_statuses}
+    assert statuses["ou_alice"] is ProbeMemberStatus.COLLECTED
+    assert statuses["ou_bob"] is ProbeMemberStatus.TIMEOUT
+
+    # Bob's message was not counted as a probe turn either
+    assert session.member_probes["ou_bob"].turns_count == 0

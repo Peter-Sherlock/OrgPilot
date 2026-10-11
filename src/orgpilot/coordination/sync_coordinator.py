@@ -2,7 +2,7 @@
 
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from orgpilot.adapter.base import CollaborationAdapter
@@ -41,25 +41,61 @@ class ProgressSyncCoordinator:
         adapter: CollaborationAdapter | None = None,
         extractor: ClaimExtractor | None = None,
         max_clarification_turns: int = 2,
+        session_timeout: timedelta = timedelta(hours=24),
     ) -> None:
         self.agent = agent
         self.adapter = adapter or agent.adapter
         self.extractor = extractor or ClaimExtractor()
         self.analyzer = DependencyAnalyzer()
         self.max_clarification_turns = max_clarification_turns
+        self.session_timeout = session_timeout
         self._sessions: dict[str, SyncSession] = {}
 
     def get_session(self, session_id: str) -> SyncSession | None:
         return self._sessions.get(session_id)
 
-    def get_active_session(self, project_id: str) -> SyncSession | None:
+    def get_active_session(
+        self, project_id: str, now: datetime | None = None
+    ) -> SyncSession | None:
+        """Returns the latest active session, expiring sessions idle past the timeout.
+
+        ``now`` should carry the current message's occurred_at so the check stays
+        deterministic under test; it defaults to the wall clock.
+        """
+        checked_at = now or datetime.now(UTC)
+        active: SyncSession | None = None
         for s in reversed(list(self._sessions.values())):
-            if s.project_id == project_id and s.status in (
+            if s.project_id != project_id or s.status not in (
                 SyncSessionStatus.PROBING,
                 SyncSessionStatus.CLARIFYING,
             ):
-                return s
-        return None
+                continue
+            if checked_at - s.updated_at > self.session_timeout:
+                self._timeout_session(s)
+                continue
+            if active is None:
+                active = s
+        return active
+
+    def _timeout_session(self, session: SyncSession) -> None:
+        """Ends a stalled session, briefing from whatever has been collected so far."""
+        for probe in session.member_probes.values():
+            if probe.status is not ProbeMemberStatus.COLLECTED:
+                probe.status = ProbeMemberStatus.TIMEOUT
+        self.synthesize_and_deliver_briefing(session.session_id)
+        session.status = SyncSessionStatus.TIMEOUT
+        session.updated_at = datetime.now(UTC)
+        unreplied = [
+            p.member_id
+            for p in session.member_probes.values()
+            if p.status is ProbeMemberStatus.TIMEOUT
+        ]
+        logger.warning(
+            "Progress sync session %s timed out; briefing synthesized from collected "
+            "replies (unreplied members: %s)",
+            session.session_id,
+            ", ".join(unreplied) or "none",
+        )
 
     def start_sync_session(
         self,
@@ -192,6 +228,12 @@ class ProgressSyncCoordinator:
                 else None
             )
             return converged, pending_question, []
+
+        # Only members still being probed (or mid-clarification) turn messages into
+        # probe replies; collected or timed-out members route through the normal
+        # pipelines so unrelated follow-ups never re-open their probe.
+        if probe.status not in (ProbeMemberStatus.PENDING, ProbeMemberStatus.CLARIFYING):
+            return True, None, []
 
         probe.raw_replies.append(message)
         probe.turns_count += 1
@@ -333,6 +375,14 @@ class ProgressSyncCoordinator:
 
         # Generate actionable recommendations
         recommendations: list[str] = []
+        timed_out_members = [
+            p for p in session.member_probes.values() if p.status is ProbeMemberStatus.TIMEOUT
+        ]
+        if timed_out_members:
+            names = "、".join(p.display_name or p.member_id for p in timed_out_members)
+            recommendations.append(
+                f"{names} 超时未回复，本简报基于已收集到的信息生成，后续可单独跟进。"
+            )
         if delayed > 0:
             recommendations.append(
                 f"发现 {delayed} 项延误任务存在下游关键依赖风险，建议优先通过改期卡片完成排期审批。"

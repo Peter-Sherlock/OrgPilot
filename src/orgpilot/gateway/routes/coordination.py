@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Request
 
-from orgpilot.domain.enums import WorkflowStatus
+from orgpilot.domain.enums import ProbeMemberStatus, WorkflowStatus
 from orgpilot.events.models import (
     EventSource,
     MemberRegisteredEvent,
@@ -232,8 +232,12 @@ async def sandbox_chat_endpoint(
 
     # Replies to an active sync probe always take priority over intent keywords
     coordinator = await service.get_sync_coordinator(project_id)
-    active_session = coordinator.get_active_session(project_id)
-    if active_session and actor_id in active_session.member_probes:
+    active_session = coordinator.get_active_session(project_id, now=now)
+    probe = active_session.member_probes.get(actor_id) if active_session else None
+    if probe is not None and probe.status in (
+        ProbeMemberStatus.PENDING,
+        ProbeMemberStatus.CLARIFYING,
+    ):
         converged, clarify_q, session, _new_events = await service.handle_sync_member_reply(
             project_id=project_id,
             member_id=actor_id,

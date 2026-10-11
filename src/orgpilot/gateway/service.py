@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from orgpilot.adapter.base import CollaborationAdapter
@@ -35,6 +35,7 @@ class GatewayService:
         db: Database,
         extractor: ClaimExtractor | None = None,
         adapter_factory: Callable[[str], CollaborationAdapter] | None = None,
+        sync_session_timeout: timedelta = timedelta(hours=24),
     ) -> None:
         self.db = db
         self.event_store = SqlEventStore(db)
@@ -43,6 +44,7 @@ class GatewayService:
         self.adapter_factory = adapter_factory or (
             lambda project_id: MockCollaborationAdapter(project_id=project_id)
         )
+        self.sync_session_timeout = sync_session_timeout
         self._sync_coordinators: dict[str, ProgressSyncCoordinator] = {}
 
     async def get_or_replay_agent(self, project_id: str) -> CoordinationAgent:
@@ -196,6 +198,7 @@ class GatewayService:
                 agent=agent,
                 adapter=agent.adapter,
                 extractor=self.extractor,
+                session_timeout=self.sync_session_timeout,
             )
         return self._sync_coordinators[project_id]
 
@@ -228,7 +231,7 @@ class GatewayService:
         persist.
         """
         coordinator = await self.get_sync_coordinator(project_id)
-        active_session = coordinator.get_active_session(project_id)
+        active_session = coordinator.get_active_session(project_id, now=occurred_at)
         if not active_session:
             return True, None, None, []
 

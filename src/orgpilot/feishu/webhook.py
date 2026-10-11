@@ -7,7 +7,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-from orgpilot.domain.enums import WorkflowStatus
+from orgpilot.domain.enums import ProbeMemberStatus, WorkflowStatus
 from orgpilot.events.models import (
     EventSource,
     MemberRegisteredEvent,
@@ -216,8 +216,12 @@ class FeishuWebhookHandler:
 
         # 1. Replies to an active sync probe always take priority over intent keywords
         coordinator = await self.service.get_sync_coordinator(self.project_id)
-        active_session = coordinator.get_active_session(self.project_id)
-        if active_session and actor_id in active_session.member_probes:
+        active_session = coordinator.get_active_session(self.project_id, now=occurred_at)
+        probe = active_session.member_probes.get(actor_id) if active_session else None
+        if probe is not None and probe.status in (
+            ProbeMemberStatus.PENDING,
+            ProbeMemberStatus.CLARIFYING,
+        ):
             converged, clarify_q, _session, _new = await self.service.handle_sync_member_reply(
                 project_id=self.project_id,
                 member_id=actor_id,
