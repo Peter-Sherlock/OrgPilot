@@ -6,8 +6,13 @@ from datetime import UTC, datetime, timedelta
 import httpx
 import pytest
 
+from orgpilot.adapter.mock import MockCollaborationAdapter
 from orgpilot.config import OrgPilotSettings
+from orgpilot.domain.enums import CoordinationCaseStatus, HealthStatus
+from orgpilot.events.models import EventSource, TaskUpdatedEvent, TaskUpdatedPayload
+from orgpilot.feishu.webhook import FeishuWebhookHandler
 from orgpilot.gateway.app import create_app
+from orgpilot.gateway.service import GatewayService
 from orgpilot.storage.database import Database
 
 # Anchored to the real clock so approval expiry (created_at + 2 days) never lapses
@@ -25,6 +30,49 @@ async def client() -> httpx.AsyncClient:
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
     await db.close()
+
+
+@pytest.fixture
+async def harness() -> tuple[httpx.AsyncClient, GatewayService]:
+    """Yields the webhook HTTP client together with its GatewayService for inspection."""
+    db = Database("sqlite+aiosqlite:///:memory:")
+    await db.init_db()
+    settings = OrgPilotSettings(collaboration_adapter="mock", feishu_use_ws=False)
+    app = create_app(db, settings=settings)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac, app.state.gateway_service
+    await db.close()
+
+
+def _message_payload(
+    open_id: str,
+    text: str,
+    message_id: str,
+    chat_type: str = "p2p",
+    chat_id: str | None = None,
+) -> dict:
+    """Builds an im.message.receive_v1 webhook body for a text message."""
+    message: dict = {
+        "message_id": message_id,
+        "message_type": "text",
+        "content": json.dumps({"text": text}),
+        "create_time": str(int(NOW.timestamp() * 1000)),
+        "chat_type": chat_type,
+    }
+    if chat_id:
+        message["chat_id"] = chat_id
+    return {
+        "header": {
+            "event_id": f"evt-{message_id}",
+            "event_type": "im.message.receive_v1",
+            "create_time": str(int(NOW.timestamp() * 1000)),
+        },
+        "event": {
+            "sender": {"sender_id": {"open_id": open_id}, "sender_type": "user"},
+            "message": message,
+        },
+    }
 
 
 def _make_setup_events(project_id: str) -> list[dict]:
@@ -237,3 +285,91 @@ async def test_feishu_card_missing_or_invalid_approval(client: httpx.AsyncClient
         },
     )
     assert resp_not_found.json()["code"] == 404
+
+async def test_sync_probe_reply_persists_health_event_and_replays_consistently(
+    harness: tuple[httpx.AsyncClient, GatewayService],
+) -> None:
+    """T1: a complete probe reply must not crash and must survive a database replay."""
+    client, service = harness
+    project_id = "feishu-project"
+    await client.post(
+        f"/api/v1/projects/{project_id}/events",
+        json={"events": _make_setup_events(project_id)},
+    )
+
+    # PM starts a progress sync; ou_alice owns the only active task and gets probed
+    start = await client.post(
+        "/api/v1/feishu/events",
+        json=_message_payload("ou_carol", "我要知道当前的项目进度", "om_sync_start"),
+        params={"project_id": project_id},
+    )
+    assert start.status_code == 200
+    assert start.json()["msg"] == "sync_session_started"
+
+    # The probed member answers with a complete risk report
+    reply = await client.post(
+        "/api/v1/feishu/events",
+        json=_message_payload("ou_alice", "支付SDK报错，排查需要到明天下午5点", "om_probe_reply"),
+        params={"project_id": project_id},
+    )
+    assert reply.status_code == 200, reply.text
+    assert reply.json()["code"] == 0
+
+    events = (await client.get(f"/api/v1/projects/{project_id}/events")).json()
+    health_events = [e for e in events if e["event_type"] == "task.health_reported"]
+    assert any(
+        e["actor_id"] == "ou_alice" and e["payload"]["task_id"] == "backend_api"
+        for e in health_events
+    )
+
+    # A fresh agent replayed from the database agrees on the task's health
+    agent = await service.get_or_replay_agent(project_id)
+    assert agent.projector.state.tasks["backend_api"].health_status == HealthStatus.DELAYED
+
+
+async def test_sync_reply_persists_turn_outputs_and_survives_replay() -> None:
+    """T6: events, cases, and approvals produced by the sync reply turn survive replay."""
+    db = Database("sqlite+aiosqlite:///:memory:")
+    await db.init_db()
+    project_id = "feishu-project"
+    shared_adapter = MockCollaborationAdapter(project_id=project_id)
+    service = GatewayService(db, adapter_factory=lambda project: shared_adapter)
+    handler = FeishuWebhookHandler(service=service, project_id=project_id)
+
+    await service.ingest_raw_events(project_id, _make_setup_events(project_id))
+
+    # Every approval request routed to the PM emits a scripted adapter-side event,
+    # simulating an outbound system acknowledgment of the reschedule proposal.
+    scripted_update = TaskUpdatedEvent(
+        project_id=project_id,
+        event_id="evt-sync-turn-generated",
+        event_type="task.updated",
+        source=EventSource.TASK,
+        source_ref="adapter:scripted",
+        actor_id="ou_carol",
+        occurred_at=NOW,
+        received_at=NOW,
+        payload=TaskUpdatedPayload(task_id="backend_api", deadline=NOW + timedelta(days=3)),
+    )
+    shared_adapter.script_reply("ou_carol", scripted_update)
+
+    start = await handler.handle_event(
+        _message_payload("ou_carol", "我要知道当前的项目进度", "om_t6_start")
+    )
+    assert start["msg"] == "sync_session_started"
+
+    reply = await handler.handle_event(
+        _message_payload("ou_alice", "支付SDK报错，排查需要到明天下午5点", "om_t6_reply")
+    )
+    assert reply["code"] == 0
+
+    stored_ids = {e.event_id for e in await service.event_store.get_events(project_id)}
+    assert "evt-sync-turn-generated" in stored_ids
+
+    agent = await service.get_or_replay_agent(project_id)
+    assert agent.projector.state.tasks["backend_api"].deadline == scripted_update.payload.deadline
+    cases = agent.case_ledger.get_all_cases()
+    assert len(cases) == 1
+    assert cases[0].status == CoordinationCaseStatus.WAITING_FOR_APPROVAL
+    assert len(agent.approval_manager.get_all_requests()) == 1
+    await db.close()

@@ -222,7 +222,7 @@ class FeishuWebhookHandler:
         coordinator = await self.service.get_sync_coordinator(self.project_id)
         active_session = coordinator.get_active_session(self.project_id)
         if active_session and actor_id in active_session.member_probes:
-            converged, clarify_q, _ = await self.service.handle_sync_member_reply(
+            converged, clarify_q, _session, _new = await self.service.handle_sync_member_reply(
                 project_id=self.project_id,
                 member_id=actor_id,
                 message=raw_text,

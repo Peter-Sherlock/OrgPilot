@@ -111,7 +111,7 @@ def test_sync_coordinator_full_lifecycle() -> None:
     assert len(adapter.audit_log) >= 2
 
     # 3. Bob replies with clear on-track progress
-    converged_bob, clarify_bob = coordinator.handle_member_reply(
+    converged_bob, clarify_bob, _events_bob = coordinator.handle_member_reply(
         session_id=session.session_id,
         member_id="ou_bob",
         message="收银台前端一切正常，按原计划推进",
@@ -122,7 +122,7 @@ def test_sync_coordinator_full_lifecycle() -> None:
     assert session.member_probes["ou_bob"].status == ProbeMemberStatus.COLLECTED
 
     # 4. Alice replies with vague blocker without time (triggers clarification)
-    converged_alice1, clarify_alice1 = coordinator.handle_member_reply(
+    converged_alice1, clarify_alice1, _events_alice1 = coordinator.handle_member_reply(
         session_id=session.session_id,
         member_id="ou_alice",
         message="支付 SDK 报错卡住了，还在排查",
@@ -135,7 +135,7 @@ def test_sync_coordinator_full_lifecycle() -> None:
     assert session.status == SyncSessionStatus.CLARIFYING
 
     # 5. Alice replies to clarification with specific resolution time
-    converged_alice2, clarify_alice2 = coordinator.handle_member_reply(
+    converged_alice2, clarify_alice2, _events_alice2 = coordinator.handle_member_reply(
         session_id=session.session_id,
         member_id="ou_alice",
         message="预计排查需要到明天下午 5 点",

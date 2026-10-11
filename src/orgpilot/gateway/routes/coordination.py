@@ -205,7 +205,7 @@ async def bootstrap_sandbox_endpoint(
         await service.event_store.append(e)
 
     agent = await service.get_or_replay_agent(project_id)
-    await service.state_store.save_state(project_id, agent.projector.state)
+    await service.state_store.save_state(agent.projector.state)
     return {"status": "initialized", "members_count": 4, "tasks_count": 3}
 
 
@@ -250,7 +250,7 @@ async def sandbox_chat_endpoint(
     coordinator = await service.get_sync_coordinator(project_id)
     active_session = coordinator.get_active_session(project_id)
     if active_session and actor_id in active_session.member_probes:
-        converged, clarify_q, session = await service.handle_sync_member_reply(
+        converged, clarify_q, session, _new_events = await service.handle_sync_member_reply(
             project_id=project_id,
             member_id=actor_id,
             message=message,
