@@ -225,3 +225,134 @@ async def test_gateway_error_cases(client: httpx.AsyncClient) -> None:
 async def test_app_lifespan() -> None:
     app = create_app()
     assert app.title == "OrgPilot Event Gateway"
+
+async def test_app_lifespan_runs_database_lifecycle() -> None:
+    """The app lifespan must initialize and dispose the configured database."""
+    db = Database("sqlite+aiosqlite:///:memory:")
+    settings = OrgPilotSettings(collaboration_adapter="mock", feishu_use_ws=False)
+    app = create_app(db, settings=settings)
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+            resp = await ac.get("/api/v1/projects/lifespan-proj/events")
+            assert resp.status_code == 200
+            assert resp.json() == []
+
+
+async def test_message_ingestion_rejects_unknown_actor(client: httpx.AsyncClient) -> None:
+    """A message from a non-member is rejected with 400 and persists nothing."""
+    await client.post(
+        "/api/v1/projects/proj-unknown-actor/events",
+        json={"events": _make_setup_events("proj-unknown-actor")},
+    )
+
+    resp = await client.post(
+        "/api/v1/projects/proj-unknown-actor/messages",
+        json={
+            "message": "支付SDK报错卡住了",
+            "actor_id": "ou_stranger",
+            "occurred_at": NOW.isoformat(),
+            "auto_run_turn": False,
+        },
+    )
+    assert resp.status_code == 400
+    assert "unknown event actor" in resp.json()["detail"]
+
+    events = (await client.get("/api/v1/projects/proj-unknown-actor/events")).json()
+    assert len(events) == 3
+
+
+async def test_approval_decision_error_paths(client: httpx.AsyncClient) -> None:
+    await client.post(
+        "/api/v1/projects/proj-appr-err/events",
+        json={"events": _make_setup_events("proj-appr-err")},
+    )
+    resp_msg = await client.post(
+        "/api/v1/projects/proj-appr-err/messages",
+        json={
+            "message": "支付 SDK 报错，排查需要到明天下午 5 点",
+            "actor_id": "alice",
+            "occurred_at": NOW.isoformat(),
+        },
+    )
+    assert resp_msg.status_code == 200
+    approval = (await client.get("/api/v1/projects/proj-appr-err/approvals")).json()[0]
+    decision_url = f"/api/v1/projects/proj-appr-err/approvals/{approval['approval_id']}/decision"
+
+    # A non-designated approver cannot decide
+    resp_forbidden = await client.post(
+        decision_url,
+        json={"decision": "approved", "approver_id": "mallory"},
+    )
+    assert resp_forbidden.status_code == 403
+
+    # The designated PM approves; a second decision on the consumed request fails
+    resp_ok = await client.post(
+        decision_url,
+        json={"decision": "approved", "approver_id": "carol"},
+    )
+    assert resp_ok.status_code == 200
+    resp_again = await client.post(
+        decision_url,
+        json={"decision": "approved", "approver_id": "carol"},
+    )
+    assert resp_again.status_code == 400
+
+
+async def test_coordination_sandbox_endpoints(client: httpx.AsyncClient) -> None:
+    project_id = "sandbox-proj"
+    resp = await client.post(f"/api/v1/projects/{project_id}/bootstrap-sandbox")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "initialized"
+
+    # REST-triggered sync with a custom intro probes every active task owner
+    resp_sync = await client.post(
+        f"/api/v1/projects/{project_id}/sync",
+        params={"initiated_by": "ou_pm", "custom_intro": "请汇报进度"},
+    )
+    assert resp_sync.status_code == 200
+    rest_session = resp_sync.json()
+    assert set(rest_session["member_probes"]) == {"ou_alice", "ou_bob", "ou_david"}
+
+    resp_found = await client.get(
+        f"/api/v1/projects/{project_id}/sync-sessions/{rest_session['session_id']}"
+    )
+    assert resp_found.status_code == 200
+    assert resp_found.json()["session_id"] == rest_session["session_id"]
+
+    resp_missing = await client.get(f"/api/v1/projects/{project_id}/sync-sessions/nope")
+    assert resp_missing.json() == {"error": "session not found", "session_id": "nope"}
+
+    async def chat(actor_id: str, message: str) -> dict:
+        resp_chat = await client.post(
+            f"/api/v1/projects/{project_id}/sandbox-chat",
+            params={"actor_id": actor_id, "message": message},
+        )
+        assert resp_chat.status_code == 200
+        return resp_chat.json()
+
+    # Sync intent from the PM through the chat surface
+    started = await chat("ou_pm", "我要知道当前的项目进度")
+    assert started["type"] == "sync_started"
+
+    # Vague reply -> autonomous clarification; a sync keyword inside a probed
+    # member's reply stays a reply instead of starting another session
+    clarified = await chat("ou_alice", "支付SDK报错卡住了")
+    assert clarified["type"] == "clarification_needed"
+
+    keyword_reply = await chat("ou_bob", "我这边当前进度正常")
+    assert keyword_reply["type"] == "member_collected"
+
+    collected = await chat("ou_alice", "预计排查需要到明天下午5点")
+    assert collected["type"] == "member_collected"
+
+    final = await chat("ou_david", "压测全部调通，按原计划推进")
+    assert final["type"] == "sync_completed"
+    assert final["briefing"]["total_active_tasks"] == 3
+
+    normal = await chat("ou_pm", "今天天气真好")
+    assert normal["type"] == "normal_turn"
+    assert normal["is_actionable"] is False
+
+    rejected = await chat("ou_stranger", "支付SDK报错卡住了")
+    assert rejected["type"] == "message_rejected"
