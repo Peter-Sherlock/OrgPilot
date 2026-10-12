@@ -133,6 +133,10 @@ def _eval_intent(split: str, mode: str, dataset_dir: Path, report_dir: Path) -> 
         f"sync false trigger rate: {metrics.sync_false_trigger_rate:.2%}"
     )
     print(
+        f"  - Unconfirmed mass sync sends: {metrics.unconfirmed_sync_count} "
+        f"/ {metrics.unconfirmed_sync_expected} samples requiring a card (target 0)"
+    )
+    print(
         f"  - Reply category accuracy: {metrics.reply_category_accuracy:.2%}, "
         f"multi-turn success: {metrics.multi_turn_success_rate:.2%}"
     )

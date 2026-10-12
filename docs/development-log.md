@@ -1,5 +1,36 @@
 # 开发记录
 
+## 2026-10-12：评测集小修订（R11）并冻结 test 集（分支 `feat/intent-eval-baseline`）
+
+### 已实现
+
+- **规则 R11**（`LABELING.md`）：`expected_completion` 只填"任务完成或阻塞解除"的时间；开始时间、演示时间、定位原因的时间、下次同步的时间不填，任务已完成的样本也不填；
+- **样本修订**（登记于 `REVISION-2026-10.md` 第五节）：
+  - 消息改写使时间成为完成时间、保留解析难点：dev_time_chinese_001（"三点能定位"→"三点能修好"）、dev_time_chinese_002（"5点半演示"→"5点半能全部搞定"）、dev_time_chinese_003（"下周三才能开始"→"下周三才能跑完"）、test_answer_pending_001（"明天上午十点开始全链路跑"→"明天上午十点能恢复"，健康度 on_track→at_risk）、test_time_chinese_001（改为明确的"拖到月底才能做完"，保留"月底"）、test_time_chinese_002（"晚上八点开跑"→"晚上八点能全部跑完"）；
+  - **dev_time_chinese_004 补上 delayed**（月底 10-31 晚于截止日 10-22，R1）。更正：上一轮修订清单误记此样本已改为 delayed，实际未落地，本轮修正；
+- **回复类别拆分**：`sync_confirm`（只发确认卡片）与 `sync_started`（已发起同步：命令直达或卡片确认后）分离；7 条已发起样本（sync_command PM×3、confirmation_flow 确认×4）改为 sync_started，request_sync 8 条维持 sync_confirm；评测器观测逻辑同步（observed：发起了→sync_started，仅发卡片→sync_confirm），LABELING.md 的 R5/R8 表已更新；
+- **CLI**：`eval-intent` 汇总输出新增"Unconfirmed mass sync sends: x / y samples requiring a card (target 0)"；
+- **test 集冻结**：BASELINE.md 记录 `test.yaml` 的 sha256（82f55b9e…）并注明"之后修改 test 集需要先经过审批"；新增 `test_frozen_test_split_unchanged_without_approval`，哈希不一致即失败并在失败信息中提示需审批、同步更新 BASELINE.md。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS
+pytest: 204 passed（新增冻结哈希测试 1 条；评测器/评测集用例按 sync_started 口径更新）
+coverage: 91.15% branch-aware total coverage (fail_under=90%)
+ruff: All checks passed
+git diff --check: PASS
+eval-intent dev/test --mode mock: 正常运行，CLI 输出含未经确认群发次数
+```
+
+### 基线 (b) 更新（口径：R1–R11 + sync_started 拆分 + 时间修复）
+
+- dev：claim P 41.18% / R 17.50%；时间 75.00%；错误 claim 率 6.25%；同步误触发 0%；未经确认群发 1/5；回复类别 29.00% → **28.00%**（唯一变化：dev_request_sync_003 的回复在新口径下类别不符）；失败 85；
+- test：claim P 20.00% → **33.33%** / R 5.00% → **10.00%**；task 40.00% → **50.00%**；健康度 50.00% → **66.67%**；时间 0.00%；未经确认群发 0/3；回复类别 17.24% → **18.97%**；失败 51。test 的提升来自 R11 改写让消息含义更明确（mock 抽取多命中 1 条正确 claim），并非运行时变化；
+- 完整数字见 `evals/intent/BASELINE.md`（含冻结哈希）。
+
+---
+
 ## 2026-10-11：评测集修订（R1–R10 标注口径）与两个时间 bug（分支 `feat/intent-eval-baseline`）
 
 ### 已实现

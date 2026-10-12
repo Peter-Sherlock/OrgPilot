@@ -72,6 +72,7 @@ class ReplyCategory(StrEnum):
     CLAIM_RECORDED = "claim_recorded"
     QUERY_ANSWER = "query_answer"
     SYNC_CONFIRM = "sync_confirm"
+    SYNC_STARTED = "sync_started"
     NO_PERMISSION = "no_permission"
     UNSUPPORTED = "unsupported"
     NOTED = "noted"
@@ -427,7 +428,9 @@ class BaselineSystemUnderTest:
         sends_confirmation_card = confirmation_card
         asks_clarification = msg == "clarification_sent"
 
-        if msg == "sync_session_started":
+        if starts_sync:
+            reply_category = ReplyCategory.SYNC_STARTED
+        elif sends_confirmation_card:
             reply_category = ReplyCategory.SYNC_CONFIRM
         elif claims or commitments:
             reply_category = ReplyCategory.CLAIM_RECORDED

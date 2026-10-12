@@ -168,8 +168,9 @@ MINI_SAMPLES = [
             },
         },
     },
-    # PM confirms a pending sync card (R8): should start the sync. The baseline
-    # constructs no confirmation state, so the confirmation is lost — expected failure.
+    # PM confirms a pending sync card (R8): should start the sync, so the reply
+    # category is sync_started. The baseline constructs no confirmation state, so
+    # the confirmation is lost — expected failure.
     {
         "id": "mini_confirm_001",
         "category": "confirmation_flow",
@@ -182,7 +183,7 @@ MINI_SAMPLES = [
         "expected": {
             "behavior": {
                 "starts_sync": True,
-                "reply_category": "sync_confirm",
+                "reply_category": "sync_started",
             },
             "intents": {
                 "items": [
@@ -248,7 +249,10 @@ async def test_baseline_and_metrics_on_mini_dataset(mini_dataset_dir: Path, tmp_
     # mini_sync_001 requires a confirmation card first; the baseline starts directly
     assert metrics.unconfirmed_sync_expected == 1
     assert metrics.unconfirmed_sync_count == 1
-    assert metrics.reply_category_accuracy == pytest.approx(3 / 6)
+    # reply matches: mini_report_001 and mini_answer_001 only. The baseline starts
+    # the sync directly, so even the reply for card-only mini_sync_001 (sync_confirm)
+    # diverges (observed sync_started).
+    assert metrics.reply_category_accuracy == pytest.approx(2 / 6)
     assert metrics.multi_turn_samples == 1
     assert metrics.multi_turn_success_rate == pytest.approx(1.0)
     assert metrics.intent_metrics is None
@@ -263,7 +267,7 @@ async def test_baseline_and_metrics_on_mini_dataset(mini_dataset_dir: Path, tmp_
 
     by_category = {stats.category: stats for stats in metrics.per_category}
     assert by_category["substring_trap"].false_claims == 1
-    assert by_category["request_sync"].reply_correct == 1
+    assert by_category["request_sync"].reply_correct == 0
     assert by_category["sync_non_pm"].reply_correct == 0
     assert by_category["answer_pending"].claim_recall == 1.0
     assert by_category["confirmation_flow"].samples == 1

@@ -1,5 +1,6 @@
 """Integrity tests for the committed intent evaluation datasets (ADR-0008 §8)."""
 
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,9 @@ from orgpilot.intent.evaluator import (
 )
 
 EVAL_DIR = Path(__file__).resolve().parents[1] / "evals" / "intent"
+
+# The test split is frozen (BASELINE.md): any change requires prior approval.
+FROZEN_TEST_SHA256 = "82f55b9ef5f64ccfb861dd7a9ef02f9d1a4d84c5ec5bf5a1e2641998bea6320f"
 
 
 @pytest.fixture(scope="module")
@@ -59,6 +63,14 @@ def test_samples_reference_fixture_entities(project) -> None:
         assert validate_samples_against_project(samples, project) == []
 
 
+def test_frozen_test_split_unchanged_without_approval() -> None:
+    actual = hashlib.sha256((EVAL_DIR / "test.yaml").read_bytes()).hexdigest()
+    assert actual == FROZEN_TEST_SHA256, (
+        "evals/intent/test.yaml 与冻结版本不一致：test 集已冻结，"
+        "修改前需要先经过审批，并同步更新 BASELINE.md 中的 sha256 记录"
+    )
+
+
 def test_min_category_counts_reported() -> None:
     dev = load_intent_samples(EVAL_DIR / "dev.yaml")
     counts: dict[str, int] = {}
@@ -89,7 +101,7 @@ def test_sync_command_samples_cover_roles_and_outcomes(project) -> None:
     for sample in pm_sync:
         behavior = sample.expected.behavior
         assert behavior.starts_sync and not behavior.sends_confirmation_card
-        assert behavior.reply_category.value == "sync_confirm"
+        assert behavior.reply_category.value == "sync_started"
     for sample in non_pm_sync:
         behavior = sample.expected.behavior
         assert not behavior.starts_sync and not behavior.sends_confirmation_card
@@ -118,7 +130,7 @@ def test_confirmation_flow_samples_cover_confirm_reject_and_non_pm(project) -> N
     assert len(rejected) >= 2
     assert len(non_pm) >= 1
     for sample in confirmed:
-        assert sample.expected.behavior.reply_category.value == "sync_confirm"
+        assert sample.expected.behavior.reply_category.value == "sync_started"
     for sample in rejected:
         assert sample.expected.behavior.reply_category.value == "noted"
     for sample in non_pm:
