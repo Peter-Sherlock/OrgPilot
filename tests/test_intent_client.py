@@ -126,7 +126,26 @@ async def test_heuristic_falls_back_to_answer_pending_with_open_question() -> No
     assert item.task_id == "backend_api"
     assert item.expected_completion == datetime(2026, 10, 14, 17, 0, tzinfo=BJ)
 
-    # multiple target tasks: prefer the one the message actually names
+    # multiple target tasks: prefer the one the message actually names —
+    # including a PARTIAL title mention ("支付SDK..." for 支付SDK接入)
+    pay_task = {
+        "task_id": "pay_sdk",
+        "title": "支付SDK接入",
+        "owner_id": "ou_alice",
+        "deadline": None,
+        "health_status": "unknown",
+    }
+    partial = _context(
+        "支付SDK明天下午5点能修好",
+        known_tasks=[pay_task, ledger],
+        pending_question={
+            "question": "两项任务进展如何？",
+            "task_ids": ["pay_sdk", "ledger_check"],
+        },
+    )
+    result = await client.classify(partial.message, partial)
+    assert result.items[0].task_id == "pay_sdk"
+
     multi = _context(
         "对账模块说不准",
         known_tasks=[backend, ledger],

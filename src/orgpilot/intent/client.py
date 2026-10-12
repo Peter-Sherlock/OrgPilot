@@ -253,7 +253,9 @@ class HeuristicIntentClient:
     @staticmethod
     def _select_pending_task(message: str, context: IntentContext) -> str | None:
         """Defaults to the pending question's target task; with several targets,
-        prefers the one the message actually names (3a.2)."""
+        prefers the one the message actually names (3a.2). Mention detection is
+        cheap bigram overlap, so "支付SDK..." matches a task titled 支付SDK接入
+        without extending any real parsing."""
         targets = (
             list(context.pending_question.task_ids) if context.pending_question else []
         )
@@ -262,12 +264,28 @@ class HeuristicIntentClient:
         if len(targets) == 1:
             return targets[0]
         compact = message.replace(" ", "").lower()
-        for task in context.known_tasks:
-            if task.task_id in targets:
-                title = task.title.replace(" ", "").lower()
-                if title and title in compact:
-                    return task.task_id
-        # Nothing named: a task-less answer item applies to every target task.
+        if not compact:
+            return None
+        message_bigrams = {compact[i : i + 2] for i in range(len(compact) - 1)}
+
+        def _mention_score(task: TaskSnapshot) -> int:
+            title = task.title.replace(" ", "").lower()
+            if task.task_id in compact or (title and title in compact):
+                return len(title)  # exact mention always wins
+            title_bigrams = {title[i : i + 2] for i in range(len(title) - 1)}
+            return len(title_bigrams & message_bigrams)
+
+        scored = sorted(
+            (
+                (_mention_score(task), task.task_id)
+                for task in context.known_tasks
+                if task.task_id in targets
+            ),
+            reverse=True,
+        )
+        if scored and scored[0][0] >= 2 and (len(scored) == 1 or scored[0][0] > scored[1][0]):
+            return scored[0][1]
+        # Nothing named clearly: a task-less answer item applies to every target.
         return None
 
     @classmethod
