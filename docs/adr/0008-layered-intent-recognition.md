@@ -88,12 +88,14 @@
 
 - 以飞书 `message_id` 为键，在调用 LLM **之前**去重；已处理的消息直接返回上次结果。避免模型输出不确定导致“同一 event_id、不同内容”的冲突。
 
-### 7. LLM 调用工程要求
+### 7. LLM 调用工程要求（2026-10 修订：主候选 DeepSeek V4.1 Flash）
 
-- 模型：评测与上线继续使用 AIHubMix 上的 `gpt-5.6-luna`，经 `LLMClient` 抽象接入，可通过配置切换；
-- 结构化输出策略由兼容性测试结果决定：端点可靠支持工具调用或 JSON schema 时优先使用；否则保留“schema 写入 prompt + 解析 + 校验失败重试一次”；
-- LLM 调用不得阻塞事件循环（异步客户端或 `asyncio.to_thread`），设置超时；
-- 经中转站调用意味着团队消息会经过第三方，正式进入企业使用前需完成合规评估。
+- 模型：**主候选 DeepSeek V4.1 Flash**（`deepseek-flash`），走 DeepSeek 官方 API 的 Anthropic 兼容端点 `https://api.deepseek.com/anthropic`（鉴权头 `x-api-key`）；AIHubMix 上的 `gpt-5.6-luna` 降为**可选对照**。两者共用 `AnthropicCompatibleLLMClient`，经 `LLMClient` 抽象接入，可配置切换；
+- 思考模式：DeepSeek 思考默认开启（effort=high），Anthropic 格式用 `"thinking": {"type": "enabled" | "disabled"}` 切换；运行时由 `ORGPILOT_LLM_THINKING` 控制（omit 不发送 / disabled / enabled；aihubmix 默认 omit 保持原行为，deepseek 默认 disabled）。响应中的 thinking 块只读 text 块，不入解析；
+- 结构化输出策略由兼容性测试结果决定：DeepSeek `output_config` 只支持 effort，**没有原生 JSON schema 结构化输出**——若端点可靠支持工具调用（含强制 `tool_choice`，schema 因 `$defs/$ref` 被拒时退化为展开后的 schema）则优先工具调用；否则保留"schema 写入 prompt + 解析 + 校验失败重试一次"；
+- 选型依据：`scripts/llm_compat_check.py` 兼容性测试 + **dev 集结果**；test 集只在选定模型与提示词之后运行**一次**；
+- 数据流向：使用 DeepSeek 官方 API 时，团队消息只经过 DeepSeek 一方（AIHubMix 中转则另有一方）；无论哪条链路，正式进入企业使用前仍需完成合规评估；
+- LLM 调用不得阻塞事件循环（异步客户端或 `asyncio.to_thread`），设置超时。
 
 ### 8. 评测先行
 

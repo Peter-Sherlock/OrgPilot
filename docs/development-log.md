@@ -1,5 +1,40 @@
 # 开发记录
 
+## 2026-10-12：第 3b-0 步——接入 DeepSeek V4.1 Flash，修正兼容性脚本（分支 `feat/intent-router`）
+
+本步**不接入意图层、不发起任何真实调用**：只补齐 provider 配置面与探针脚本，为 3b（真实 LLM 意图客户端）铺路。
+
+### 已实现（按部分提交）
+
+- **commit A（8d39935）deepseek provider + thinking 开关**：
+  - `ORGPILOT_LLM_PROVIDER` 扩展为 mock / aihubmix / **deepseek**；新增 `DEEPSEEK_API_KEY`（repr=False）、`DEEPSEEK_BASE_URL`（默认 `https://api.deepseek.com/anthropic`）、`DEEPSEEK_MODEL`（默认 `deepseek-flash`，即 DeepSeek-V4.1-Flash）；deepseek 缺 key 时 validate 报错；
+  - 新增 `ORGPILOT_LLM_THINKING`（omit 不发送字段 / disabled / enabled），**provider 决定默认值**：aihubmix → omit（字段不发，原有行为不变），deepseek → disabled（服务端默认开启思考）；from_env 支持 env 显式覆盖；
+  - 两个在线 provider 复用 `AnthropicCompatibleLLMClient`：构造参数新增 `thinking`，非 omit 时在请求体注入 `"thinking": {"type": ...}`；响应中只取 text 块、忽略 thinking 块（原有行为保持）；gateway/app 按 provider 构造；
+  - .env.example 与 README 增补 deepseek 配置段与 thinking 说明。
+- **commit B（fd4a2e0）兼容性脚本扩展**（`scripts/llm_compat_check.py`）：
+  - 运行门槛按 provider 校验：provider ∈ {aihubmix, deepseek}、对应 key（`AIHUBMIX_API_KEY` / `DEEPSEEK_API_KEY`）已设置、`--confirm-spend`；base URL / 模型默认值按 provider 取（env 可覆盖，CLI `--model/--base-url` 最高优先）；
+  - 新增 `--thinking omit|disabled|enabled`（默认随 provider）：enabled 时全部探针 max_tokens 提到 4096；
+  - 每次调用记录 `stop_reason` 与响应 `model`（逐调用清单入 JSON）；汇总新增 `max_tokens_truncations`（stop_reason=max_tokens 次数）与 `model_mismatches`（响应模型 ≠ 请求模型次数——DeepSeek 会把未知模型名静默映射到 deepseek-flash，不报错，所以这个计数很关键）；
+  - 新增探针 (e) 强制工具调用：工具 `record_intent`，input_schema = `IntentResult.model_json_schema()`，`tool_choice={"type":"tool","name":"record_intent"}`，调用 N 次，统计 tool_use 出现率与 Pydantic 校验通过率；端点因 `$defs/$ref` 拒收（HTTP 400 且响应含 $defs/$ref）时记录错误、改用展开后的 schema（`expand_schema_refs` 全量解析引用）重试整轮，汇总注明 `schema_expanded`；
+  - 单个探针 HTTP 错误：记录状态码 + 响应体前 300 字符（API key 强制替换为 `***`），其余探针继续执行，不整体崩溃；
+  - 结果写入 `reports/compat/<provider>-<model>-<thinking>-<时间戳>.json`（已加入 .gitignore），同时打印；
+  - 测试全部用 httpx MockTransport（12 个用例）：provider 门槛、thinking 注入/省略与 max_tokens、强制工具探针解析、$defs 拒收回退（断言重试请求的 schema 不再含 $defs/$ref）、HTTP 错误隔离与 key 脱敏、模型不一致与截断计数、报告落盘、思考参数透传。
+
+### 文档
+
+- ADR-0008 §7 改写：主候选 DeepSeek V4.1 Flash（官方 API、Anthropic 兼容端点），AIHubMix gpt-5.6-luna 为可选对照；结构化输出策略取决于兼容性测试（无原生 schema 输出，优先强制工具调用，$defs/$ref 被拒则展开）；选型依据 = 兼容性测试 + dev 集结果，test 集只在选定模型与提示词后运行一次；数据流向：官方 API 只经过 DeepSeek 一方，进入企业使用前仍需合规评估。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS
+pytest: 全部通过（含 compat 脚本 12 个 MockTransport 用例），覆盖率 ≥ 90%
+ruff / git diff --check: PASS
+真实调用：0 次（全测试走 MockTransport）
+```
+
+---
+
 ## 2026-10-12：第 3a.2 步——追问次数封顶，mock 模式下探针能收敛（分支 `feat/intent-router`）
 
 ### 已实现（按部分提交）
