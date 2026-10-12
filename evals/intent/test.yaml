@@ -1,5 +1,6 @@
 # 意图评测集 test 划分（ADR-0008 第 8 节）。
 # test 集不用于调优提示词；样本编写规范与 dev.yaml 相同。
+# 标注唯一口径：evals/intent/LABELING.md（R1–R10）；时间约定同 dev.yaml 文件头。
 schema_version: 1
 dataset_id: intent_eval_test
 split: test
