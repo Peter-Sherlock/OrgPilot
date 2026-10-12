@@ -6,6 +6,8 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 DEFAULT_TIMEZONE = "Asia/Shanghai"
+DEFAULT_INTENT_TIMEOUT_SECONDS = 20.0
+DEFAULT_INTENT_CONFIDENCE_THRESHOLD = 0.6
 
 
 def _load_dotenv_if_exists(dotenv_path: str = ".env") -> None:
@@ -49,6 +51,8 @@ class OrgPilotSettings:
     feishu_verification_token: str | None = field(default=None, repr=False)
     feishu_project_id: str = "feishu-project"
     timezone: str = DEFAULT_TIMEZONE
+    intent_timeout_seconds: float = DEFAULT_INTENT_TIMEOUT_SECONDS
+    intent_confidence_threshold: float = DEFAULT_INTENT_CONFIDENCE_THRESHOLD
 
     @property
     def business_timezone(self) -> ZoneInfo:
@@ -78,6 +82,18 @@ class OrgPilotSettings:
             feishu_verification_token=_optional_env("FEISHU_VERIFICATION_TOKEN"),
             feishu_project_id=os.getenv("ORGPILOT_FEISHU_PROJECT_ID", "feishu-project"),
             timezone=os.getenv("ORGPILOT_TIMEZONE", DEFAULT_TIMEZONE).strip(),
+            intent_timeout_seconds=float(
+                os.getenv(
+                    "ORGPILOT_INTENT_TIMEOUT_SECONDS",
+                    str(DEFAULT_INTENT_TIMEOUT_SECONDS),
+                )
+            ),
+            intent_confidence_threshold=float(
+                os.getenv(
+                    "ORGPILOT_INTENT_CONFIDENCE_THRESHOLD",
+                    str(DEFAULT_INTENT_CONFIDENCE_THRESHOLD),
+                )
+            ),
         )
         settings.validate()
         return settings
@@ -89,6 +105,10 @@ class OrgPilotSettings:
             raise ValueError(
                 f"ORGPILOT_TIMEZONE is not a valid IANA timezone: {self.timezone!r}"
             ) from exc
+        if self.intent_timeout_seconds <= 0:
+            raise ValueError("ORGPILOT_INTENT_TIMEOUT_SECONDS must be positive")
+        if not 0.0 <= self.intent_confidence_threshold <= 1.0:
+            raise ValueError("ORGPILOT_INTENT_CONFIDENCE_THRESHOLD must be within [0, 1]")
         if self.llm_provider not in {"mock", "aihubmix"}:
             raise ValueError("ORGPILOT_LLM_PROVIDER must be 'mock' or 'aihubmix'")
         if self.llm_provider == "aihubmix" and not self.aihubmix_api_key:
