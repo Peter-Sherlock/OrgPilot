@@ -17,7 +17,7 @@ samples:
       behavior:
         claims:
           - task_id: pay_sdk
-            health_status: delayed
+            health_status: at_risk
             expected_completion: "2026-10-14T17:00:00+08:00"
         reply_category: claim_recorded
       intents:
@@ -27,7 +27,7 @@ samples:
             speech_act: statement
             polarity: affirmative
             certainty: hedged
-            health_status: delayed
+            health_status: at_risk
             time_expression: "明天下午5点"
             blocker: "第三方接口卡住"
             source_quote: "支付SDK这边被第三方接口卡住了"
@@ -457,6 +457,23 @@ samples:
             certainty: certain
             source_quote: "支付SDK那边好了没"
 
+  - id: dev_p1_p2_003
+    category: query_status
+    message: "后端的接口什么时候给我？我这边页面都干等两天了"
+    sender: ou_fang_liu
+    occurred_at: "2026-10-13T13:15:00+08:00"
+    expected:
+      behavior:
+        reply_category: query_answer
+      intents:
+        items:
+          - intent: query_status
+            task_id: checkout_page
+            speech_act: question
+            polarity: affirmative
+            certainty: certain
+            source_quote: "后端的接口什么时候给我"
+
   # ---------- P0 request_sync 正例（同步触发） ----------
   - id: dev_request_sync_001
     category: request_sync
@@ -465,7 +482,7 @@ samples:
     occurred_at: "2026-10-13T09:40:00+08:00"
     expected:
       behavior:
-        starts_sync: true
+        starts_sync: false
         sends_confirmation_card: true
         reply_category: sync_confirm
       intents:
@@ -483,7 +500,7 @@ samples:
     occurred_at: "2026-10-13T10:15:00+08:00"
     expected:
       behavior:
-        starts_sync: true
+        starts_sync: false
         sends_confirmation_card: true
         reply_category: sync_confirm
       intents:
@@ -501,7 +518,7 @@ samples:
     occurred_at: "2026-10-13T11:40:00+08:00"
     expected:
       behavior:
-        starts_sync: true
+        starts_sync: false
         sends_confirmation_card: true
         reply_category: sync_confirm
       intents:
@@ -519,7 +536,7 @@ samples:
     occurred_at: "2026-10-13T13:00:00+08:00"
     expected:
       behavior:
-        starts_sync: true
+        starts_sync: false
         sends_confirmation_card: true
         reply_category: sync_confirm
       intents:
@@ -537,7 +554,7 @@ samples:
     occurred_at: "2026-10-13T16:20:00+08:00"
     expected:
       behavior:
-        starts_sync: true
+        starts_sync: false
         sends_confirmation_card: true
         reply_category: sync_confirm
       intents:
@@ -880,7 +897,10 @@ samples:
     occurred_at: "2026-10-13T10:35:00+08:00"
     expected:
       behavior:
-        reply_category: smalltalk
+        claims:
+          - task_id: pay_sdk
+            health_status: on_track
+        reply_category: claim_recorded
       intents:
         items:
           - intent: report_status
@@ -888,6 +908,7 @@ samples:
             speech_act: statement
             polarity: negative
             certainty: certain
+            health_status: on_track
             source_quote: "支付SDK没有卡住"
 
   - id: dev_negation_002
@@ -897,7 +918,10 @@ samples:
     occurred_at: "2026-10-13T11:05:00+08:00"
     expected:
       behavior:
-        reply_category: smalltalk
+        claims:
+          - task_id: pay_e2e_test
+            health_status: on_track
+        reply_category: claim_recorded
       intents:
         items:
           - intent: report_status
@@ -905,6 +929,7 @@ samples:
             speech_act: statement
             polarity: negative
             certainty: certain
+            health_status: on_track
             source_quote: "压测不会延期的"
 
   - id: dev_negation_003
@@ -914,7 +939,10 @@ samples:
     occurred_at: "2026-10-13T13:25:00+08:00"
     expected:
       behavior:
-        reply_category: smalltalk
+        claims:
+          - task_id: ledger_check
+            health_status: on_track
+        reply_category: claim_recorded
       intents:
         items:
           - intent: report_status
@@ -922,6 +950,7 @@ samples:
             speech_act: statement
             polarity: negative
             certainty: certain
+            health_status: on_track
             source_quote: "对账模块没有新问题"
 
   - id: dev_negation_004
@@ -931,7 +960,10 @@ samples:
     occurred_at: "2026-10-13T14:30:00+08:00"
     expected:
       behavior:
-        reply_category: smalltalk
+        claims:
+          - task_id: checkout_page
+            health_status: on_track
+        reply_category: claim_recorded
       intents:
         items:
           - intent: report_status
@@ -939,6 +971,7 @@ samples:
             speech_act: statement
             polarity: negative
             certainty: certain
+            health_status: on_track
             source_quote: "收银台不存在兼容性问题"
 
   - id: dev_negation_005
@@ -948,7 +981,10 @@ samples:
     occurred_at: "2026-10-13T15:50:00+08:00"
     expected:
       behavior:
-        reply_category: smalltalk
+        claims:
+          - task_id: merchant_admin
+            health_status: on_track
+        reply_category: claim_recorded
       intents:
         items:
           - intent: report_status
@@ -956,6 +992,7 @@ samples:
             speech_act: statement
             polarity: negative
             certainty: certain
+            health_status: on_track
             source_quote: "商户后台没有停工"
 
   # ---------- 假设 ----------
@@ -966,7 +1003,7 @@ samples:
     occurred_at: "2026-10-13T10:50:00+08:00"
     expected:
       behavior:
-        reply_category: smalltalk
+        reply_category: noted
       intents:
         items:
           - intent: report_status
@@ -984,7 +1021,7 @@ samples:
     occurred_at: "2026-10-13T11:25:00+08:00"
     expected:
       behavior:
-        reply_category: smalltalk
+        reply_category: noted
       intents:
         items:
           - intent: report_status
@@ -1001,7 +1038,7 @@ samples:
     occurred_at: "2026-10-13T14:20:00+08:00"
     expected:
       behavior:
-        reply_category: smalltalk
+        reply_category: noted
       intents:
         items:
           - intent: report_status
@@ -1018,15 +1055,22 @@ samples:
     occurred_at: "2026-10-13T16:10:00+08:00"
     expected:
       behavior:
-        reply_category: smalltalk
+        claims:
+          - task_id: pay_sdk
+            health_status: at_risk
+            expected_completion: "2026-10-14T18:00:00+08:00"
+        reply_category: claim_recorded
       intents:
         items:
           - intent: report_status
             task_id: pay_sdk
-            speech_act: hypothetical
+            speech_act: statement
             polarity: affirmative
             certainty: hedged
-            source_quote: "如果有隐藏问题就说不准了"
+            health_status: at_risk
+            time_expression: "明天"
+            expected_completion: "2026-10-14T18:00:00+08:00"
+            source_quote: "理论上明天能修好"
 
   # ---------- 含糊语气 ----------
   - id: dev_vague_001
@@ -1612,23 +1656,6 @@ samples:
             time_expression: "下周四"
             source_quote: "我之前说的压测时间不对"
 
-  - id: dev_p1_p2_003
-    category: p1_p2
-    message: "后端的接口什么时候给我？我这边页面都干等两天了"
-    sender: ou_fang_liu
-    occurred_at: "2026-10-13T13:15:00+08:00"
-    expected:
-      behavior:
-        reply_category: unsupported
-      intents:
-        items:
-          - intent: dependency_wait
-            task_id: checkout_page
-            speech_act: question
-            polarity: affirmative
-            certainty: certain
-            source_quote: "后端的接口什么时候给我"
-
   - id: dev_p1_p2_004
     category: p1_p2
     message: "收银台这边一直等着支付SDK的联调环境，谁来催一下啊"
@@ -1710,7 +1737,7 @@ samples:
     occurred_at: "2026-10-13T13:35:00+08:00"
     expected:
       behavior:
-        reply_category: smalltalk
+        reply_category: noted
       intents:
         items:
           - intent: request_sync
@@ -1726,7 +1753,7 @@ samples:
     occurred_at: "2026-10-13T15:05:00+08:00"
     expected:
       behavior:
-        reply_category: smalltalk
+        reply_category: noted
       intents:
         items:
           - intent: request_sync
@@ -1742,7 +1769,7 @@ samples:
     occurred_at: "2026-10-13T16:55:00+08:00"
     expected:
       behavior:
-        reply_category: smalltalk
+        reply_category: noted
       intents:
         items:
           - intent: request_sync
@@ -1797,11 +1824,11 @@ samples:
     expected:
       behavior:
         asks_clarification: true
-        reply_category: query_answer
+        reply_category: unsupported
       intents:
         answers_pending: true
         items:
-          - intent: query_status
+          - intent: out_of_scope
             speech_act: question
             polarity: affirmative
             certainty: certain
@@ -1850,3 +1877,158 @@ samples:
             polarity: affirmative
             certainty: certain
             source_quote: "中午一起吃什么"
+
+  # ---------- P1 / P2 补充（dev_p1_p2_003 按 R3 移入 query_status 后保持覆盖度） ----------
+  - id: dev_p1_p2_007
+    category: p1_p2
+    message: "把压测第一轮的时间挪到周五上午吧，那天大家都在"
+    sender: ou_lei_chen
+    occurred_at: "2026-10-13T17:30:00+08:00"
+    expected:
+      behavior:
+        reply_category: unsupported
+      intents:
+        items:
+          - intent: propose_plan_change
+            task_id: pay_e2e_test
+            speech_act: imperative
+            polarity: affirmative
+            certainty: certain
+            time_expression: "周五上午"
+            source_quote: "把压测第一轮的时间挪到周五上午"
+
+  # ---------- 显式命令：/同步 与 /帮助（R8） ----------
+  - id: dev_sync_command_001
+    category: sync_command
+    message: "/同步"
+    sender: ou_pm_zhao
+    occurred_at: "2026-10-13T09:20:00+08:00"
+    expected:
+      behavior:
+        starts_sync: true
+        reply_category: sync_confirm
+      intents:
+        items:
+          - intent: request_sync
+            speech_act: imperative
+            polarity: affirmative
+            certainty: certain
+            source_quote: "/同步"
+
+  - id: dev_sync_command_002
+    category: sync_command
+    message: "/同步 全员进度"
+    sender: ou_pm_zhao
+    occurred_at: "2026-10-13T12:20:00+08:00"
+    expected:
+      behavior:
+        starts_sync: true
+        reply_category: sync_confirm
+      intents:
+        items:
+          - intent: request_sync
+            speech_act: imperative
+            polarity: affirmative
+            certainty: certain
+            source_quote: "/同步 全员进度"
+
+  - id: dev_sync_command_003
+    category: sync_command
+    message: "/帮助"
+    sender: ou_pm_zhao
+    occurred_at: "2026-10-13T13:50:00+08:00"
+    expected:
+      behavior:
+        reply_category: help
+      intents:
+        items:
+          - intent: help
+            speech_act: imperative
+            polarity: affirmative
+            certainty: certain
+            source_quote: "/帮助"
+
+  # ---------- 确认卡片流：确认 / 拒绝 / 非 PM 误回复（R8） ----------
+  - id: dev_confirmation_flow_001
+    category: confirmation_flow
+    message: "好的，发吧"
+    sender: ou_pm_zhao
+    occurred_at: "2026-10-13T10:05:00+08:00"
+    context:
+      pending_confirmation:
+        kind: sync
+        initiated_by: ou_pm_zhao
+    expected:
+      behavior:
+        starts_sync: true
+        reply_category: sync_confirm
+      intents:
+        items:
+          - intent: acknowledge
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            source_quote: "好的，发吧"
+
+  - id: dev_confirmation_flow_002
+    category: confirmation_flow
+    message: "可以，就按这个发"
+    sender: ou_pm_zhao
+    occurred_at: "2026-10-13T14:05:00+08:00"
+    context:
+      pending_confirmation:
+        kind: sync
+        initiated_by: ou_pm_zhao
+    expected:
+      behavior:
+        starts_sync: true
+        reply_category: sync_confirm
+      intents:
+        items:
+          - intent: acknowledge
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            source_quote: "可以，就按这个发"
+
+  - id: dev_confirmation_flow_003
+    category: confirmation_flow
+    message: "算了，先不发"
+    sender: ou_pm_zhao
+    occurred_at: "2026-10-13T15:30:00+08:00"
+    context:
+      pending_confirmation:
+        kind: sync
+        initiated_by: ou_pm_zhao
+    expected:
+      behavior:
+        starts_sync: false
+        reply_category: noted
+      intents:
+        items:
+          - intent: acknowledge
+            speech_act: statement
+            polarity: negative
+            certainty: certain
+            source_quote: "算了，先不发"
+
+  - id: dev_confirmation_flow_004
+    category: confirmation_flow
+    message: "好的"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T16:40:00+08:00"
+    context:
+      pending_confirmation:
+        kind: sync
+        initiated_by: ou_pm_zhao
+    expected:
+      behavior:
+        starts_sync: false
+        reply_category: smalltalk
+      intents:
+        items:
+          - intent: acknowledge
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            source_quote: "好的"
