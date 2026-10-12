@@ -73,6 +73,7 @@ class IntentHandlers:
         self.confidence_threshold = confidence_threshold
         self._send_text: Callable[[str, str], Awaitable[None]] | None = None
         self._send_card: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None
+        self._session_registrar: Callable[[str, Any, datetime], None] | None = None
 
     def bind_senders(
         self,
@@ -82,6 +83,12 @@ class IntentHandlers:
         """Binds the outbound messengers (bound per project by the router)."""
         self._send_text = send_text
         self._send_card = send_card
+
+    def bind_session_registrar(
+        self, registrar: Callable[[str, Any, datetime], None] | None
+    ) -> None:
+        """Binds the hook that registers probe clarifications for a new session."""
+        self._session_registrar = registrar
 
     # ------------------------------------------------------------------ entry
 
@@ -225,7 +232,9 @@ class IntentHandlers:
             msg = "sync_session_started"
         elif data.get("rejected"):
             msg = "message_rejected"
-        elif asks and merged == ReplyKind.CLARIFY:
+        elif asks:
+            # Any turn that ends with a follow-up question counts as a
+            # clarification turn, even when a claim was also recorded (3a.1).
             msg = "clarification_sent"
         data["reply_category"] = merged.value
         data["asks_clarification"] = asks
@@ -579,10 +588,21 @@ class IntentHandlers:
             kinds.append(ReplyKind.SMALLTALK)
             return False
         if item.polarity == Polarity.AFFIRMATIVE:
+            coordinator = await self.service.get_sync_coordinator(project_id)
+            active = coordinator.get_active_session(project_id, now=occurred_at)
+            self.dialogue.clear_pending_sync_confirmation(project_id, member.member_id)
+            if active is not None:
+                # A sync is already running: confirm nothing, report progress (3a.1).
+                parts.append(
+                    f"已有进行中的全员同步（{active.progress_summary()}），本次确认未重复发起。"
+                )
+                kinds.append(ReplyKind.NOTED)
+                return False
             session = await self.service.start_progress_sync(
                 project_id, initiated_by=confirmation.initiated_by
             )
-            self.dialogue.clear_pending_sync_confirmation(project_id, member.member_id)
+            if self._session_registrar is not None:
+                self._session_registrar(project_id, session, occurred_at)
             parts.append(
                 f"已发起全员进度同步：已向 {len(session.member_probes)} 位负责人发送进度探针。"
             )

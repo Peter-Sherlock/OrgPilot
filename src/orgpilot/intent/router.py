@@ -15,7 +15,6 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from orgpilot.config import OrgPilotSettings
-from orgpilot.domain.enums import ProbeMemberStatus
 from orgpilot.intent.client import (
     HeuristicIntentClient,
     IntentClient,
@@ -26,7 +25,6 @@ from orgpilot.intent.client import (
     classify_with_timeout,
 )
 from orgpilot.intent.dialogue import (
-    CLARIFICATION_SOURCE_PROBE,
     DialogueStateStore,
     PendingClaimDraft,
     PendingClarification,
@@ -230,10 +228,22 @@ class MessageRouter:
         )
 
         if authorized and action == "sync_confirm":
+            coordinator = await self.service.get_sync_coordinator(project_id)
+            active = coordinator.get_active_session(project_id, now=now)
+            self.dialogue.clear_pending_sync_confirmation(project_id, operator_id)
+            if active is not None:
+                # One active session at a time (3a.1): confirm nothing, close card.
+                return {
+                    "code": 0,
+                    "msg": "sync_already_active",
+                    "card": _closed_card(
+                        "已关闭",
+                        f"已有进行中的全员同步（{active.progress_summary()}），本次确认未重复发起。",
+                    ),
+                }
             session = await self.service.start_progress_sync(
                 project_id, initiated_by=operator_id
             )
-            self.dialogue.clear_pending_sync_confirmation(project_id, operator_id)
             return {
                 "code": 0,
                 "msg": "sync_session_started",
@@ -298,28 +308,17 @@ class MessageRouter:
                 data={"actor_id": sender_id, "intent_summary": {}},
             )
 
-        # Replies to an active sync probe always take priority over commands/intents
-        coordinator = await self.service.get_sync_coordinator(project_id)
-        active_session = coordinator.get_active_session(project_id, now=occurred_at)
-        probe = active_session.member_probes.get(sender_id) if active_session else None
-        if probe is not None and probe.status in (
-            ProbeMemberStatus.PENDING,
-            ProbeMemberStatus.CLARIFYING,
-        ):
-            return await self._handle_probe_reply(
-                project_id=project_id,
-                sender_id=sender_id,
-                message_id=message_id,
-                text=text,
-                occurred_at=occurred_at,
-            )
-
-        # Layer 0: explicit commands, never classified
+        # Layer 0: explicit commands run BEFORE probe capture and never consume
+        # probe rounds (3a.1) — a probed member may still ask for help.
         stripped = text.strip()
         if stripped.startswith("/"):
             return await self._handle_command(
                 project_id=project_id, member=member, command=stripped, occurred_at=occurred_at
             )
+
+        # Probe replies now flow through the same intent pipeline as normal
+        # messages (3a.1): the pending probe clarification provides the answer
+        # context, and the handlers merge/complete/notify the coordinator.
 
         # Layer 1: classify (with one retry), layer 2: guardrails + handlers
         context = await self._build_context(
@@ -352,58 +351,6 @@ class MessageRouter:
         outcome.data["intent_summary"] = result.to_summary()
         return outcome
 
-    async def _handle_probe_reply(
-        self,
-        *,
-        project_id: str,
-        sender_id: str,
-        message_id: str,
-        text: str,
-        occurred_at: datetime,
-    ) -> RouterOutcome:
-        converged, clarify_q, session, new_events = await self.service.handle_sync_member_reply(
-            project_id=project_id,
-            member_id=sender_id,
-            message=text,
-            occurred_at=occurred_at,
-            source_ref=message_id,
-        )
-        if not converged and clarify_q:
-            pending = self.dialogue.get_pending_clarification(
-                project_id, sender_id, now=occurred_at
-            )
-            if pending is not None:
-                pending.asked_rounds += 1
-            else:
-                self.register_pending_clarification(
-                    project_id,
-                    sender_id,
-                    clarify_q,
-                    source=CLARIFICATION_SOURCE_PROBE,
-                    occurred_at=occurred_at,
-                )
-            return RouterOutcome(
-                msg="clarification_sent",
-                reply_category=ReplyKind.CLARIFY,
-                asks_clarification=True,
-                reply_text=clarify_q,
-                data={"question": clarify_q, "intent_summary": {}},
-            )
-        self.dialogue.clear_pending_clarification(project_id, sender_id)
-        has_claims = any(
-            event.event_type in ("task.health_reported", "commitment.made")
-            for event in new_events
-        )
-        return RouterOutcome(
-            msg="probe_collected",
-            reply_category=ReplyKind.CLAIM_RECORDED if has_claims else ReplyKind.NOTED,
-            reply_text="收到！您的回复已登记，等待其余成员同步收敛。",
-            data={
-                "session_id": session.session_id if session else None,
-                "intent_summary": {},
-            },
-        )
-
     async def _handle_command(
         self,
         *,
@@ -419,6 +366,23 @@ class MessageRouter:
                     reply_category=ReplyKind.NO_PERMISSION,
                     reply_text="只有项目负责人（PM）可以发起全员同步。",
                     data={"intent_summary": {"command": head}},
+                )
+            coordinator = await self.service.get_sync_coordinator(project_id)
+            active = coordinator.get_active_session(project_id, now=occurred_at)
+            if active is not None:
+                # One active session at a time: a repeat /同步 reports progress
+                # instead of scattering a second round of probes (3a.1).
+                return RouterOutcome(
+                    msg="sync_already_active",
+                    reply_category=ReplyKind.NOTED,
+                    reply_text=(
+                        f"已有进行中的全员同步（{active.progress_summary()}），"
+                        "请等待成员回复后自动生成简报。"
+                    ),
+                    data={
+                        "session_id": active.session_id,
+                        "intent_summary": {"command": head},
+                    },
                 )
             session = await self.service.start_progress_sync(
                 project_id, initiated_by=member.member_id

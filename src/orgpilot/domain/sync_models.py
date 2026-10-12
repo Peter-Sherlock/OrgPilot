@@ -69,3 +69,15 @@ class SyncSession(BaseModel):
     updated_at: datetime
     member_probes: dict[str, MemberProbeState] = Field(default_factory=dict)
     briefing: ExecutiveBriefing | None = None
+
+    def progress_summary(self) -> str:
+        """One-line status used when a duplicate sync request is declined (3a.1)."""
+        from orgpilot.domain.enums import ProbeMemberStatus
+
+        collected = sum(
+            1
+            for probe in self.member_probes.values()
+            if probe.status == ProbeMemberStatus.COLLECTED
+        )
+        start = self.created_at.strftime("%m/%d %H:%M")
+        return f"发起于 {start}，已回复 {collected}/{len(self.member_probes)} 人"

@@ -606,10 +606,43 @@ async def test_sync_card_confirm_and_cancel_flows() -> None:
         await db.close()
 
 
-async def test_probe_reply_delegates_to_coordinator_and_registers_state() -> None:
-    router, service, adapter, db = await _make_router(ScriptedIntentClient())
+async def test_probe_reply_flows_through_intent_pipeline() -> None:
+    """3a.1: probe replies use the same classify→guard→handler path as normal
+    messages, driven by the pending probe clarification in the dialogue store."""
+    router, service, adapter, db = await _make_router(
+        ScriptedIntentClient(
+            responses={
+                "支付SDK报错卡住了": _result(
+                    _item(
+                        "支付SDK报错卡住了",
+                        intent=IntentType.ANSWER_PENDING,
+                        health_status="at_risk",
+                    ),
+                    answers_pending=True,
+                ),
+                "预计排查需要到明天下午5点": _result(
+                    _item(
+                        "预计排查需要到明天下午5点",
+                        intent=IntentType.ANSWER_PENDING,
+                        health_status="delayed",
+                        expected_completion=datetime(2026, 10, 14, 17, 0, tzinfo=BJ),
+                        blocker="排查",
+                    ),
+                    answers_pending=True,
+                ),
+            }
+        )
+    )
     try:
         await service.start_progress_sync(PROJECT, initiated_by="ou_carol")
+        router.register_pending_clarification(
+            PROJECT,
+            "ou_alice",
+            "项目负责人正在同步项目进度，请汇报您负责任务的最新进展。",
+            task_id="backend_api",
+            source="probe",
+            occurred_at=NOW,
+        )
         outcome = await router.handle_message(
             project_id=PROJECT,
             sender_id="ou_alice",
@@ -617,10 +650,11 @@ async def test_probe_reply_delegates_to_coordinator_and_registers_state() -> Non
             text="支付SDK报错卡住了",
             occurred_at=NOW,
         )
+        # vague probe answer: claim recorded but time missing → follow-up question
         assert outcome.msg == "clarification_sent"
         assert outcome.asks_clarification is True
         pending = router.dialogue.get_pending_clarification(PROJECT, "ou_alice", now=NOW)
-        assert pending is not None and pending.source == "probe"
+        assert pending is not None and pending.asked_rounds == 1
 
         outcome = await router.handle_message(
             project_id=PROJECT,
@@ -629,9 +663,54 @@ async def test_probe_reply_delegates_to_coordinator_and_registers_state() -> Non
             text="预计排查需要到明天下午5点",
             occurred_at=NOW,
         )
-        assert outcome.msg == "probe_collected"
+        assert outcome.reply_category == ReplyKind.CLAIM_RECORDED
+        assert outcome.asks_clarification is False
         assert router.dialogue.get_pending_clarification(PROJECT, "ou_alice", now=NOW) is None
         events = await service.event_store.get_events(PROJECT)
         assert any(e.event_type == "task.health_reported" for e in events)
+    finally:
+        await db.close()
+
+
+async def test_commands_run_before_probe_capture_and_skip_rounds() -> None:
+    """3a.1: a probed member's /帮助 gets help and consumes NO probe round."""
+    router, service, adapter, db = await _make_router(ScriptedIntentClient())
+    try:
+        await service.start_progress_sync(PROJECT, initiated_by="ou_carol")
+        pending = router.register_pending_clarification(
+            PROJECT,
+            "ou_alice",
+            "请汇报您负责任务的最新进展。",
+            task_id="backend_api",
+            source="probe",
+            occurred_at=NOW,
+        )
+        outcome = await _send(router, "/帮助", sender="ou_alice")
+        assert outcome.reply_category == ReplyKind.HELP
+        assert outcome.asks_clarification is False
+        assert pending.asked_rounds == 0
+
+        outcome = await _send(router, "/同步", sender="ou_alice")
+        assert outcome.reply_category == ReplyKind.NO_PERMISSION
+        assert pending.asked_rounds == 0
+        coordinator = await service.get_sync_coordinator(PROJECT)
+        # exactly the setup session — the non-PM command started no second one
+        assert len(coordinator._sessions) == 1
+    finally:
+        await db.close()
+
+
+async def test_duplicate_slash_sync_reports_session_status() -> None:
+    router, service, adapter, db = await _make_router(ScriptedIntentClient())
+    try:
+        first = await _send(router, "/同步", sender="ou_carol")
+        assert first.msg == "sync_session_started"
+
+        again = await _send(router, "/同步", sender="ou_carol")
+        assert again.msg == "sync_already_active"
+        assert again.reply_category == ReplyKind.NOTED
+        assert "已回复 0/1" in again.reply_text
+        coordinator = await service.get_sync_coordinator(PROJECT)
+        assert len(coordinator._sessions) == 1  # no second session
     finally:
         await db.close()
