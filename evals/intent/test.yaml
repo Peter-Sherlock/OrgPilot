@@ -149,7 +149,7 @@ samples:
   # ---------- P0 answer_pending 正例（多轮：回答追问） ----------
   - id: test_answer_pending_001
     category: answer_pending
-    message: "环境修好了，明天上午十点开始全链路跑"
+    message: "环境还在抢修，预计明天上午十点能恢复"
     sender: ou_lei_chen
     occurred_at: "2026-10-14T10:45:00+08:00"
     context:
@@ -160,7 +160,7 @@ samples:
       behavior:
         claims:
           - task_id: pay_e2e_test
-            health_status: on_track
+            health_status: at_risk
             expected_completion: "2026-10-15T10:00:00+08:00"
         reply_category: claim_recorded
       intents:
@@ -171,9 +171,9 @@ samples:
             speech_act: statement
             polarity: affirmative
             certainty: certain
-            health_status: on_track
+            health_status: at_risk
             time_expression: "明天上午十点"
-            source_quote: "明天上午十点开始全链路跑"
+            source_quote: "预计明天上午十点能恢复"
 
   - id: test_answer_pending_002
     category: answer_pending
@@ -795,7 +795,7 @@ samples:
   # ---------- 中文数字与相对时间 ----------
   - id: test_time_chinese_001
     category: time_chinese
-    message: "压测数据要在月底前出报告"
+    message: "压测要拖到月底才能做完"
     sender: ou_lei_chen
     occurred_at: "2026-10-14T10:00:00+08:00"
     expected:
@@ -813,13 +813,13 @@ samples:
             polarity: affirmative
             certainty: certain
             health_status: delayed
-            time_expression: "月底前"
+            time_expression: "月底"
             expected_completion: "2026-10-31T18:00:00+08:00"
-            source_quote: "压测数据要在月底前出报告"
+            source_quote: "拖到月底才能做完"
 
   - id: test_time_chinese_002
     category: time_chinese
-    message: "压测第一轮晚上八点开跑"
+    message: "压测第一轮正在跑，预计晚上八点能全部跑完"
     sender: ou_lei_chen
     occurred_at: "2026-10-14T15:15:00+08:00"
     expected:
@@ -839,7 +839,7 @@ samples:
             health_status: on_track
             time_expression: "晚上八点"
             expected_completion: "2026-10-14T20:00:00+08:00"
-            source_quote: "压测第一轮晚上八点开跑"
+            source_quote: "预计晚上八点能全部跑完"
 
   - id: test_time_chinese_003
     category: time_chinese
@@ -1084,7 +1084,7 @@ samples:
     expected:
       behavior:
         starts_sync: true
-        reply_category: sync_confirm
+        reply_category: sync_started
       intents:
         items:
           - intent: request_sync
@@ -1123,7 +1123,7 @@ samples:
     expected:
       behavior:
         starts_sync: true
-        reply_category: sync_confirm
+        reply_category: sync_started
       intents:
         items:
           - intent: acknowledge
@@ -1165,7 +1165,7 @@ samples:
     expected:
       behavior:
         starts_sync: true
-        reply_category: sync_confirm
+        reply_category: sync_started
       intents:
         items:
           - intent: acknowledge

@@ -109,3 +109,45 @@ dev_p1_p2_004（无疑问、要求催办）保留 dependency_wait + unsupported�
 - **R4**：非负责人汇报他人任务的样本（如 test_negation_003，陈磊汇报 pay_sdk）均照常生成 claim，与规则一致；
 - **R9**：multi_turn_topic_shift 的热搜/午饭样本已按新话题类别回复并保留 asks_clarification=true；
 - **R10**：仅补充文件头约定"只有日期没有时刻 = 当天 18:00"，存量样本时间标注已符合。
+
+---
+
+## 五、R11 补充修订（2026-10-12，产品新增规则后）
+
+### 规则 R11：expected_completion 只填完成时间
+
+只填"任务完成或阻塞解除"的时间；开始时间、演示时间、定位原因的时间、下次同步的时间不填；
+任务已完成的样本也不填。全文见 `LABELING.md` R11。
+
+### 消息改写（使时间成为完成时间，保留解析难点）
+
+| 样本 | 旧原文 | 新原文 | 规则 |
+|---|---|---|---|
+| dev_time_chinese_001 | 支付SDK的报错还在查，预计下午三点能定位 | 支付SDK的报错还在修，预计下午三点能修好 | R11（定位 → 修好）；"三点"难点保留 |
+| dev_time_chinese_002 | 商户后台的审批流搞定了，5点半给你们演示 | 商户后台的审批流收尾很顺利，预计5点半能全部搞定 | R11（演示 → 完成）；"5点半"难点保留 |
+| dev_time_chinese_003 | 压测可能要拖到下周三才能开始 | 压测第一轮可能要拖到下周三才能跑完 | R11（开始 → 跑完）；"下周三"难点保留 |
+| test_answer_pending_001 | 环境修好了，明天上午十点开始全链路跑 | 环境还在抢修，预计明天上午十点能恢复 | R11（开始 → 恢复）；"明天上午十点"难点保留；健康度 on_track → at_risk（R1：抢修中、截止日前恢复） |
+| test_time_chinese_001 | 压测数据要在月底前出报告 | 压测要拖到月底才能做完 | 明确延期表述（保留"月底"）；健康度维持 delayed |
+| test_time_chinese_002 | 压测第一轮晚上八点开跑 | 压测第一轮正在跑，预计晚上八点能全部跑完 | R11（开跑 → 跑完）；"晚上八点"难点保留 |
+
+### 健康度修正
+
+| 样本 | 旧标注 | 新标注 | 依据 |
+|---|---|---|---|
+| dev_time_chinese_004 | on_track | delayed（behavior + intents） | 月底（10-31 18:00）晚于 ledger_check 截止日 10-22（R1）。**更正**：第一轮修订清单的 R1 表格误记此样本已改为 delayed，实际未落地，本轮补上 |
+
+### 回复类别拆分：sync_confirm → sync_confirm / sync_started
+
+`sync_confirm` 现在只表示"只发了确认卡片、尚未发起"；已发起同步的样本改为 `sync_started`：
+
+| 样本 | 旧标注 | 新标注 | 依据 |
+|---|---|---|---|
+| dev_sync_command_001 | sync_confirm | sync_started | R8：命令直达发起 |
+| dev_sync_command_002 | sync_confirm | sync_started | 同上 |
+| dev_confirmation_flow_001 | sync_confirm | sync_started | R8：卡片确认后发起 |
+| dev_confirmation_flow_002 | sync_confirm | sync_started | 同上 |
+| test_sync_command_001 | sync_confirm | sync_started | R8：命令直达发起 |
+| test_confirmation_flow_001 | sync_confirm | sync_started | R8：卡片确认后发起 |
+| test_confirmation_flow_003 | sync_confirm | sync_started | 同上 |
+
+request_sync 8 条（自然语言、只发卡片）维持 `sync_confirm` 不变。
