@@ -1,5 +1,40 @@
 # 开发记录
 
+## 2026-10-11：评测集修订（R1–R10 标注口径）与两个时间 bug（分支 `feat/intent-eval-baseline`）
+
+### 已实现
+
+- **标注规范 `evals/intent/LABELING.md`**（产品确定的唯一口径，R1–R10）：R1 健康度按"预计完成时间 vs 任务截止日"三档判定；R2 否定句按实际含义（负责人否定风险 → on_track claim；字面否定、问题仍在 → at_risk）；R3 带疑问的等待归 query_status；R4 非负责人汇报照常生成 claim；R5 回复类别新增 `noted`（与项目相关但不改变状态：假设句、拒同步、拒绝确认）并把"无待确认事项的单纯确认语"归 smalltalk；R6 含糊语气无时间→追问、有时间→生成 claim；R7 任务歧义（未提任务名且负责人多任务）→追问不猜测；R8 全员同步矩阵（PM 自然语言=只发确认卡片；`/同步`=直接发起；卡片确认/拒绝；非 PM=no_permission）；R9 换话题按新话题回复并重新追问；R10 时间约定补充"只有日期没有时刻 = 当天 18:00"。dev/test 文件头指向该文件；
+- **评测集修订**：145 条旧样本逐条复查，33 条修订（R1×4、R2×7、R3×1、R5×11、R6×1、R7×1、R8×8，其中 dev_p1_p2_003 移入 query_status 类别）；新增 13 条：sync_command 5（PM `/同步`×3、非 PM `/同步`×1、`/帮助`×1）、confirmation_flow 7（PM 确认×4、PM 拒绝×2、非 PM 误回复×1，context 新增 `pending_confirmation{kind=sync, initiated_by}`）、dev_p1_p2_007（补足 p1_p2 覆盖）。修订后 dev 100 / test 58 共 158 条（63:37）；逐条修订登记于 `evals/intent/REVISION-2026-10.md`；
+- **评测器修订**（`src/orgpilot/intent/evaluator.py`，非运行时业务代码）：`ReplyCategory` 新增 `NOTED`；样本上下文支持 `pending_confirmation`（baseline 无确认卡片机制，构造不了状态，预期失败）；确认卡片判定改为显式约定——只有带 `kind=sync_confirmation` 标记、副作用发生前的消息才算卡片，同步之后发出的通知不再算；同步指标拆分为"同步误触发率"（不该发起且不该发卡片的样本上出现任何同步副作用）与"未经确认群发次数"（应先发卡片的样本上直接发起，计数、目标 0）；Markdown 报告对样本数 <5 的类别标注"样本不足，仅供参考"；`evals/intent/reports/` 移出版本控制（.gitignore + git rm --cached），基线数字改记 `evals/intent/BASELINE.md`（不带生成时间）；
+- **B5 业务时区**（运行时修复）：Feishu create_time 是 UTC 毫秒，此前相对时间按 UTC 锚定，北京用户说"明天下午5点"会被记成 17:00 UTC。新增 `ORGPILOT_TIMEZONE`（默认 Asia/Shanghai，`validate()` 校验 IANA 时区名）；`GatewayService.to_business_timezone()` 在消息进入抽取/同步路径前统一换算（webhook、WS（经 webhook 委托）、sandbox-chat、/messages 四入口一致；事件存储仍为带时区同一时刻）；依赖加入 `tzdata`（Windows zoneinfo 需要）并更新 uv.lock；
+- **B6 "下周X" 自然周**（运行时修复）：此前周二说"下周三"解析为本周三；现改为"下一个自然周（周一为一周起点）的周X"，"周X""这周X""本周X"保持原行为。未顺带扩展中文数字、"半"、"下班前"等解析能力。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS
+pytest: 203 passed（新增 tests/test_business_timezone.py 5 条、resolver 下周X 2 条、评测器/评测集用例重写）
+coverage: 91.19% branch-aware total coverage (fail_under=90%)
+ruff: All checks passed
+git diff --check: PASS
+orgpilot eval-intent --split dev/test --mode mock: 均运行并生成报告（报告已不入库）
+```
+
+### 基线重跑（顺序：先评测器修订、后时间修复）
+
+- 基线 (a)＝时间修复之前代码：dev 时间准确率 0.00%、失败 87；test 时间准确率 0.00%、失败 51；
+- 基线 (b)＝时间修复之后代码：dev 时间准确率 75.00%、失败 85（dev_answer_pending_003 与 dev_time_chinese_003 的"下周三"经 B6 转为通过）；test 数字不变；
+- 其余指标两组完全一致（claim P/R、错误 claim 率、同步误触发 0%、未经确认群发 dev 1 次、回复类别、多轮），完整数字见 `evals/intent/BASELINE.md`。
+
+### 与任务说明的差异（如实标注）
+
+- 上一轮提交的评测报告文件按本轮要求从索引移除并忽略，上轮开发日志中"报告随分支提交留档"的做法自此作废；
+- dev_p1_p2_003 修订后类别从 p1_p2 移至 query_status，为保持 p1_p2 ≥10 的类别下限新增 dev_p1_p2_007（P2 计划变更）；
+- test 集时间准确率仍为 0%：可触发 claim 的 test 样本时间表达（月底前、晚上八点、中午、明早）均在现有 TemporalResolver 能力之外，或消息不触发 claim，属真实基线而非回归。
+
+---
+
 ## 2026-10-11：意图识别第 1 步——schema、对抗评测集与现有系统基线（分支 `feat/intent-eval-baseline`）
 
 ### 已实现（按 ADR-0008 实施顺序第 1 步，不改任何运行时行为）
