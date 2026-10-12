@@ -22,11 +22,20 @@ if TYPE_CHECKING:
 class OracleIntentClient:
     """Maps (sender, message) to the sample's annotated intents."""
 
-    def __init__(self, samples: "list[EvalSample]") -> None:
+    def __init__(
+        self,
+        samples: "list[EvalSample]",
+        *,
+        allow_duplicate_keys: bool = False,
+    ) -> None:
         self._by_sender_message: dict[tuple[str, str], EvalSample] = {}
         for sample in samples:
             key = (sample.sender, sample.message)
             if key in self._by_sender_message:
+                # Conversation duplicate-delivery turns replay the same message
+                # on purpose; the oracle never runs for them (idempotency first).
+                if allow_duplicate_keys:
+                    continue
                 raise ValueError(f"oracle key collision for {key!r}")
             self._by_sender_message[key] = sample
         self.calls = 0

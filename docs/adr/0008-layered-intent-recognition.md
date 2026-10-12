@@ -158,3 +158,12 @@
 
 评测结论（详见 `evals/intent/BASELINE.md`）：layered + oracle 在 dev 与 test 上均为 100% 通过，
 未经确认群发、同步误触发、错误 claim 全部为 0；layered + heuristic 与 oracle 的差距即 3b 的模型误差空间。
+
+### 第 3a.1 步（2026-10-12，分支 `feat/intent-router`）：探针回复统一接入新流水线
+
+1. **路由顺序**：显式命令（`/同步`、`/帮助`、未知 `/xxx`）前移到探针捕获之前，且不消耗探针轮数——探针轮数只由"追问后收到回答"驱动；会话进行中 PM 重复 `/同步` 或确认新的同步，不再重复发起（`sync_already_active`），回复当前会话状态（发起时间、已回复/总人数，`SyncSession.progress_summary()`）；
+2. **探针回复统一走意图流水线**：发出探针时为每个被询问成员登记 `PendingClarification`（来源 = probe），目标任务扩展为**列表**（该成员负责的全部任务，`task_ids`/`claims`/`missing` 均按任务维度组织）；删除"探针回复 → handle_sync_member_reply → ClaimExtractor"旧路径，探针回复与普通消息一样经过 意图分类 → 护栏 → 处理器（answer_pending 合并、R9 换话题等）；
+3. **收集完成判定**：按任务逐个判定——on_track 无需额外槽位、at_risk 需完成时间、delayed 需完成时间和阻塞原因；无任务的整句回答（"都正常"）作用于全部目标任务；追问只列还缺信息的任务和槽位；达到最大轮数仍不完整 → 标记 `MemberProbeState.incomplete`（"信息不全"），简报 recommendations 首行如实体现；
+4. **协调器职责收缩**：新增公开方法 `notify_probe_finished(project_id, member_id, complete=…)`，收集完成/超时/信息不全都经它通知；协调器只负责会话簿记、超时、收敛与简报合成，不再抽取；`handle_member_reply`、`service.handle_sync_member_reply` 与协调器内的 SlotCompletenessEvaluator 用法一并删除（完整性规则迁移到 `IntentHandlers._task_missing_slots`，与 SlotCompletenessEvaluator 同源，不留两套逻辑）；replay 场景直接驱动 CoordinationAgent 内核、不经过协调器，无需更新期望；
+5. **多轮对话评测**：`evals/intent/conversations.yaml`（8 段 22 轮，覆盖任务书要求的 8 个场景）；`ConversationSystemUnderTest` 经真实 webhook 驱动，探针状态用公开 API（`router.start_sync` + `register_probe_clarifications`）建立真实会话；CLI `--conversations`；oracle 门槛=全部对话通过。会话时间锚定 `occurred_at`（`start_sync_session(occurred_at=…)`），保证固定时间评测下 24h 会话超时确定性；
+6. **会话时钟与协同器刷新**：每条入站消息都会刷新协调器 agent 并触发会话超时检查（此前依赖探针分支）；超时简报/收敛简报基于刷新后的投影状态。

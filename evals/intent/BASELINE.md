@@ -1,7 +1,16 @@
-# 意图行为评测基线（ADR-0008 第 1 步与第 3a 步）
+# 意图行为评测基线（ADR-0008 第 1 步、第 3a 步与第 3a.1 步）
 
 评测对象：`evals/intent/` 固定项目夹具上的系统行为。样本口径：`LABELING.md`（R1–R11），
-数据规模 dev 100 条 / test 58 条。运行方式：
+单条样本规模 dev 102 条 / test 58 条；多轮对话 `conversations.yaml` 共 8 段 22 轮。
+
+**baseline 历史数字对应的提交为 `4ee48bf`**（第 3a 步完成、第 3a.1 步开始前）。
+如需复跑：`git checkout 4ee48bf` 后执行 `uv run orgpilot eval-intent --split dev|test
+--mode mock --system layered --intent heuristic|oracle`。
+
+**多轮对话评测**：`uv run orgpilot eval-intent --conversations --system layered
+--intent heuristic|oracle`（3a.1 新增）。oracle 门槛：全部对话通过。第 3a.1 步结果：
+layered + oracle **8/8 段全部通过（22/22 轮）**，未经确认群发 0、同步误触发 0；
+layered + heuristic 大量失败（探针回答的意图识别正是 3b 的目标），仅记录不设门槛。运行方式：
 `uv run orgpilot eval-intent --split dev|test --mode mock --system baseline|layered --intent heuristic|oracle`。
 本文件只记录数字，不带生成时间；生成的详细报告不入版本控制（`evals/intent/reports/`）。
 

@@ -248,6 +248,7 @@ class GatewayService:
         project_id: str,
         initiated_by: str,
         custom_intro: str | None = None,
+        occurred_at: datetime | None = None,
     ) -> SyncSession:
         """Starts a distributed progress sync session with active task owners."""
         coordinator = await self.get_sync_coordinator(project_id)
@@ -255,5 +256,7 @@ class GatewayService:
         agent = await self.get_or_replay_agent(project_id)
         coordinator.agent = agent
         coordinator.adapter = agent.adapter
-        return coordinator.start_sync_session(project_id, initiated_by, custom_intro)
+        return coordinator.start_sync_session(
+            project_id, initiated_by, custom_intro, occurred_at=occurred_at
+        )
 

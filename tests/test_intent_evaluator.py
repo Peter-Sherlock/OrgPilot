@@ -412,3 +412,104 @@ async def test_layered_oracle_pipeline_matches_annotations_on_mini_dataset(
     assert metrics.sync_false_trigger_rate == 0.0
     assert metrics.unconfirmed_sync_count == 0
     assert metrics.reply_category_accuracy == pytest.approx(5 / 6)
+
+
+def _write_conversation_dataset(dataset_dir: Path) -> None:
+    (dataset_dir / "project.yaml").write_text(
+        yaml.safe_dump(MINI_PROJECT, allow_unicode=True), encoding="utf-8"
+    )
+    conversation = {
+        "schema_version": 1,
+        "dataset_id": "mini_conversations",
+        "conversations": [
+            {
+                "id": "mini_conv_01",
+                "occurred_at_base": "2026-11-19T09:00:00+08:00",
+                "setup": {},
+                "turns": [
+                    {
+                        "sender": "ou_alice",
+                        "after_minutes": 5,
+                        "message": "支付SDK报错卡住了",
+                        "expected": {
+                            "behavior": {
+                                "claims": [
+                                    {"task_id": "backend_api", "health_status": "at_risk"}
+                                ],
+                                "reply_category": "claim_recorded",
+                                "asks_clarification": False,
+                            },
+                            "intents": {"items": []},
+                        },
+                    }
+                ],
+                "final": {
+                    "collected": [],
+                    "claims": [{"task_id": "backend_api", "health_status": "at_risk"}],
+                    "briefing_generated": False,
+                    "briefing_marks_incomplete": False,
+                },
+            }
+        ],
+    }
+    (dataset_dir / "conversations.yaml").write_text(
+        yaml.safe_dump(conversation, allow_unicode=True), encoding="utf-8"
+    )
+
+
+def test_cli_eval_conversations_heuristic_passes(tmp_path: Path, monkeypatch) -> None:
+    import sys
+
+    dataset_dir = tmp_path / "intent"
+    dataset_dir.mkdir()
+    _write_conversation_dataset(dataset_dir)
+    report_dir = tmp_path / "reports"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "orgpilot",
+            "eval-intent",
+            "--conversations",
+            "--system",
+            "layered",
+            "--intent",
+            "heuristic",
+            "--dataset-dir",
+            str(dataset_dir),
+            "--report-dir",
+            str(report_dir),
+        ],
+    )
+    assert main() == 0
+    assert (report_dir / "report-conversations-mock.json").exists()
+
+
+def test_cli_eval_conversations_oracle_gate_fails_without_annotations(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import sys
+
+    dataset_dir = tmp_path / "intent"
+    dataset_dir.mkdir()
+    _write_conversation_dataset(dataset_dir)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "orgpilot",
+            "eval-intent",
+            "--conversations",
+            "--system",
+            "layered",
+            "--intent",
+            "oracle",
+            "--dataset-dir",
+            str(dataset_dir),
+            "--report-dir",
+            str(tmp_path / "reports"),
+        ],
+    )
+    # the mini conversation has no intent annotations, so the oracle cannot
+    # drive it and the all-pass gate must fail loudly
+    assert main() == 1

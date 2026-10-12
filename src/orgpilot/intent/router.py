@@ -101,6 +101,7 @@ class MessageRouter:
         self.handlers = IntentHandlers(
             service, self.dialogue, self.settings.intent_confidence_threshold
         )
+        self.handlers.bind_session_registrar(self.register_probe_clarifications)
 
     # ------------------------------------------------------------- public API
 
@@ -163,7 +164,11 @@ class MessageRouter:
         occurred_at: datetime | None = None,
     ) -> Any:
         """Public sync entry: starts the session and registers probe clarifications."""
-        session = await self.service.start_progress_sync(project_id, initiated_by=initiated_by)
+        session = await self.service.start_progress_sync(
+            project_id,
+            initiated_by=initiated_by,
+            occurred_at=occurred_at,
+        )
         self.register_probe_clarifications(project_id, session, occurred_at=occurred_at)
         return session
 

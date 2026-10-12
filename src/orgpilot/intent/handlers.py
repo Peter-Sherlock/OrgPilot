@@ -744,7 +744,9 @@ class IntentHandlers:
                 kinds.append(ReplyKind.NOTED)
                 return False
             session = await self.service.start_progress_sync(
-                project_id, initiated_by=confirmation.initiated_by
+                project_id,
+                initiated_by=confirmation.initiated_by,
+                occurred_at=occurred_at,
             )
             if self._session_registrar is not None:
                 self._session_registrar(project_id, session, occurred_at)

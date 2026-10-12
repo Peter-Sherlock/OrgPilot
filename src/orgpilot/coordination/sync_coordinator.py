@@ -101,9 +101,14 @@ class ProgressSyncCoordinator:
         project_id: str,
         initiated_by: str,
         custom_intro: str | None = None,
+        occurred_at: datetime | None = None,
     ) -> SyncSession:
-        """Dispatches 1-on-1 private inquiries to all active task owners across the project."""
-        now = datetime.now(UTC)
+        """Dispatches 1-on-1 private inquiries to all active task owners across the project.
+
+        ``occurred_at`` anchors the session clock (evaluations replay fixed
+        timestamps); it defaults to the wall clock.
+        """
+        now = occurred_at or datetime.now(UTC)
         session_id = f"sync-{project_id}-{uuid.uuid4().hex[:8]}"
 
         active_tasks = [

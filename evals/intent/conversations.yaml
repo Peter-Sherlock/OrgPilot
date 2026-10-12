@@ -1,0 +1,545 @@
+# 多轮对话评测脚本（ADR-0008 第 3a.1 步）。
+# 标注唯一口径：evals/intent/LABELING.md（R1–R11）；oracle 模式下门槛为全部对话通过。
+# 每段对话跑在全新夹具项目上；setup.start_sync_by 通过公开 API 建立真实同步会话，
+# 每轮的 expected.behavior 与最终状态都会被断言。
+schema_version: 1
+dataset_id: intent_eval_conversations
+conversations:
+  # 1. 探针 → 只说风险没给时间 → 追问 → 补上时间 → 收集完成，claim 带完成时间
+  - id: conv_01_probe_clarify_time
+    description: 探针追问补全完成时间后收集完成
+    occurred_at_base: "2026-10-15T09:00:00+08:00"
+    setup:
+      start_sync_by: ou_pm_zhao
+    turns:
+      - sender: ou_lei_chen
+        after_minutes: 10
+        message: "压测这边卡住了"
+        expected:
+          behavior:
+            claims:
+              - task_id: pay_e2e_test
+                health_status: at_risk
+            reply_category: claim_recorded
+            asks_clarification: true
+          intents:
+            answers_pending: true
+            items:
+              - intent: answer_pending
+                task_id: pay_e2e_test
+                speech_act: statement
+                polarity: affirmative
+                certainty: certain
+                health_status: at_risk
+                source_quote: "压测这边卡住了"
+      - sender: ou_lei_chen
+        after_minutes: 30
+        message: "预计明天下午5点能恢复"
+        expected:
+          behavior:
+            claims:
+              - task_id: pay_e2e_test
+                health_status: at_risk
+                expected_completion: "2026-10-16T17:00:00+08:00"
+            reply_category: claim_recorded
+            asks_clarification: false
+          intents:
+            answers_pending: true
+            items:
+              - intent: answer_pending
+                task_id: pay_e2e_test
+                speech_act: statement
+                polarity: affirmative
+                certainty: certain
+                health_status: at_risk
+                time_expression: "明天下午5点"
+                source_quote: "预计明天下午5点能恢复"
+    final:
+      collected: [ou_lei_chen]
+      claims:
+        - task_id: pay_e2e_test
+          health_status: at_risk
+          expected_completion: "2026-10-16T17:00:00+08:00"
+      briefing_generated: false
+      briefing_marks_incomplete: false
+
+  # 2. 探针询问两个任务 → 只答了一个 → 只追问另一个
+  - id: conv_02_probe_two_tasks_partial
+    description: 多目标任务只答一个时只追问另一个
+    occurred_at_base: "2026-10-15T10:00:00+08:00"
+    setup:
+      start_sync_by: ou_pm_zhao
+    turns:
+      - sender: ou_wei_wang
+        after_minutes: 5
+        message: "支付SDK明天下午5点能修好"
+        expected:
+          behavior:
+            claims:
+              - task_id: pay_sdk
+                health_status: at_risk
+                expected_completion: "2026-10-16T17:00:00+08:00"
+            reply_category: claim_recorded
+            asks_clarification: true
+          intents:
+            answers_pending: true
+            items:
+              - intent: answer_pending
+                task_id: pay_sdk
+                speech_act: statement
+                polarity: affirmative
+                certainty: certain
+                health_status: at_risk
+                time_expression: "明天下午5点"
+                source_quote: "支付SDK明天下午5点能修好"
+      - sender: ou_wei_wang
+        after_minutes: 20
+        message: "商户后台已经全部正常了"
+        expected:
+          behavior:
+            claims:
+              - task_id: merchant_admin
+                health_status: on_track
+            reply_category: claim_recorded
+            asks_clarification: false
+          intents:
+            answers_pending: true
+            items:
+              - intent: answer_pending
+                task_id: merchant_admin
+                speech_act: statement
+                polarity: affirmative
+                certainty: certain
+                health_status: on_track
+                source_quote: "商户后台已经全部正常了"
+    final:
+      collected: [ou_wei_wang]
+      claims:
+        - task_id: pay_sdk
+          health_status: at_risk
+          expected_completion: "2026-10-16T17:00:00+08:00"
+        - task_id: merchant_admin
+          health_status: on_track
+      briefing_generated: false
+      briefing_marks_incomplete: false
+
+  # 3. 探针 → 换话题 → 处理新话题并重新追问 → 回答 → 收集完成
+  - id: conv_03_probe_topic_switch
+    description: 探针期间换话题按 R9 处理并重新追问
+    occurred_at_base: "2026-10-15T11:00:00+08:00"
+    setup:
+      start_sync_by: ou_pm_zhao
+    turns:
+      - sender: ou_lei_chen
+        after_minutes: 5
+        message: "哈哈哈今天热搜太离谱了"
+        expected:
+          behavior:
+            reply_category: smalltalk
+            asks_clarification: true
+          intents:
+            answers_pending: false
+            items:
+              - intent: chitchat
+                speech_act: statement
+                polarity: affirmative
+                certainty: certain
+                source_quote: "哈哈哈今天热搜太离谱了"
+      - sender: ou_lei_chen
+        after_minutes: 15
+        message: "压测已经全部跑通了"
+        expected:
+          behavior:
+            claims:
+              - task_id: pay_e2e_test
+                health_status: on_track
+            reply_category: claim_recorded
+            asks_clarification: false
+          intents:
+            answers_pending: true
+            items:
+              - intent: answer_pending
+                task_id: pay_e2e_test
+                speech_act: statement
+                polarity: affirmative
+                certainty: certain
+                health_status: on_track
+                source_quote: "压测已经全部跑通了"
+    final:
+      collected: [ou_lei_chen]
+      claims:
+        - task_id: pay_e2e_test
+          health_status: on_track
+      briefing_generated: false
+      briefing_marks_incomplete: false
+
+  # 4. 被询问的成员发 /帮助 → 返回帮助，不消耗轮数
+  - id: conv_04_probe_help_command
+    description: 探针期间显式命令不消耗轮数
+    occurred_at_base: "2026-10-15T13:00:00+08:00"
+    setup:
+      start_sync_by: ou_pm_zhao
+    turns:
+      - sender: ou_lei_chen
+        after_minutes: 5
+        message: "/帮助"
+        expected:
+          behavior:
+            reply_category: help
+            asks_clarification: false
+      - sender: ou_lei_chen
+        after_minutes: 10
+        message: "压测已经全部跑通了"
+        expected:
+          behavior:
+            claims:
+              - task_id: pay_e2e_test
+                health_status: on_track
+            reply_category: claim_recorded
+            asks_clarification: false
+          intents:
+            answers_pending: true
+            items:
+              - intent: answer_pending
+                task_id: pay_e2e_test
+                speech_act: statement
+                polarity: affirmative
+                certainty: certain
+                health_status: on_track
+                source_quote: "压测已经全部跑通了"
+    final:
+      collected: [ou_lei_chen]
+      claims:
+        - task_id: pay_e2e_test
+          health_status: on_track
+      briefing_generated: false
+      briefing_marks_incomplete: false
+
+  # 5. PM 自己也在被询问，又发 /同步 → 不重复发起，回复当前会话状态
+  - id: conv_05_pm_probe_duplicate_sync
+    description: 会话进行中 PM 重复 /同步 只回报状态
+    occurred_at_base: "2026-10-15T14:00:00+08:00"
+    setup:
+      extra_tasks:
+        - task_id: pm_admin
+          title: 项目管理事务
+          owner_id: ou_pm_zhao
+          workflow_status: doing
+          deadline: "2026-10-20T18:00:00+08:00"
+      start_sync_by: ou_pm_zhao
+    turns:
+      - sender: ou_pm_zhao
+        after_minutes: 5
+        message: "/同步"
+        expected:
+          behavior:
+            reply_category: noted
+            starts_sync: false
+    final:
+      collected: []
+      claims: []
+      briefing_generated: false
+      briefing_marks_incomplete: false
+
+  # 6. 达到最大轮数仍不完整 → 简报中标注"信息不全"
+  - id: conv_06_probe_max_rounds_incomplete
+    description: 多轮追问后仍不完整时简报标注信息不全
+    occurred_at_base: "2026-10-15T15:00:00+08:00"
+    setup:
+      start_sync_by: ou_pm_zhao
+    turns:
+      - sender: ou_wei_wang
+        after_minutes: 5
+        message: "支付SDK和商户后台都正常了"
+        expected:
+          behavior:
+            claims:
+              - task_id: pay_sdk
+                health_status: on_track
+              - task_id: merchant_admin
+                health_status: on_track
+            reply_category: claim_recorded
+            asks_clarification: false
+          intents:
+            answers_pending: true
+            items:
+              - intent: answer_pending
+                speech_act: statement
+                polarity: affirmative
+                certainty: certain
+                health_status: on_track
+                source_quote: "支付SDK和商户后台都正常了"
+      - sender: ou_fang_liu
+        after_minutes: 10
+        message: "收银台和对账模块都正常"
+        expected:
+          behavior:
+            claims:
+              - task_id: checkout_page
+                health_status: on_track
+              - task_id: ledger_check
+                health_status: on_track
+            reply_category: claim_recorded
+            asks_clarification: false
+          intents:
+            answers_pending: true
+            items:
+              - intent: answer_pending
+                speech_act: statement
+                polarity: affirmative
+                certainty: certain
+                health_status: on_track
+                source_quote: "收银台和对账模块都正常"
+      - sender: ou_lei_chen
+        after_minutes: 15
+        message: "压测还是卡住了"
+        expected:
+          behavior:
+            claims:
+              - task_id: pay_e2e_test
+                health_status: at_risk
+            reply_category: claim_recorded
+            asks_clarification: true
+          intents:
+            answers_pending: true
+            items:
+              - intent: answer_pending
+                task_id: pay_e2e_test
+                speech_act: statement
+                polarity: affirmative
+                certainty: certain
+                health_status: at_risk
+                source_quote: "压测还是卡住了"
+      - sender: ou_lei_chen
+        after_minutes: 30
+        message: "还是卡着"
+        expected:
+          behavior:
+            claims:
+              - task_id: pay_e2e_test
+                health_status: at_risk
+            reply_category: claim_recorded
+            asks_clarification: true
+          intents:
+            answers_pending: true
+            items:
+              - intent: answer_pending
+                task_id: pay_e2e_test
+                speech_act: statement
+                polarity: affirmative
+                certainty: certain
+                health_status: at_risk
+                source_quote: "还是卡着"
+      - sender: ou_lei_chen
+        after_minutes: 60
+        message: "依然卡着"
+        expected:
+          behavior:
+            claims:
+              - task_id: pay_e2e_test
+                health_status: at_risk
+            reply_category: claim_recorded
+            asks_clarification: true
+          intents:
+            answers_pending: true
+            items:
+              - intent: answer_pending
+                task_id: pay_e2e_test
+                speech_act: statement
+                polarity: affirmative
+                certainty: certain
+                health_status: at_risk
+                source_quote: "依然卡着"
+      - sender: ou_lei_chen
+        after_minutes: 120
+        message: "实在说不好什么时候能好"
+        expected:
+          behavior:
+            claims:
+              - task_id: pay_e2e_test
+                health_status: at_risk
+            reply_category: claim_recorded
+            asks_clarification: false
+          intents:
+            answers_pending: true
+            items:
+              - intent: answer_pending
+                task_id: pay_e2e_test
+                speech_act: statement
+                polarity: affirmative
+                certainty: hedged
+                health_status: at_risk
+                source_quote: "实在说不好什么时候能好"
+    final:
+      collected: [ou_wei_wang, ou_fang_liu, ou_lei_chen]
+      claims:
+        - task_id: pay_sdk
+          health_status: on_track
+        - task_id: merchant_admin
+          health_status: on_track
+        - task_id: checkout_page
+          health_status: on_track
+        - task_id: ledger_check
+          health_status: on_track
+        - task_id: pay_e2e_test
+          health_status: at_risk
+      briefing_generated: true
+      briefing_marks_incomplete: true
+
+  # 7. 自然语言请求同步 → 确认卡片 → 确认 → 探针 → 全员回复 → 简报
+  - id: conv_07_nl_sync_full_flow
+    description: 确认卡片全流程直至简报生成
+    occurred_at_base: "2026-10-15T16:00:00+08:00"
+    setup: {}
+    turns:
+      - sender: ou_pm_zhao
+        after_minutes: 5
+        message: "来一次全员进度同步吧"
+        expected:
+          behavior:
+            reply_category: sync_confirm
+            starts_sync: false
+            sends_confirmation_card: true
+          intents:
+            items:
+              - intent: request_sync
+                speech_act: imperative
+                polarity: affirmative
+                certainty: certain
+                source_quote: "来一次全员进度同步吧"
+      - sender: ou_pm_zhao
+        after_minutes: 10
+        message: "好的，确认发送"
+        expected:
+          behavior:
+            reply_category: sync_started
+            starts_sync: true
+          intents:
+            items:
+              - intent: acknowledge
+                speech_act: statement
+                polarity: affirmative
+                certainty: certain
+                source_quote: "好的，确认发送"
+      - sender: ou_wei_wang
+        after_minutes: 20
+        message: "支付SDK和商户后台都正常了"
+        expected:
+          behavior:
+            claims:
+              - task_id: pay_sdk
+                health_status: on_track
+              - task_id: merchant_admin
+                health_status: on_track
+            reply_category: claim_recorded
+            asks_clarification: false
+          intents:
+            answers_pending: true
+            items:
+              - intent: answer_pending
+                speech_act: statement
+                polarity: affirmative
+                certainty: certain
+                health_status: on_track
+                source_quote: "支付SDK和商户后台都正常了"
+      - sender: ou_fang_liu
+        after_minutes: 30
+        message: "收银台和对账模块都正常"
+        expected:
+          behavior:
+            claims:
+              - task_id: checkout_page
+                health_status: on_track
+              - task_id: ledger_check
+                health_status: on_track
+            reply_category: claim_recorded
+            asks_clarification: false
+          intents:
+            answers_pending: true
+            items:
+              - intent: answer_pending
+                speech_act: statement
+                polarity: affirmative
+                certainty: certain
+                health_status: on_track
+                source_quote: "收银台和对账模块都正常"
+      - sender: ou_lei_chen
+        after_minutes: 40
+        message: "压测已经全部跑通了"
+        expected:
+          behavior:
+            claims:
+              - task_id: pay_e2e_test
+                health_status: on_track
+            reply_category: claim_recorded
+            asks_clarification: false
+          intents:
+            answers_pending: true
+            items:
+              - intent: answer_pending
+                task_id: pay_e2e_test
+                speech_act: statement
+                polarity: affirmative
+                certainty: certain
+                health_status: on_track
+                source_quote: "压测已经全部跑通了"
+    final:
+      collected: [ou_wei_wang, ou_fang_liu, ou_lei_chen]
+      claims:
+        - task_id: pay_sdk
+          health_status: on_track
+        - task_id: merchant_admin
+          health_status: on_track
+        - task_id: checkout_page
+          health_status: on_track
+        - task_id: ledger_check
+          health_status: on_track
+        - task_id: pay_e2e_test
+          health_status: on_track
+      briefing_generated: true
+      briefing_marks_incomplete: false
+
+  # 8. 同一条消息重复投递 → 不重复处理，也不重复回复
+  - id: conv_08_duplicate_delivery
+    description: 平台重复投递保持幂等
+    occurred_at_base: "2026-10-15T17:00:00+08:00"
+    setup:
+      start_sync_by: ou_pm_zhao
+    turns:
+      - sender: ou_lei_chen
+        after_minutes: 5
+        message: "压测已经全部跑通了"
+        message_id: conv08-fixed-message
+        expected:
+          behavior:
+            claims:
+              - task_id: pay_e2e_test
+                health_status: on_track
+            reply_category: claim_recorded
+            asks_clarification: false
+          intents:
+            answers_pending: true
+            items:
+              - intent: answer_pending
+                task_id: pay_e2e_test
+                speech_act: statement
+                polarity: affirmative
+                certainty: certain
+                health_status: on_track
+                source_quote: "压测已经全部跑通了"
+      - sender: ou_lei_chen
+        after_minutes: 1
+        message: "压测已经全部跑通了"
+        message_id: conv08-fixed-message
+        duplicate: true
+        expected:
+          behavior:
+            reply_category: claim_recorded
+            asks_clarification: false
+    final:
+      collected: [ou_lei_chen]
+      claims:
+        - task_id: pay_e2e_test
+          health_status: on_track
+      briefing_generated: false
+      briefing_marks_incomplete: false

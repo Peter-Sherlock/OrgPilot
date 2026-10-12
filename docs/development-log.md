@@ -1,5 +1,50 @@
 # 开发记录
 
+## 2026-10-12：第 3a.1 步——探针回复统一接入新流水线，多轮对话评测（分支 `feat/intent-router`）
+
+### 已实现（按部分提交）
+
+- **commit A（8740bc4）路由顺序修正**：显式命令前移到探针捕获之前且不消耗轮数；会话进行中 PM 重复 `/同步`、确认卡片或 acknowledge 确认 → `sync_already_active`，回复会话状态（发起时间、已回复/总人数，`SyncSession.progress_summary()` 新增）；
+- **commit B（8fc1df7）探针回复统一接入新流水线**：
+  - `PendingClarification` 目标任务扩展为列表（`task_ids`），待补全 claim 与缺失槽位按任务组织（`claims`/`missing` 字典）；
+  - 发出探针时为每个被询问成员登记 probe 来源的追问（`router.start_sync` + `register_probe_clarifications`，公开 API；确认卡片确认与 acknowledge 确认同路径）；
+  - 删除旧路径：`ProgressSyncCoordinator.handle_member_reply`（内含 ClaimExtractor 抽取与 SlotCompletenessEvaluator 判断）与 `GatewayService.handle_sync_member_reply` 整体移除，协调器不再持有 extractor；
+  - 新增协调器公开 API `notify_probe_finished(project_id, member_id, complete=…)`：收集完成/信息不全经它通知，协调器负责收敛与简报；超时路径不变（`get_active_session` 触发，每条入站消息都会"对表"并刷新协调器 agent，保证超时简报反映最新已持久化 claim）；
+  - 收集完成判定按任务：on_track 免槽位、at_risk 需时间、delayed 需时间+阻塞（与 SlotCompletenessEvaluator 同源的 `_task_missing_slots`，不留两套逻辑）；无任务整句回答（"都正常"）作用于全部目标任务；追问只列缺信息任务与槽位；最大轮数（3）仍不完整 → `MemberProbeState.incomplete` 标记，简报 recommendations 首行标注"信息不全"；
+  - **replay 场景说明**：9 个 replay 场景直接驱动 `CoordinationAgent.run_turn` 内核、不经过 ProgressSyncCoordinator，行为零变化，无需更新期望（逐条核对过 runner 源码）；
+- **commit C（本次）评测补充**：
+  - 样本上下文新增 `pending_probe`（task_ids + asked_rounds）；`LayeredSystemUnderTest` 遇到它时通过公开 API `router.start_sync` 建立**真实同步会话**并按样本登记探针追问；新增 dev 样本 `dev_probe_reply_001/002`（probe_reply 类别，下限 2），dev 102 条；
+  - `evals/intent/conversations.yaml`：8 段 22 轮，覆盖任务书 8 个场景（时间澄清补全、双任务部分回答、换话题重追问、探针期间 /帮助 不耗轮数、PM 被探针时重复 /同步、最大轮数信息不全、NL 同步→卡片→确认→全员回复→简报、重复投递幂等），每轮断言行为、每段断言最终状态（claims/collected/简报标注）；
+  - `intent/conversation_eval.py` + CLI `eval-intent --conversations`；oracle 以 (sender, message) 为键、按对话注入（`allow_duplicate_keys` 供重复投递轮）；**oracle 门槛：全部对话通过——实测 8/8 段（22/22 轮）通过**；
+  - BASELINE.md 记录 baseline 数字对应提交 `4ee48bf`（可检出复跑）及多轮对话结果。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS
+pytest: 265 passed（新增 coordinator notify 3、会话评测 5、router 探针/命令/护栏 6、CLI --conversations 2 等）
+coverage: 90.46% branch-aware (fail_under=90%)
+ruff: All checks passed
+git diff --check: PASS
+eval-intent: 单条样本 dev/test oracle 0 失败（100%），--conversations oracle 8/8 通过
+```
+
+### 探针路径前后对比（场景 1：探针 → 风险无时间 → 追问 → 补时间 → 收集完成）
+
+| 轮次 | 旧路径（3a 及之前） | 新路径（3a.1） |
+|---|---|---|
+| 发起 | `/同步` → 协调器建会话并群发探针 | 同左，但 router 另为每个成员登记 probe 追问（目标=其全部任务） |
+| 回答1 "压测这边卡住了" | `handle_sync_member_reply` → ClaimExtractor 抽取 → SlotCompletenessEvaluator 判缺时间 → 协调器自己追问（turns_count+1） | 意图分类（answer_pending）→ 护栏 → answer 批量合并 → 按任务判完整性（at_risk 缺时间）→ 追问只提该任务该槽位（rounds+1） |
+| 回答2 "预计明天下午5点能恢复" | 再抽取 → 完整 → 协调器标记 COLLECTED，全员收敛才出简报 | 合并补上时间 → 按任务完整 → `notify_probe_finished(complete=True)` → 协调器标记 COLLECTED，全员终态才出简报 |
+| 差异要点 | 抽取/完整性/追问文案都在协调器内，意图层无法介入；成员多任务时追问文案只提第一个任务 | 抽取与完整性在意图层（可被 oracle/模型替换），按任务逐个追问；协调器只管收敛与简报 |
+
+### 已知限制
+
+- 对话状态仍仅在内存（重启丢失）；probe 来源 claim 的"合并规则"（同人多任务加权）仍属第 4 步；
+- `--system baseline` 与 layered+heuristic 同链路（同 3a 说明）；heuristic 在多轮对话上大量失败属预期（探针回答意图识别是 3b 目标）。
+
+---
+
 ## 2026-10-12：意图识别第 3a 步——三层路由、对话状态、消息幂等与 oracle 评测（分支 `feat/intent-router`）
 
 ### 已实现

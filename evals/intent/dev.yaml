@@ -2032,3 +2032,63 @@ samples:
             polarity: affirmative
             certainty: certain
             source_quote: "好的"
+
+  # ---------- 探针回复（3a.1：探针统一走意图流水线） ----------
+  - id: dev_probe_reply_001
+    category: probe_reply
+    message: "支付SDK明天下午5点能修好，商户后台已经正常了"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-15T09:30:00+08:00"
+    context:
+      pending_probe:
+        task_ids: [pay_sdk, merchant_admin]
+        asked_rounds: 0
+    expected:
+      behavior:
+        claims:
+          - task_id: pay_sdk
+            health_status: at_risk
+            expected_completion: "2026-10-16T17:00:00+08:00"
+          - task_id: merchant_admin
+            health_status: on_track
+        reply_category: claim_recorded
+      intents:
+        answers_pending: true
+        items:
+          - intent: answer_pending
+            task_id: pay_sdk
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: at_risk
+            time_expression: "明天下午5点"
+            source_quote: "支付SDK明天下午5点能修好"
+          - intent: answer_pending
+            task_id: merchant_admin
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: on_track
+            source_quote: "商户后台已经正常了"
+
+  - id: dev_probe_reply_002
+    category: probe_reply
+    message: "哈哈这个热搜太离谱了吧"
+    sender: ou_lei_chen
+    occurred_at: "2026-10-15T10:10:00+08:00"
+    context:
+      pending_probe:
+        task_ids: [pay_e2e_test]
+        asked_rounds: 1
+    expected:
+      behavior:
+        asks_clarification: true
+        reply_category: smalltalk
+      intents:
+        answers_pending: false
+        items:
+          - intent: chitchat
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            source_quote: "哈哈这个热搜太离谱了吧"

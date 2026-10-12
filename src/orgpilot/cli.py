@@ -38,6 +38,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     intent_eval.add_argument("--intent", choices=["heuristic", "oracle"], default="heuristic")
     intent_eval.add_argument(
+        "--conversations",
+        action="store_true",
+        help="run the multi-turn conversation scripts (evals/intent/conversations.yaml)",
+    )
+    intent_eval.add_argument(
         "--dataset-dir", type=Path, default=Path("evals/intent"), help="dataset directory"
     )
     intent_eval.add_argument(
@@ -105,6 +110,66 @@ def _eval_extraction(dataset_path: Path) -> int:
     return 0 if metrics.passed else 1
 
 
+def _eval_conversations(
+    mode: str,
+    dataset_dir: Path,
+    report_dir: Path,
+    intent: str = "heuristic",
+) -> int:
+    import asyncio
+
+    from orgpilot.intent.client import HeuristicIntentClient
+    from orgpilot.intent.conversation_eval import (
+        ConversationSystemUnderTest,
+        run_conversation_eval,
+    )
+    from orgpilot.intent.evaluator import ORACLE_TITLE_SUFFIX, load_intent_project
+    from orgpilot.intent.oracle import OracleIntentClient
+
+    if mode != "mock":
+        raise SystemExit("eval-intent --conversations 目前仅支持 --mode mock")
+    conversations_path = dataset_dir / "conversations.yaml"
+    if not conversations_path.exists():
+        raise SystemExit(f"conversation file not found: {conversations_path}")
+
+    project = load_intent_project(dataset_dir / "project.yaml")
+    title_suffix = None
+    if intent == "oracle":
+        title_suffix = ORACLE_TITLE_SUFFIX
+        client = lambda script: OracleIntentClient(  # noqa: E731
+            script.turns, allow_duplicate_keys=True
+        )
+        eval_system = ConversationSystemUnderTest(project, client)
+    else:
+        eval_system = ConversationSystemUnderTest(project, HeuristicIntentClient())
+
+    passed, total, results = asyncio.run(
+        run_conversation_eval(
+            conversations_path,
+            report_dir,
+            project=project,
+            intent_client=eval_system._intent_client,  # noqa: SLF001 - CLI wiring
+            title_suffix=title_suffix,
+        )
+    )
+    print(
+        f"Conversation Evaluation (mode={mode}, intent={intent}, "
+        "oracle gate: all conversations must pass):"
+    )
+    if title_suffix:
+        print(f"  - {title_suffix}")
+    print(f"  - Conversations: {passed}/{total} passed")
+    for result in results:
+        status = "PASS" if result.passed else "FAIL"
+        print(f"  - [{status}] {result.script_id} ({len(result.turn_results)} turns)")
+        for issue in result.issues:
+            print(f"      · {issue}")
+    if intent == "oracle" and passed != total:
+        print("  - oracle gate violated: all conversations must pass")
+        return 1
+    return 0
+
+
 def _eval_intent(
     split: str,
     mode: str,
@@ -112,7 +177,12 @@ def _eval_intent(
     report_dir: Path,
     system: str = "baseline",
     intent: str = "heuristic",
+    conversations: bool = False,
 ) -> int:
+    if conversations:
+        return _eval_conversations(
+            mode=mode, dataset_dir=dataset_dir, report_dir=report_dir, intent=intent
+        )
     import asyncio
 
     from orgpilot.intent.client import HeuristicIntentClient
@@ -260,6 +330,7 @@ def main() -> int:
             args.report_dir,
             system=args.system,
             intent=args.intent,
+            conversations=args.conversations,
         )
     if args.command == "start-feishu-ws":
         return _start_feishu_ws(args.project_id)

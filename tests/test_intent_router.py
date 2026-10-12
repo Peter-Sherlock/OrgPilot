@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from orgpilot.adapter.mock import MockCollaborationAdapter
+from orgpilot.domain.enums import ProbeMemberStatus
 from orgpilot.feishu.client import MockFeishuClient
 from orgpilot.gateway.service import GatewayService
 from orgpilot.intent.client import IntentClient, ScriptedIntentClient
@@ -712,5 +713,110 @@ async def test_duplicate_slash_sync_reports_session_status() -> None:
         assert "已回复 0/1" in again.reply_text
         coordinator = await service.get_sync_coordinator(PROJECT)
         assert len(coordinator._sessions) == 1  # no second session
+    finally:
+        await db.close()
+
+
+async def test_guard_canned_verdicts_surface_as_replies() -> None:
+    message = "支付SDK的情况怎么样了？顺便帮我订会议室"
+    scripted = _result(
+        _item(message, intent=IntentType.QUERY_STATUS, task_id="backend_api"),
+        _item(message, speech_act=SpeechAct.HYPOTHETICAL, health_status=None),
+        _item(message, intent=IntentType.OUT_OF_SCOPE, task_id=None),
+        _item(
+            message,
+            intent=IntentType.REQUEST_SYNC,
+            task_id=None,
+            polarity=Polarity.AFFIRMATIVE,
+        ),
+    )
+    router, _service, _adapter, db = await _make_router(
+        ScriptedIntentClient(responses={message: scripted})
+    )
+    try:
+        outcome = await router.handle_message(
+            project_id=PROJECT,
+            sender_id="ou_alice",  # non-PM: request_sync hits the role gate
+            message_id="om_canned",
+            text=message,
+            occurred_at=NOW,
+        )
+        text = outcome.reply_text
+        assert "后端接口" in text  # QUERY answered from projection
+        assert "了解，如果确认需要调整请告诉我" in text  # NOTED (hypothetical)
+        assert "暂不支持自动处理" in text  # UNSUPPORTED
+        assert "只有项目负责人（PM）可以发起全员同步" in text  # NO_PERMISSION
+        assert outcome.reply_category == ReplyKind.NO_PERMISSION  # highest priority
+    finally:
+        await db.close()
+
+
+async def test_clarify_source_gives_up_quietly_after_max_rounds() -> None:
+    message = "还是卡着"
+    scripted = _result(
+        _item(message, intent=IntentType.ANSWER_PENDING, health_status="at_risk"),
+        answers_pending=True,
+    )
+    router, service, _adapter, db = await _make_router(
+        ScriptedIntentClient(responses={message: scripted})
+    )
+    router.register_pending_clarification(
+        PROJECT,
+        "ou_alice",
+        "大概什么时候能恢复？",
+        task_ids=["backend_api"],
+        occurred_at=NOW,
+        asked_rounds=3,
+    )
+    try:
+        outcome = await router.handle_message(
+            project_id=PROJECT,
+            sender_id="ou_alice",
+            message_id="om_giveup",
+            text=message,
+            occurred_at=NOW,
+        )
+        assert outcome.reply_category == ReplyKind.CLAIM_RECORDED
+        assert outcome.asks_clarification is False
+        assert "已达追问上限" in outcome.reply_text
+        assert router.dialogue.get_pending_clarification(PROJECT, "ou_alice", now=NOW) is None
+    finally:
+        await db.close()
+
+
+async def test_probe_declares_incomplete_after_max_rounds() -> None:
+    message = "还是卡着"
+    scripted = _result(
+        _item(message, intent=IntentType.ANSWER_PENDING, health_status="at_risk"),
+        answers_pending=True,
+    )
+    router, service, _adapter, db = await _make_router(
+        ScriptedIntentClient(responses={message: scripted})
+    )
+    try:
+        session = await service.start_progress_sync(PROJECT, initiated_by="ou_carol")
+        router.register_pending_clarification(
+            PROJECT,
+            "ou_alice",
+            "请汇报您负责任务的最新进展。",
+            task_ids=["backend_api"],
+            source="probe",
+            occurred_at=NOW,
+            asked_rounds=3,
+        )
+        outcome = await router.handle_message(
+            project_id=PROJECT,
+            sender_id="ou_alice",
+            message_id="om_incomplete",
+            text=message,
+            occurred_at=NOW,
+        )
+        assert outcome.reply_category == ReplyKind.CLAIM_RECORDED
+        assert "信息不全" in outcome.reply_text
+        assert outcome.data.get("probe_reply") is True
+        coordinator = await service.get_sync_coordinator(PROJECT)
+        probe = coordinator.get_session(session.session_id).member_probes["ou_alice"]
+        assert probe.status == ProbeMemberStatus.COLLECTED
+        assert probe.incomplete is True
     finally:
         await db.close()

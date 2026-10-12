@@ -62,6 +62,7 @@ CATEGORY_MINIMUMS: dict[str, int] = {
     "multi_turn_topic_shift": 4,
     "sync_command": 4,
     "confirmation_flow": 6,
+    "probe_reply": 2,
 }
 
 
@@ -102,6 +103,17 @@ class PendingConfirmationContext(StrictModel):
     initiated_by: str
 
 
+class PendingProbeContext(StrictModel):
+    """An open sync probe addressed to the sender (3a.1).
+
+    ``task_ids`` lists EVERY task the probe asks about; ``asked_rounds`` counts
+    clarification rounds already spent on this probe.
+    """
+
+    task_ids: list[str] = Field(default_factory=list)
+    asked_rounds: int = 0
+
+
 class RecentMessage(StrictModel):
     role: str
     text: str
@@ -109,6 +121,7 @@ class RecentMessage(StrictModel):
 
 class SampleContext(StrictModel):
     pending_question: PendingQuestionContext | None = None
+    pending_probe: PendingProbeContext | None = None
     pending_confirmation: PendingConfirmationContext | None = None
     recent_messages: list[RecentMessage] = Field(default_factory=list)
 
@@ -157,7 +170,9 @@ class ExpectedIntents(StrictModel):
 
 class Expected(StrictModel):
     behavior: ExpectedBehavior
-    intents: ExpectedIntents
+    # Conversation turns for pure commands (/同步, /帮助) carry no intent
+    # annotation, so intents defaults to empty (3a.1).
+    intents: ExpectedIntents = Field(default_factory=ExpectedIntents)
 
 
 class EvalSample(StrictModel):
@@ -468,7 +483,7 @@ class LayeredSystemUnderTest(BaselineSystemUnderTest):
             await service.ingest_raw_events(self._project.project_id, self._fixture_events())
             coordinator = await service.get_sync_coordinator(self._project.project_id)
             router = MessageRouter(service=service, intent_client=self._intent_client)
-            self._construct_dialogue_state(router, sample)
+            await self._construct_dialogue_state(router, sample)
 
             sessions_before = len(coordinator._sessions)
             handler = FeishuWebhookHandler(
@@ -502,11 +517,28 @@ class LayeredSystemUnderTest(BaselineSystemUnderTest):
         finally:
             await db.close()
 
-    def _construct_dialogue_state(self, router: Any, sample: EvalSample) -> None:
+    async def _construct_dialogue_state(self, router: Any, sample: EvalSample) -> None:
         """Builds pending dialogue state through the router's public API only."""
         context = sample.context
         if context is None:
             return
+        if context.pending_probe is not None:
+            # A REAL sync session via the public start_sync entry — probes are
+            # dispatched to every owner and probe clarifications registered (3a.1).
+            await router.start_sync(
+                self._project.project_id,
+                initiated_by=self._project.pm_id,
+                occurred_at=sample.occurred_at,
+            )
+            router.register_pending_clarification(
+                self._project.project_id,
+                sample.sender,
+                "项目负责人正在同步项目进度，请逐个汇报您负责任务的最新进展。",
+                task_ids=list(context.pending_probe.task_ids),
+                source="probe",
+                asked_rounds=context.pending_probe.asked_rounds,
+                occurred_at=sample.occurred_at,
+            )
         if context.pending_question is not None:
             router.register_pending_clarification(
                 self._project.project_id,
@@ -873,6 +905,11 @@ def validate_samples_against_project(
             issues.append(
                 f"{sample.id}: unknown pending_confirmation initiator {confirmation.initiated_by}"
             )
+        probe = sample.context.pending_probe if sample.context else None
+        if probe is not None:
+            for task_id in probe.task_ids:
+                if task_id not in project.task_ids:
+                    issues.append(f"{sample.id}: unknown pending_probe task {task_id}")
         for claim in sample.expected.behavior.claims:
             if claim.task_id not in project.task_ids:
                 issues.append(f"{sample.id}: unknown task {claim.task_id}")
