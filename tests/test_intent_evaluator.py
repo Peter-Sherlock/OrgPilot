@@ -9,6 +9,8 @@ import yaml
 from orgpilot.cli import main
 from orgpilot.intent.evaluator import (
     BaselineSystemUnderTest,
+    ReplyCategory,
+    _has_sync_confirmation_marker,
     compare_sample,
     compute_metrics,
     load_intent_project,
@@ -62,7 +64,9 @@ MINI_SAMPLES = [
             },
         },
     },
-    # PM sync request: confirmation card + session start, matched by the baseline.
+    # PM natural-language sync request (LABELING.md R8): confirmation card first,
+    # NO direct sync. The baseline starts the sync directly, so this pins the
+    # unconfirmed-mass-send metric with a deliberate baseline failure.
     {
         "id": "mini_sync_001",
         "category": "request_sync",
@@ -71,7 +75,7 @@ MINI_SAMPLES = [
         "occurred_at": "2026-11-18T11:00:00+08:00",
         "expected": {
             "behavior": {
-                "starts_sync": True,
+                "starts_sync": False,
                 "sends_confirmation_card": True,
                 "reply_category": "sync_confirm",
             },
@@ -164,6 +168,34 @@ MINI_SAMPLES = [
             },
         },
     },
+    # PM confirms a pending sync card (R8): should start the sync. The baseline
+    # constructs no confirmation state, so the confirmation is lost — expected failure.
+    {
+        "id": "mini_confirm_001",
+        "category": "confirmation_flow",
+        "message": "好的，发吧",
+        "sender": "ou_pm",
+        "occurred_at": "2026-11-18T16:00:00+08:00",
+        "context": {
+            "pending_confirmation": {"kind": "sync", "initiated_by": "ou_pm"},
+        },
+        "expected": {
+            "behavior": {
+                "starts_sync": True,
+                "reply_category": "sync_confirm",
+            },
+            "intents": {
+                "items": [
+                    {
+                        "intent": "acknowledge",
+                        "speech_act": "statement",
+                        "polarity": "affirmative",
+                        "certainty": "certain",
+                    }
+                ]
+            },
+        },
+    },
 ]
 
 
@@ -192,7 +224,7 @@ def mini_dataset_dir(tmp_path: Path) -> Path:
 async def test_baseline_and_metrics_on_mini_dataset(mini_dataset_dir: Path, tmp_path: Path) -> None:
     project = load_intent_project(mini_dataset_dir / "project.yaml")
     samples = load_intent_samples(mini_dataset_dir / "dev.yaml")
-    assert len(samples) == 5
+    assert len(samples) == 6
 
     system = BaselineSystemUnderTest(project)
     comparisons = []
@@ -201,30 +233,68 @@ async def test_baseline_and_metrics_on_mini_dataset(mini_dataset_dir: Path, tmp_
         comparisons.append(compare_sample(sample, observed))
 
     metrics = compute_metrics(comparisons)
-    assert metrics.total_samples == 5
+    assert metrics.total_samples == 6
     # claims: 2 expected, 3 observed (mini_trap_001 is a deliberate false claim)
     assert metrics.expected_claims_total == 2
     assert metrics.observed_claims_total == 3
     assert metrics.claim_true_positives == 2
     assert metrics.claim_precision == pytest.approx(2 / 3)
     assert metrics.claim_recall == pytest.approx(1.0)
-    # three samples expect no claims (both sync samples and mini_trap_001);
+    # four samples expect no claims (both sync samples, mini_trap_001, mini_confirm_001);
     # only mini_trap_001 produces one.
-    assert metrics.false_claim_rate == pytest.approx(1 / 3)
+    assert metrics.false_claim_rate == pytest.approx(1 / 4)
+    # none of the no-sync-no-card samples shows a sync side effect
     assert metrics.sync_false_trigger_rate == 0.0
-    assert metrics.reply_category_accuracy == pytest.approx(3 / 5)
+    # mini_sync_001 requires a confirmation card first; the baseline starts directly
+    assert metrics.unconfirmed_sync_expected == 1
+    assert metrics.unconfirmed_sync_count == 1
+    assert metrics.reply_category_accuracy == pytest.approx(3 / 6)
     assert metrics.multi_turn_samples == 1
     assert metrics.multi_turn_success_rate == pytest.approx(1.0)
     assert metrics.intent_metrics is None
 
     failure_ids = [c.sample_id for c in comparisons if not c.passed]
-    assert set(failure_ids) == {"mini_sync_002", "mini_trap_001"}
+    assert set(failure_ids) == {
+        "mini_sync_001",
+        "mini_sync_002",
+        "mini_trap_001",
+        "mini_confirm_001",
+    }
 
     by_category = {stats.category: stats for stats in metrics.per_category}
     assert by_category["substring_trap"].false_claims == 1
     assert by_category["request_sync"].reply_correct == 1
     assert by_category["sync_non_pm"].reply_correct == 0
     assert by_category["answer_pending"].claim_recall == 1.0
+    assert by_category["confirmation_flow"].samples == 1
+
+
+async def test_pending_confirmation_constructs_no_state(mini_dataset_dir: Path) -> None:
+    project = load_intent_project(mini_dataset_dir / "project.yaml")
+    samples = {s.id: s for s in load_intent_samples(mini_dataset_dir / "dev.yaml")}
+    system = BaselineSystemUnderTest(project)
+
+    observed = await system.observe(samples["mini_confirm_001"])
+
+    # The baseline has no confirmation-card mechanism, so no state is constructed:
+    # the PM acknowledgement cannot start a sync and lands as plain smalltalk.
+    assert observed.starts_sync is False
+    assert observed.sends_confirmation_card is False
+    assert observed.reply_category == ReplyCategory.SMALLTALK
+
+
+def test_confirmation_card_requires_explicit_marker() -> None:
+    # Post-side-effect notifications and plain text replies never count.
+    assert _has_sync_confirmation_marker(
+        [{"msg_type": "text", "content": {"text": "已启动全员进度探针"}}]
+    ) is False
+    assert _has_sync_confirmation_marker([]) is False
+    assert _has_sync_confirmation_marker([{"card": "raw string card"}]) is False
+    # The explicit kind=sync_confirmation marker (before the side effect) counts.
+    assert _has_sync_confirmation_marker(
+        [{"msg_type": "interactive", "content": {"kind": "sync_confirmation"}}]
+    ) is True
+    assert _has_sync_confirmation_marker([{"card": {"kind": "sync_confirmation"}}]) is True
 
 
 async def test_run_intent_eval_writes_reports(mini_dataset_dir: Path, tmp_path: Path) -> None:
@@ -235,8 +305,8 @@ async def test_run_intent_eval_writes_reports(mini_dataset_dir: Path, tmp_path: 
         dataset_dir=mini_dataset_dir,
         report_dir=report_dir,
     )
-    assert metrics.total_samples == 5
-    assert len(failures) == 2
+    assert metrics.total_samples == 6
+    assert len(failures) == 4
 
     json_path = report_dir / "report-dev-mock.json"
     markdown_path = report_dir / "report-dev-mock.md"
@@ -244,16 +314,22 @@ async def test_run_intent_eval_writes_reports(mini_dataset_dir: Path, tmp_path: 
 
     payload = json.loads(json_path.read_text(encoding="utf-8"))
     assert payload["split"] == "dev"
-    assert payload["metrics"]["total_samples"] == 5
+    assert payload["metrics"]["total_samples"] == 6
+    assert payload["metrics"]["unconfirmed_sync_count"] == 1
     assert {failure["sample_id"] for failure in payload["failures"]} == {
+        "mini_sync_001",
         "mini_sync_002",
         "mini_trap_001",
+        "mini_confirm_001",
     }
 
     markdown = markdown_path.read_text(encoding="utf-8")
     assert "按类别统计" in markdown
-    assert "失败样本（2 条）" in markdown
+    assert "失败样本（4 条）" in markdown
     assert "意图层指标 | N/A" in markdown
+    assert "未经确认群发次数 | 1" in markdown
+    # every mini category has fewer than 5 samples and is marked as such
+    assert "样本不足，仅供参考" in markdown
 
 
 def test_run_intent_eval_rejects_non_mock_mode(mini_dataset_dir: Path, tmp_path: Path) -> None:

@@ -41,3 +41,6 @@ var/
 
 # Git metadata lives here because the desktop sandbox mounts .git read-only.
 .git-data/
+
+# Generated intent evaluation reports are not version-controlled; baselines live in BASELINE.md
+evals/intent/reports/

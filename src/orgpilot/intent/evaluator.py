@@ -59,18 +59,22 @@ CATEGORY_MINIMUMS: dict[str, int] = {
     "sync_near_negative": 6,
     "sync_non_pm": 3,
     "multi_turn_topic_shift": 4,
+    "sync_command": 4,
+    "confirmation_flow": 6,
 }
 
 
 class ReplyCategory(StrEnum):
     """Behavior-level reply category. ``clarify`` extends the exemplified list for
-    the follow-up-question turns the ADR requires the future system to send."""
+    the follow-up-question turns the ADR requires the future system to send;
+    ``noted`` covers project-related turns that change no state (LABELING.md R5)."""
 
     CLAIM_RECORDED = "claim_recorded"
     QUERY_ANSWER = "query_answer"
     SYNC_CONFIRM = "sync_confirm"
     NO_PERMISSION = "no_permission"
     UNSUPPORTED = "unsupported"
+    NOTED = "noted"
     SMALLTALK = "smalltalk"
     HELP = "help"
     CLARIFY = "clarify"
@@ -88,6 +92,13 @@ class PendingQuestionContext(StrictModel):
     task_id: str | None = None
 
 
+class PendingConfirmationContext(StrictModel):
+    """A side-effect confirmation the bot is waiting on (LABELING.md R8)."""
+
+    kind: str = "sync"
+    initiated_by: str
+
+
 class RecentMessage(StrictModel):
     role: str
     text: str
@@ -95,6 +106,7 @@ class RecentMessage(StrictModel):
 
 class SampleContext(StrictModel):
     pending_question: PendingQuestionContext | None = None
+    pending_confirmation: PendingConfirmationContext | None = None
     recent_messages: list[RecentMessage] = Field(default_factory=list)
 
 
@@ -230,6 +242,22 @@ class _RecordingAdapter(MockCollaborationAdapter):
         self.client = MockFeishuClient()
 
 
+CONFIRMATION_CARD_MARKER = "sync_confirmation"
+
+
+def _has_sync_confirmation_marker(records: list[dict[str, Any]]) -> bool:
+    """True when any outbound message carries the explicit ``kind=sync_confirmation``
+    marker. LABELING.md R8: only a message asking for confirmation BEFORE the side
+    effect counts as a confirmation card, and the system under test must report it
+    with this marker — post-sync notifications never count."""
+    for record in records:
+        for field in ("card", "content"):
+            payload = record.get(field)
+            if isinstance(payload, dict) and payload.get("kind") == CONFIRMATION_CARD_MARKER:
+                return True
+    return False
+
+
 class BaselineSystemUnderTest:
     """Existing pipeline driven through FeishuWebhookHandler (ADR-0008 baseline).
 
@@ -250,20 +278,21 @@ class BaselineSystemUnderTest:
             coordinator = await service.get_sync_coordinator(self._project.project_id)
             if sample.context is not None and sample.context.pending_question is not None:
                 self._construct_pending_session(coordinator, sample)
+            # Samples with pending_confirmation construct NO extra state: the baseline
+            # has no confirmation-card mechanism, so those samples are expected to fail.
 
             sessions_before = len(coordinator._sessions)
-            sent_before = len(adapter.client.sent_messages)
-
             handler = FeishuWebhookHandler(service=service, project_id=self._project.project_id)
             response = await handler.handle_event(self._message_payload(sample))
 
             stored_events = await service.event_store.get_events(self._project.project_id)
+            outbound_records = [*adapter.client.sent_messages, *adapter.client.sent_cards]
             return self._collect_behavior(
                 response,
                 stored_events,
                 coordinator=coordinator,
                 sessions_before=sessions_before,
-                confirmation_sent=len(adapter.client.sent_messages) > sent_before,
+                confirmation_card=_has_sync_confirmation_marker(outbound_records),
             )
         finally:
             await db.close()
@@ -366,7 +395,7 @@ class BaselineSystemUnderTest:
         *,
         coordinator: Any,
         sessions_before: int,
-        confirmation_sent: bool,
+        confirmation_card: bool,
     ) -> ObservedBehavior:
         claims: list[ObservedClaim] = []
         commitments: list[ObservedCommitment] = []
@@ -392,8 +421,10 @@ class BaselineSystemUnderTest:
 
         msg = response.get("msg")
         starts_sync = msg == "sync_session_started" or len(coordinator._sessions) > sessions_before
-        # ADR-0008 §4: the confirmation card belongs to the sync entry flow.
-        sends_confirmation_card = msg == "sync_session_started" and confirmation_sent
+        # A confirmation card only counts when the system reports it explicitly via the
+        # kind=sync_confirmation marker on a message sent BEFORE the side effect
+        # (LABELING.md R8). Post-sync notifications never count as confirmation cards.
+        sends_confirmation_card = confirmation_card
         asks_clarification = msg == "clarification_sent"
 
         if msg == "sync_session_started":
@@ -458,7 +489,16 @@ class IntentEvalMetrics(StrictModel):
     false_claim_samples: int
     no_claim_expected_samples: int
     false_claim_rate: float
+    no_sync_expected: int = Field(
+        description="Samples that must neither start a sync nor send a confirmation card"
+    )
     sync_false_trigger_rate: float
+    unconfirmed_sync_expected: int = Field(
+        description="Samples that must ask for confirmation before starting a sync (R8)"
+    )
+    unconfirmed_sync_count: int = Field(
+        description="Syncs started directly although a confirmation card was required; target 0"
+    )
     reply_category_accuracy: float
     multi_turn_samples: int
     multi_turn_success_rate: float
@@ -567,6 +607,8 @@ def compute_metrics(comparisons: list[SampleComparison]) -> IntentEvalMetrics:
     no_claim_expected_samples = 0
     sync_false_triggers = 0
     no_sync_expected = 0
+    unconfirmed_sync_expected = 0
+    unconfirmed_sync_count = 0
     reply_correct = 0
     multi_turn_total = 0
     multi_turn_success = 0
@@ -602,10 +644,16 @@ def compute_metrics(comparisons: list[SampleComparison]) -> IntentEvalMetrics:
             no_claim_expected_samples += 1
             if is_false_claim:
                 false_claim_samples += 1
-        if not expected.starts_sync:
+        # 同步误触发率：既不该发起、也不该发卡片的样本上出现了任何同步副作用。
+        if not expected.starts_sync and not expected.sends_confirmation_card:
             no_sync_expected += 1
-            if observed.starts_sync:
+            if observed.starts_sync or observed.sends_confirmation_card:
                 sync_false_triggers += 1
+        # 未经确认群发：应先发确认卡片的样本上直接发起了同步（计数，目标 0）。
+        if expected.sends_confirmation_card and not expected.starts_sync:
+            unconfirmed_sync_expected += 1
+            if observed.starts_sync:
+                unconfirmed_sync_count += 1
         reply_ok = observed.reply_category == expected.reply_category
         if reply_ok:
             reply_correct += 1
@@ -632,7 +680,10 @@ def compute_metrics(comparisons: list[SampleComparison]) -> IntentEvalMetrics:
         )
         stats.samples += 1
         stats.false_claims += int(is_false_claim)
-        stats.sync_false_triggers += int(not expected.starts_sync and observed.starts_sync)
+        stats.sync_false_triggers += int(
+            not expected.starts_sync
+            and (observed.starts_sync or observed.sends_confirmation_card)
+        )
         stats.reply_correct += int(reply_ok)
 
     for stats in per_category.values():
@@ -671,9 +722,12 @@ def compute_metrics(comparisons: list[SampleComparison]) -> IntentEvalMetrics:
         false_claim_rate=(
             false_claim_samples / no_claim_expected_samples if no_claim_expected_samples else 0.0
         ),
+        no_sync_expected=no_sync_expected,
         sync_false_trigger_rate=(
             sync_false_triggers / no_sync_expected if no_sync_expected else 0.0
         ),
+        unconfirmed_sync_expected=unconfirmed_sync_expected,
+        unconfirmed_sync_count=unconfirmed_sync_count,
         reply_category_accuracy=reply_correct / len(comparisons) if comparisons else 0.0,
         multi_turn_samples=multi_turn_total,
         multi_turn_success_rate=multi_turn_success / multi_turn_total if multi_turn_total else 0.0,
@@ -730,6 +784,11 @@ def validate_samples_against_project(
     for sample in samples:
         if sample.sender not in project.member_ids:
             issues.append(f"{sample.id}: unknown sender {sample.sender}")
+        confirmation = sample.context.pending_confirmation if sample.context else None
+        if confirmation is not None and confirmation.initiated_by not in project.member_ids:
+            issues.append(
+                f"{sample.id}: unknown pending_confirmation initiator {confirmation.initiated_by}"
+            )
         for claim in sample.expected.behavior.claims:
             if claim.task_id not in project.task_ids:
                 issues.append(f"{sample.id}: unknown task {claim.task_id}")
@@ -783,7 +842,14 @@ def render_markdown_report(
         f"| 错误 claim 率 | {metrics.false_claim_rate:.2%} "
         f"({metrics.false_claim_samples}/{metrics.no_claim_expected_samples}) |"
     )
-    lines.append(f"| 同步误触发率 | {metrics.sync_false_trigger_rate:.2%} |")
+    lines.append(
+        f"| 同步误触发率 | {metrics.sync_false_trigger_rate:.2%} "
+        f"(不该发起且不该发卡片的 {metrics.no_sync_expected} 条样本中出现同步副作用) |"
+    )
+    lines.append(
+        f"| 未经确认群发次数 | {metrics.unconfirmed_sync_count} "
+        f"/ 应先发确认卡片的样本 {metrics.unconfirmed_sync_expected}（目标 0） |"
+    )
     lines.append(f"| 回复类别准确率 | {metrics.reply_category_accuracy:.2%} |")
     lines.append(
         f"| 多轮补全成功率 | {metrics.multi_turn_success_rate:.2%} "
@@ -796,8 +862,9 @@ def render_markdown_report(
     lines.append("| 类别 | 样本 | 错误 claim | 同步误触发 | 回复正确 | claim P | claim R |")
     lines.append("|---|---|---|---|---|---|---|")
     for stats in metrics.per_category:
+        name = stats.category if stats.samples >= 5 else f"{stats.category}（样本不足，仅供参考）"
         lines.append(
-            f"| {stats.category} | {stats.samples} | {stats.false_claims} | "
+            f"| {name} | {stats.samples} | {stats.false_claims} | "
             f"{stats.sync_false_triggers} | {stats.reply_correct} | "
             f"{stats.claim_precision:.0%} | {stats.claim_recall:.0%} |"
         )

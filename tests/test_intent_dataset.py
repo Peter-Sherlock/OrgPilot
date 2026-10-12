@@ -67,3 +67,59 @@ def test_min_category_counts_reported() -> None:
     assert counts["time_chinese"] == 6
     assert counts["multi_turn_topic_shift"] == 3
     assert counts["sync_non_pm"] == 2
+    assert counts["sync_command"] == 3
+    assert counts["confirmation_flow"] == 4
+
+
+def test_sync_command_samples_cover_roles_and_outcomes(project) -> None:
+    combined = load_intent_samples(EVAL_DIR / "dev.yaml") + load_intent_samples(
+        EVAL_DIR / "test.yaml"
+    )
+    commands = [s for s in combined if s.category == "sync_command"]
+    pm_sync = [
+        s for s in commands if s.message.startswith("/同步") and s.sender == project.pm_id
+    ]
+    non_pm_sync = [
+        s for s in commands if s.message.startswith("/同步") and s.sender != project.pm_id
+    ]
+    help_commands = [s for s in commands if "/帮助" in s.message]
+    assert len(pm_sync) >= 2
+    assert len(non_pm_sync) >= 1
+    assert len(help_commands) >= 1
+    for sample in pm_sync:
+        behavior = sample.expected.behavior
+        assert behavior.starts_sync and not behavior.sends_confirmation_card
+        assert behavior.reply_category.value == "sync_confirm"
+    for sample in non_pm_sync:
+        behavior = sample.expected.behavior
+        assert not behavior.starts_sync and not behavior.sends_confirmation_card
+        assert behavior.reply_category.value == "no_permission"
+
+
+def test_confirmation_flow_samples_cover_confirm_reject_and_non_pm(project) -> None:
+    combined = load_intent_samples(EVAL_DIR / "dev.yaml") + load_intent_samples(
+        EVAL_DIR / "test.yaml"
+    )
+    flows = [s for s in combined if s.category == "confirmation_flow"]
+    assert len(flows) >= 6
+    for sample in flows:
+        confirmation = sample.context.pending_confirmation if sample.context else None
+        assert confirmation is not None
+        assert confirmation.kind == "sync"
+        assert confirmation.initiated_by == project.pm_id
+    confirmed = [s for s in flows if s.expected.behavior.starts_sync]
+    rejected = [
+        s
+        for s in flows
+        if s.sender == project.pm_id and not s.expected.behavior.starts_sync
+    ]
+    non_pm = [s for s in flows if s.sender != project.pm_id]
+    assert len(confirmed) >= 3
+    assert len(rejected) >= 2
+    assert len(non_pm) >= 1
+    for sample in confirmed:
+        assert sample.expected.behavior.reply_category.value == "sync_confirm"
+    for sample in rejected:
+        assert sample.expected.behavior.reply_category.value == "noted"
+    for sample in non_pm:
+        assert sample.expected.behavior.reply_category.value == "smalltalk"
