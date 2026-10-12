@@ -1,5 +1,69 @@
 # 开发记录
 
+## 2026-10-12：第 3a.2 步——追问次数封顶，mock 模式下探针能收敛（分支 `feat/intent-router`）
+
+### 已实现（按部分提交）
+
+- **commit A（0a592f0）追问次数封顶**：
+  - `PendingClarification.reask_count`：因换话题而消耗的重问预算，与 `asked_rounds` 分开计数；`DialogueStateStore.max_topic_reasks`（默认 1，`ORGPILOT_MAX_TOPIC_REASKS`，负数校验）；
+  - 换话题轮：`reask_count += 1`；未超重问预算 → 回复末尾附带重问；`asked_rounds + reask_count` 达到 `max_clarification_rounds + max_topic_reasks`（默认 3+1=4）→ 停止追问——probe 来源经 `notify_probe_finished(complete=False, note="信息不全")` 通知协调器并清除（与"多轮追问后仍不完整"同一处理），clarify 来源直接清除；
+  - answer 批处理的放弃条件从 `asked ≥ 3` 改为 `asked + reasked ≥ 4`：换话题轮与不完整回答轮共用同一总预算，任何混合序列（闲聊与部分回答交替）都会收敛；探针首次提问不计入（`asked_rounds` 从 0 起）；
+  - LABELING.md R9 补充该规则（重问预算、总上限、两种来源的收敛方式）。
+- **commit B（62bb23b）HeuristicIntentClient 最小兜底**（只为 mock 演示收敛，不追求准确率）：有待回答问题时，非命令、非明显闲聊（关键词表）、非单纯确认语（精确匹配表）的消息按 `answer_pending` 处理；任务默认取待答任务，多目标任务按消息提及优先——任务 id/标题完整包含直接命中，否则按字符 bigram 重叠 ≥2 且严格领先判定"提到的那个"；无明确提及 → 任务置空，由合并层作用于全部目标任务（安全失败：健康度兜底 at_risk、只追问时间，不虚构完成信息）；时间仍由 TemporalResolver 解析，未扩展解析能力。
+- **commit C（91958de）评测扩充与门槛**：
+  - `conversations.yaml` 8 段 22 轮 → **10 段 36 轮**：conv_09 连续换话题（第 2 次换话题不再重问；第 4 次达到总上限 → 标记「信息不全」收敛出简报）、conv_10 成员始终不正面回答（第 5 轮含糊回复达到总上限后收敛）；
+  - conv_06 适配新总上限：放弃点从第 4 轮顺延到第 5 轮（t6 的 asks_clarification 标注翻转为 true，新增 t7 放弃轮）——总上限 3→4 的直接推论，属标注随行为契约修订；
+  - CLI `--conversations` heuristic 门槛：**conv_01 必须收敛且完成时间正确**（`HEURISTIC_GATE_CONVERSATIONS`），其余对话只记录不设门槛；oracle 门槛不变（全部对话通过）；
+  - BASELINE.md 按 3a.2 口径刷新：多轮对话 oracle **10/10 段（36/36 轮）**、heuristic 2/10（conv_01 + conv_08）；单条样本三组数字同步更新（heuristic 多轮补全 dev 37.5%→62.5%、test 0%→50%，错误 claim 4/64→6/65 的刻意取舍已注明）。
+- **测试对齐**：`test_probe_reply_with_sync_keyword_is_not_treated_as_new_sync` 的成员消息从"我这边当前进度正常"改为纯闲聊——3a.2 语义下前者是含糊回答尝试（正确地消耗一轮追问），原断言"探针期间消息绝不二次发起同步"用闲聊消息保持不变。
+
+### 实施中的决策
+
+- **换话题轮无论是否实际附带重问文本都消耗预算**：若只按"实际发出了重问"计数，只闲聊不回答的成员永远不会触发总上限，与本次目标（mock 模式下探针必能收敛）相悖；`reask_count` 的语义因此是"因换话题消耗的重问预算"，LABELING.md R9 按此描述。
+- **任务提及检测用 bigram 重叠而非完整标题包含**："支付SDK明天下午5点能修好"提到的是任务"支付SDK接入"的标题前缀，完整包含判定会漏配、把答案错误作用于全部目标任务（conv_02 t1 首跑即暴露，随后修复）。
+- **fallback 条目不猜健康度**：健康度留空由合并层兜底（有原 draft 沿用、否则 at_risk），缺失槽位继续追问——宁可多问一句，不虚构"正常/已完成"。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS
+pytest: 273 passed
+coverage: 91% branch-aware (fail_under=90%)
+ruff: All checks passed
+git diff --check: PASS
+eval-intent 单条样本: oracle dev 102/102、test 58/58（100%），未经确认群发 0、误触发 0、错误 claim 0
+eval-intent --conversations: oracle 10/10 段（36/36 轮）通过；heuristic 2/10（conv_01 门槛通过，exit 0）
+```
+
+### mock 模式完整演示（/同步 → 成员回复 → PM 收到简报）
+
+```text
+[09:00] 赵敏: /同步
+  机器人 -> 已发起全员进度同步：已向 3 位负责人发送进度探针。(sync_started)
+[09:12] 王伟: 我负责的两个都搞定了
+  机器人 -> 已记录：支付SDK接入 → 有风险；已记录：商户后台管理端 → 有风险。
+            还需要补充：【支付SDK接入】还差：预计恢复或完成时间点；【商户后台管理端】还差：预计恢复或完成时间点
+  (clarification_sent —— fallback 把含糊回答按 at_risk 兜底并追问时间)
+[09:22] 王伟: 最晚明天下午5点，都搞定
+  机器人 -> 已记录：支付SDK接入 → 有风险，预计 10/17 17:00 完成；已记录：商户后台管理端 → 有风险，预计 10/17 17:00 完成，信息完整，谢谢！
+[09:30] 刘芳: 都搞定了，最晚明天下午6点
+  机器人 -> 已记录：收银台页面改版 → 有风险，预计 10/17 18:00 完成；已记录：对账模块联调 → 有风险，预计 10/17 18:00 完成，信息完整，谢谢！
+[09:45] 陈磊: 压测已经全部搞定了
+  机器人 -> 已记录：支付全链路压测 → 正常，信息完整，谢谢！(关键词恢复路径)
+会话状态：发起于 10/16 09:00，已回复 3/3 人
+简报已生成：True
+简报摘要：项目全景进度汇总：共 5 项活跃任务，0 项正常推进，0 项延误，4 项存在潜在风险。
+  - 王伟/刘芳/陈磊：collected
+  · 建议：有 4 项任务处于不确定风险状态，建议关注后续技术排查进展。
+```
+
+### 已知限制
+
+- 对话状态仍仅在内存（重启丢失）；probe 来源 claim 的合并加权规则仍属第 4 步；
+- heuristic 错误 claim 率 6/65 是"准确率换演示收敛"的刻意取舍（BASELINE.md 已注明）；"正常""跑通"等恢复表达仍在 MockLLMClient 关键词之外，heuristic 多轮对话 2/10 的其余失败均属 3b 的目标空间。
+
+---
+
 ## 2026-10-12：第 3a.1 步——探针回复统一接入新流水线，多轮对话评测（分支 `feat/intent-router`）
 
 ### 已实现（按部分提交）

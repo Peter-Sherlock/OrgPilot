@@ -167,3 +167,10 @@
 4. **协调器职责收缩**：新增公开方法 `notify_probe_finished(project_id, member_id, complete=…)`，收集完成/超时/信息不全都经它通知；协调器只负责会话簿记、超时、收敛与简报合成，不再抽取；`handle_member_reply`、`service.handle_sync_member_reply` 与协调器内的 SlotCompletenessEvaluator 用法一并删除（完整性规则迁移到 `IntentHandlers._task_missing_slots`，与 SlotCompletenessEvaluator 同源，不留两套逻辑）；replay 场景直接驱动 CoordinationAgent 内核、不经过协调器，无需更新期望；
 5. **多轮对话评测**：`evals/intent/conversations.yaml`（8 段 22 轮，覆盖任务书要求的 8 个场景）；`ConversationSystemUnderTest` 经真实 webhook 驱动，探针状态用公开 API（`router.start_sync` + `register_probe_clarifications`）建立真实会话；CLI `--conversations`；oracle 门槛=全部对话通过。会话时间锚定 `occurred_at`（`start_sync_session(occurred_at=…)`），保证固定时间评测下 24h 会话超时确定性；
 6. **会话时钟与协同器刷新**：每条入站消息都会刷新协调器 agent 并触发会话超时检查（此前依赖探针分支）；超时简报/收敛简报基于刷新后的投影状态。
+
+### 第 3a.2 步（2026-10-12，分支 `feat/intent-router`）：追问次数封顶，mock 模式下探针能收敛
+
+1. **追问总上限**：`PendingClarification` 新增 `reask_count`（因换话题而重新追问的计数），与 `asked_rounds`（追问后收到回答的轮数）分开计数。换话题重新追问最多 `ORGPILOT_MAX_TOPIC_REASKS`（默认 1）次，超过后回复不再附带追问（按新话题正常回复），待回答状态保留；`asked_rounds + reask_count` 达到 `max_clarification_rounds + max_topic_reasks`（默认 3+1=4）时**停止追问**——probe 来源经 `notify_probe_finished(complete=False, note="信息不全")` 通知协调器（与"多轮追问后仍不完整"同一处理），clarify 来源直接清除；
+2. **换话题重问预算与总上限共用一个账户**：换话题轮（无论是否附带重问）与不完整回答轮都消耗同一总预算，任何混合序列（换话题+部分回答交替）都会收敛；探针本身的首次提问不计入（`asked_rounds` 从 0 起）；
+3. **HeuristicIntentClient 最小兜底**（只为 mock 演示收敛，不追求准确率）：有待回答问题时，非命令、非明显闲聊（关键词表）、非单纯确认语（精确匹配表）的消息按 `answer_pending` 处理；任务默认取待答任务，多目标任务按消息提及优先（任务 id/标题完整包含直接命中，否则按字符 bigram 重叠判定"提到的那个"，无明确提及则任务置空、由合并逻辑作用于全部目标任务——安全失败模式：不虚构完成信息，只继续追问）；完成时间仍由 TemporalResolver 解析，未扩展解析能力；
+4. **评测**：`conversations.yaml` 扩到 10 段 36 轮——conv_09 连续换话题（第 2 次换话题不再重问，第 4 次达到总上限标记「信息不全」收敛）、conv_10 成员始终不正面回答（第 5 轮含糊回复达到总上限后收敛）；conv_06 的放弃点从第 4 轮顺延到第 5 轮（总上限 3→4，标注同步修订）。CLI heuristic 门槛：**conv_01 必须收敛且完成时间正确**（`HEURISTIC_GATE_CONVERSATIONS`），其余对话只记录；oracle 门槛不变：全部对话通过（10/10，36/36 轮）。单条样本 oracle 门槛维持 100%（dev 102 / test 58），三组对比数字已在 BASELINE.md 按 3a.2 口径刷新（heuristic 多轮补全 dev 37.5%→62.5%、test 0%→50%，代价是错误 claim 4/64→6/65——含糊回复以 at_risk 兜底进 claim 的刻意取舍）。
