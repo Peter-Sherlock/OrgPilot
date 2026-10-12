@@ -67,18 +67,18 @@ def check_grounding(item: IntentItem, message: str) -> GuardOutcome:
 
 def check_task_reference(item: IntentItem, context: IntentContext) -> GuardOutcome:
     """Task-requiring items need a known task, otherwise ask which one (R7)."""
-    pending_task = (
-        context.pending_question.task_id if context.pending_question else None
+    pending_tasks = (
+        list(context.pending_question.task_ids) if context.pending_question else []
     )
     needs_task = item.intent in TASK_REQUIRED_INTENTS or (
-        item.intent == IntentType.ANSWER_PENDING and pending_task is None
+        item.intent == IntentType.ANSWER_PENDING and not pending_tasks
     )
     if not needs_task:
         return GuardOutcome(verdict="KEEP", reason="task not required")
     if item.task_id is None:
-        # answer_pending inherits the pending question's target task when present.
-        if item.intent == IntentType.ANSWER_PENDING and pending_task is not None:
-            return GuardOutcome(verdict="KEEP", reason="task inherited from pending question")
+        # answer_pending inherits the pending question's target tasks when present.
+        if item.intent == IntentType.ANSWER_PENDING and pending_tasks:
+            return GuardOutcome(verdict="KEEP", reason="tasks inherited from pending question")
         return GuardOutcome(verdict="ASK", ask_question=_task_question(context), reason="no task")
     known_ids = {task.task_id for task in context.known_tasks}
     if item.task_id not in known_ids:

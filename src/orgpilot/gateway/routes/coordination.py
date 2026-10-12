@@ -269,6 +269,26 @@ async def sandbox_chat_endpoint(
             "detail": outcome.msg,
             "bot_reply": outcome.reply_text or f"消息处理失败：{outcome.msg}",
         }
+    if outcome.data.get("probe_reply"):
+        # 3a.1: the reply updated a probe — surface collection/convergence state.
+        probe_session_id = outcome.data.get("session_id")
+        probe_session = (
+            (await service.get_sync_coordinator(project_id)).get_session(probe_session_id)
+            if probe_session_id
+            else None
+        )
+        if probe_session and probe_session.briefing:
+            return {
+                "type": "sync_completed",
+                "bot_reply": "✅ 全员信息已采集收敛，项目决策简报已生成！",
+                "session": probe_session.model_dump(mode="json"),
+                "briefing": probe_session.briefing.model_dump(mode="json"),
+            }
+        return {
+            "type": "member_collected",
+            "bot_reply": outcome.reply_text or "收到！您的任务进度已登记，等待其余成员同步收敛...",
+            "session": probe_session.model_dump(mode="json") if probe_session else None,
+        }
     if outcome.msg == "fallback":
         return {"type": "fallback", "bot_reply": outcome.reply_text}
     return {

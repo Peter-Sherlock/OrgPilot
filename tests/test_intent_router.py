@@ -287,7 +287,7 @@ async def test_answer_pending_merges_into_pending_claim_and_clears_state() -> No
         PROJECT,
         "ou_alice",
         "大概什么时候能恢复？",
-        task_id="backend_api",
+        task_ids=["backend_api"],
         occurred_at=NOW,
     )
     try:
@@ -320,7 +320,7 @@ async def test_incomplete_answer_asks_for_remaining_slots() -> None:
         PROJECT,
         "ou_alice",
         "大概什么时候能恢复？",
-        task_id="backend_api",
+        task_ids=["backend_api"],
         occurred_at=NOW,
     )
     try:
@@ -336,7 +336,7 @@ async def test_incomplete_answer_asks_for_remaining_slots() -> None:
         pending = router.dialogue.get_pending_clarification(PROJECT, "ou_alice", now=NOW)
         assert pending is not None
         assert pending.asked_rounds == 1
-        assert pending.claim is not None and pending.claim.health_status == "at_risk"
+        assert pending.claims["backend_api"].health_status == "at_risk"
     finally:
         await db.close()
 
@@ -481,7 +481,7 @@ async def test_topic_switch_reasks_without_counting_rounds() -> None:
         PROJECT,
         "ou_alice",
         "大概什么时候能恢复？",
-        task_id="backend_api",
+        task_ids=["backend_api"],
         occurred_at=NOW,
     )
     try:
@@ -639,7 +639,7 @@ async def test_probe_reply_flows_through_intent_pipeline() -> None:
             PROJECT,
             "ou_alice",
             "项目负责人正在同步项目进度，请汇报您负责任务的最新进展。",
-            task_id="backend_api",
+            task_ids=["backend_api"],
             source="probe",
             occurred_at=NOW,
         )
@@ -681,7 +681,7 @@ async def test_commands_run_before_probe_capture_and_skip_rounds() -> None:
             PROJECT,
             "ou_alice",
             "请汇报您负责任务的最新进展。",
-            task_id="backend_api",
+            task_ids=["backend_api"],
             source="probe",
             occurred_at=NOW,
         )

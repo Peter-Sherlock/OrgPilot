@@ -30,7 +30,14 @@ from orgpilot.intent.dialogue import (
     PendingClaimDraft,
 )
 from orgpilot.intent.guards import evaluate_item_guards
-from orgpilot.intent.models import IntentItem, IntentResult, IntentType, Polarity
+from orgpilot.intent.models import (
+    Certainty,
+    IntentItem,
+    IntentResult,
+    IntentType,
+    Polarity,
+    SpeechAct,
+)
 from orgpilot.intent.replies import (
     HELP_TEXT,
     ReplyKind,
@@ -112,7 +119,8 @@ class IntentHandlers:
             project_id, member.member_id, occurred_at, message, message_id
         )
         agent = await self.service.get_or_replay_agent(project_id)
-        event_counter = 0
+        counter = [0]
+        answer_items: list[IntentItem] = []
 
         for item in result.items:
             guard = evaluate_item_guards(item, message, context, self.confidence_threshold)
@@ -144,33 +152,25 @@ class IntentHandlers:
                 kinds.append(ReplyKind.NO_PERMISSION)
                 continue
 
-            # KEEP — dispatch by intent
+            # KEEP — dispatch by intent. Answers to a pending clarification are
+            # collected and merged in ONE batch so a multi-task probe asks only
+            # once about whatever is still missing (3a.1). The intent client may
+            # label the items report_status (heuristic) or answer_pending
+            # (oracle/model): the result-level answers_pending flag decides.
             if (
-                item.intent == IntentType.ANSWER_PENDING
-                and result.answers_pending
+                result.answers_pending
                 and context.pending_question is not None
+                and item.intent
+                in (IntentType.REPORT_STATUS, IntentType.ANSWER_PENDING)
             ):
-                event_counter += 1
-                asks = await self._handle_answer(
-                    project_id=project_id,
-                    member=member,
-                    message=message,
-                    occurred_at=occurred_at,
-                    item=item,
-                    source_ref=source_ref,
-                    message_key=message_key,
-                    event_counter=event_counter,
-                    parts=parts,
-                    kinds=kinds,
-                    data=data,
-                    asks=asks,
-                )
+                answer_items.append(item)
+                continue
             elif item.intent in (
                 IntentType.REPORT_STATUS,
                 IntentType.MAKE_COMMITMENT,
                 IntentType.ANSWER_PENDING,
             ):
-                event_counter += 1
+                counter[0] += 1
                 await self._record_claim(
                     project_id=project_id,
                     member=member,
@@ -178,7 +178,7 @@ class IntentHandlers:
                     item=item,
                     source_ref=source_ref,
                     message_key=message_key,
-                    event_counter=event_counter,
+                    event_counter=counter[0],
                     parts=parts,
                     kinds=kinds,
                     data=data,
@@ -217,6 +217,24 @@ class IntentHandlers:
                 parts.append("这个需求已记录，暂不支持自动处理。")
                 kinds.append(ReplyKind.UNSUPPORTED)
 
+        # Answers to a pending clarification merge in one batch (3a.1).
+        if answer_items:
+            asks = await self._handle_answer_batch(
+                project_id=project_id,
+                member=member,
+                message=message,
+                occurred_at=occurred_at,
+                items=answer_items,
+                source_ref=source_ref,
+                message_key=message_key,
+                counter=counter,
+                agent=agent,
+                parts=parts,
+                kinds=kinds,
+                data=data,
+                asks=asks,
+            )
+
         # R9 topic switch: a pending question exists but this message did not
         # answer it — re-ask at the end WITHOUT counting another round.
         pending = self.dialogue.get_pending_clarification(
@@ -225,6 +243,8 @@ class IntentHandlers:
         if pending is not None and not result.answers_pending:
             parts.append(f"另外，还想追问一下：{pending.question}")
             asks = True
+            if pending.source == CLARIFICATION_SOURCE_PROBE:
+                data["probe_reply"] = True
 
         merged = merge_reply_kinds(kinds) or ReplyKind.SMALLTALK
         msg = "success"
@@ -333,46 +353,82 @@ class IntentHandlers:
 
     # ------------------------------------------------------- answer merging
 
-    async def _handle_answer(
+    async def _handle_answer_batch(
         self,
         *,
         project_id: str,
         member: MemberState,
         message: str,
         occurred_at: datetime,
-        item: IntentItem,
+        items: list[IntentItem],
         source_ref: str,
         message_key: str,
-        event_counter: int,
+        counter: list[int],
+        agent: Any,
         parts: list[str],
         kinds: list[ReplyKind],
         data: dict[str, Any],
         asks: bool,
     ) -> bool:
+        """Merges one message's answers into the pending clarification (3a.1).
+
+        Scope: the pending entry's target tasks (a probe targets ALL tasks the
+        member owns). An item naming a task updates that task; an item WITHOUT a
+        task (e.g. "都正常") applies to every target task. Completion requires
+        each target task to carry a complete claim: on_track needs nothing,
+        at_risk needs a completion time, delayed needs time AND blocker.
+        """
         entry = self.dialogue.get_pending_clarification(
             project_id, member.member_id, now=occurred_at
         )
-        draft = entry.claim if entry is not None and entry.claim else PendingClaimDraft()
-        target_task = item.task_id or (entry.task_id if entry else None) or draft.task_id
-        health = item.health_status or draft.health_status or HealthStatus.AT_RISK.value
-        completion = item.expected_completion or draft.expected_completion
-        blocker = item.blocker or draft.blocker
+        probe_source = entry is not None and entry.source == CLARIFICATION_SOURCE_PROBE
+        drafts: dict[str, PendingClaimDraft] = dict(entry.claims) if entry else {}
+        target_tasks = list(entry.task_ids) if entry else []
+        if not target_tasks:
+            target_tasks = [item.task_id for item in items if item.task_id]
+        if not target_tasks:
+            target_tasks = [""]
 
-        event = build_health_reported_event(
-            project_id=project_id,
-            actor_id=member.member_id,
-            occurred_at=occurred_at,
-            source_ref=source_ref,
-            event_id=f"evt-intent-claim-{message_key}-{event_counter}",
-            task_id=target_task or "",
-            health_status=health,
-            expected_completion=completion,
-            blocker=blocker,
-            confidence=item.confidence,
-        )
+        # merge each answer into the per-task drafts; a task-less answer applies
+        # its health/time/blocker to every target task ("都正常")
+        touched: list[str] = []
+        for item in items:
+            touched_tasks = [item.task_id] if item.task_id else list(target_tasks)
+            for task_id in touched_tasks:
+                if task_id not in touched:
+                    touched.append(task_id)
+                base = drafts.get(task_id, PendingClaimDraft(task_id=task_id))
+                drafts[task_id] = PendingClaimDraft(
+                    task_id=task_id,
+                    health_status=(
+                        item.health_status or base.health_status or HealthStatus.AT_RISK.value
+                    ),
+                    expected_completion=item.expected_completion or base.expected_completion,
+                    blocker=item.blocker or base.blocker,
+                )
+
+        # persist one health_reported event per touched task, validated in batch
+        events = []
+        for task_id in touched:
+            counter[0] += 1
+            draft = drafts[task_id]
+            events.append(
+                build_health_reported_event(
+                    project_id=project_id,
+                    actor_id=member.member_id,
+                    occurred_at=occurred_at,
+                    source_ref=source_ref,
+                    event_id=f"evt-intent-claim-{message_key}-{counter[0]}",
+                    task_id=task_id,
+                    health_status=draft.health_status or HealthStatus.AT_RISK.value,
+                    expected_completion=draft.expected_completion,
+                    blocker=draft.blocker,
+                    confidence=items[0].confidence,
+                )
+            )
         agent, reason, round_num, error = await self.service.commit_extracted_events(
             project_id,
-            [event],
+            events,
             actor_id=member.member_id,
             occurred_at=occurred_at,
         )
@@ -384,70 +440,155 @@ class IntentHandlers:
         data["is_actionable"] = True
         data["turn_termination_reason"] = reason
         data["turn_round_number"] = round_num
+        if probe_source:
+            data["probe_reply"] = True
 
-        merged = PendingClaimDraft(
-            task_id=target_task,
-            health_status=health,
-            expected_completion=completion,
-            blocker=blocker,
-        )
-        extraction_view = ExtractionResult(
+        # per-task completeness over the full target scope. Router-asked
+        # clarifications (R6/R7) only ever asked for the missing TIME, so for
+        # clarify-source entries the probe-specific blocker slot is not required
+        # (ADR-0008 implementation log).
+        scope = target_tasks or touched
+        missing: dict[str, list[str]] = {}
+        for task_id in scope:
+            slots = self._task_missing_slots(drafts.get(task_id))
+            if slots and not probe_source:
+                slots = [slot for slot in slots if "时间" in slot]
+            if slots:
+                missing[task_id] = slots
+
+        summary = self._answers_summary(agent.projector.state, drafts, scope, occurred_at)
+
+        if not missing:
+            self.dialogue.clear_pending_clarification(project_id, member.member_id)
+            session = None
+            if probe_source:
+                session = await self._notify_probe(
+                    project_id, member.member_id, complete=True, occurred_at=occurred_at
+                )
+                if session is not None:
+                    data["session_id"] = session.session_id
+            parts.append(f"{summary}，信息完整，谢谢！")
+            kinds.append(ReplyKind.CLAIM_RECORDED)
+            return asks
+
+        asked = entry.asked_rounds if entry else 0
+        exhausted = asked >= self.dialogue.max_clarification_rounds
+        if probe_source and exhausted:
+            # 多轮追问仍不完整：如实标注"信息不全"，交给协调器在简报中体现
+            session = await self._notify_probe(
+                project_id,
+                member.member_id,
+                complete=False,
+                occurred_at=occurred_at,
+                note="信息不全",
+            )
+            if session is not None:
+                data["session_id"] = session.session_id
+            self.dialogue.clear_pending_clarification(project_id, member.member_id)
+            parts.append(f"{summary}（多轮追问后仍有缺失，简报中将标注「信息不全」。）")
+            kinds.append(ReplyKind.CLAIM_RECORDED)
+            return asks
+        if not probe_source and exhausted:
+            self.dialogue.clear_pending_clarification(project_id, member.member_id)
+            parts.append(f"{summary}（已达追问上限，先按当前信息记录。）")
+            kinds.append(ReplyKind.CLAIM_RECORDED)
+            return asks
+
+        question = self._missing_question(agent.projector.state, missing)
+        if entry is None:
+            self.dialogue.register_pending_clarification(
+                project_id,
+                member.member_id,
+                question=question,
+                task_ids=[task_id for task_id in scope if task_id],
+                source=CLARIFICATION_SOURCE_CLARIFY,
+                claims={task_id: drafts[task_id] for task_id in drafts},
+                missing=missing,
+                asked_rounds=asked + 1,
+                created_at=occurred_at,
+            )
+        else:
+            entry.claims = {task_id: drafts[task_id] for task_id in drafts}
+            entry.missing = missing
+            entry.task_ids = [task_id for task_id in scope if task_id]
+            entry.asked_rounds = asked + 1
+        parts.append(f"{summary}。{question}")
+        kinds.append(ReplyKind.CLAIM_RECORDED)
+        return True
+
+    def _task_missing_slots(self, draft: PendingClaimDraft | None) -> list[str]:
+        """Per-task completeness slots (3a.1): on_track none, at_risk time,
+        delayed time + blocker — the same rules as SlotCompletenessEvaluator."""
+        if draft is None or draft.health_status is None:
+            return ["当前具体进展与预计完成时间"]
+        view = ExtractionResult(
             is_actionable=True,
             claims=[
                 ExtractedHealthClaim(
-                    task_id=target_task or "",
-                    health_status=HealthStatus(health),
-                    expected_completion=completion,
-                    blocker=blocker,
+                    task_id=draft.task_id or "",
+                    health_status=HealthStatus(draft.health_status),
+                    expected_completion=draft.expected_completion,
+                    blocker=draft.blocker,
                     confidence=1.0,
-                    source_quote=item.source_quote,
+                    source_quote=" ",
                 )
             ],
         )
-        complete, missing = SlotCompletenessEvaluator.evaluate_completeness(
-            extraction_view, message
-        )
-        if entry is not None and entry.source != CLARIFICATION_SOURCE_PROBE and not complete:
-            # Router-asked clarifications (R6/R7) only ever asked for the missing
-            # TIME; the probe-specific blocker requirement does not apply (ADR
-            # implementation log).
-            missing = [slot for slot in missing if "时间" in slot]
-            complete = not missing
-        title = target_task or ""
-        if target_task in agent.projector.state.tasks:
-            title = agent.projector.state.tasks[target_task].title
-        item_for_summary = item.model_copy(update={"task_id": target_task})
-        summary = self._summarize_item(item_for_summary, agent.projector.state, occurred_at)
+        _, missing = SlotCompletenessEvaluator.evaluate_completeness(view, " ")
+        return missing
 
-        if complete:
-            self.dialogue.clear_pending_clarification(project_id, member.member_id)
-            parts.append(f"{summary}，信息完整，谢谢！")
-        elif entry is None or entry.asked_rounds < self.dialogue.max_clarification_rounds:
-            question = SlotCompletenessEvaluator.generate_clarification_question(
-                title, missing, message
+    def _answers_summary(
+        self,
+        state: OrgState,
+        drafts: dict[str, PendingClaimDraft],
+        scope: list[str],
+        occurred_at: datetime,
+    ) -> str:
+        fragments: list[str] = []
+        for task_id in scope:
+            if task_id not in drafts:
+                continue
+            draft = drafts[task_id]
+            item_view = IntentItem(
+                intent=IntentType.REPORT_STATUS,
+                task_id=task_id,
+                speech_act=SpeechAct.STATEMENT,
+                polarity=Polarity.AFFIRMATIVE,
+                certainty=Certainty.CERTAIN,
+                health_status=draft.health_status,
+                expected_completion=draft.expected_completion,
+                blocker=draft.blocker,
+                source_quote=" ",
+                confidence=1.0,
             )
-            if entry is None:
-                self.dialogue.register_pending_clarification(
-                    project_id,
-                    member.member_id,
-                    question=question,
-                    task_id=target_task,
-                    source=CLARIFICATION_SOURCE_CLARIFY,
-                    claim=merged,
-                    missing_slots=missing,
-                    created_at=occurred_at,
-                )
-            else:
-                entry.claim = merged
-                entry.missing_slots = missing
-                entry.asked_rounds += 1
-            parts.append(f"{summary}。{question}")
-            asks = True
-        else:
-            self.dialogue.clear_pending_clarification(project_id, member.member_id)
-            parts.append(f"{summary}（已达追问上限，先按当前信息记录。）")
-        kinds.append(ReplyKind.CLAIM_RECORDED)
-        return asks
+            fragments.append(self._summarize_item(item_view, state, occurred_at))
+        return "；".join(fragment for fragment in fragments if fragment)
+
+    def _missing_question(self, state: OrgState, missing: dict[str, list[str]]) -> str:
+        """Asks ONLY about the tasks and slots that still lack information (3a.1)."""
+        lines: list[str] = []
+        for task_id, slots in missing.items():
+            title = state.tasks[task_id].title if task_id in state.tasks else task_id
+            lines.append(f"【{title}】还差：{'、'.join(slots)}")
+        return "还需要补充：" + "；".join(lines)
+
+    async def _notify_probe(
+        self,
+        project_id: str,
+        member_id: str,
+        *,
+        complete: bool,
+        occurred_at: datetime,
+        note: str | None = None,
+    ) -> Any:
+        coordinator = await self.service.get_sync_coordinator(project_id)
+        return coordinator.notify_probe_finished(
+            project_id,
+            member_id,
+            complete=complete,
+            occurred_at=occurred_at,
+            note=note,
+        )
 
     def _remember_guard_clarification(
         self,
@@ -466,11 +607,15 @@ class IntentHandlers:
             project_id,
             sender_id,
             question=guard.ask_question or "",
-            task_id=item.task_id,
+            task_ids=[item.task_id] if item.task_id else [],
             source=CLARIFICATION_SOURCE_CLARIFY,
-            claim=PendingClaimDraft(
-                task_id=item.task_id, health_status=item.health_status
-            ),
+            claims={
+                task_id: PendingClaimDraft(
+                    task_id=task_id, health_status=item.health_status
+                )
+                for task_id in [item.task_id]
+                if task_id
+            },
             created_at=occurred_at,
         )
 

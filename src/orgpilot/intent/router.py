@@ -25,6 +25,7 @@ from orgpilot.intent.client import (
     classify_with_timeout,
 )
 from orgpilot.intent.dialogue import (
+    CLARIFICATION_SOURCE_PROBE,
     DialogueStateStore,
     PendingClaimDraft,
     PendingClarification,
@@ -113,11 +114,12 @@ class MessageRouter:
         project_id: str,
         sender_id: str,
         question: str,
-        task_id: str | None = None,
+        task_ids: list[str] | None = None,
         *,
         source: str = "clarify",
-        claim: PendingClaimDraft | None = None,
-        missing_slots: list[str] | None = None,
+        claims: dict[str, PendingClaimDraft] | None = None,
+        missing: dict[str, list[str]] | None = None,
+        asked_rounds: int = 0,
         occurred_at: datetime | None = None,
     ) -> PendingClarification:
         """Public entry for constructing pending-question state (tests, SUT, probes)."""
@@ -125,12 +127,45 @@ class MessageRouter:
             project_id,
             sender_id,
             question,
-            task_id=task_id,
+            task_ids=task_ids,
             source=source,
-            claim=claim,
-            missing_slots=missing_slots,
+            claims=claims,
+            missing=missing,
+            asked_rounds=asked_rounds,
             created_at=occurred_at,
         )
+
+    def register_probe_clarifications(
+        self,
+        project_id: str,
+        session: Any,
+        occurred_at: datetime | None = None,
+    ) -> None:
+        """Registers a probe PendingClarification for every probed member (3a.1).
+
+        The clarification targets ALL tasks the member owns, so completion means
+        every owned task carries a complete claim (or the probe was exhausted).
+        """
+        for member_id, probe in session.member_probes.items():
+            self.dialogue.register_pending_clarification(
+                project_id,
+                member_id,
+                question="项目负责人正在同步项目进度，请逐个汇报您负责任务的最新进展。",
+                task_ids=list(probe.assigned_tasks),
+                source=CLARIFICATION_SOURCE_PROBE,
+                created_at=occurred_at,
+            )
+
+    async def start_sync(
+        self,
+        project_id: str,
+        initiated_by: str,
+        occurred_at: datetime | None = None,
+    ) -> Any:
+        """Public sync entry: starts the session and registers probe clarifications."""
+        session = await self.service.start_progress_sync(project_id, initiated_by=initiated_by)
+        self.register_probe_clarifications(project_id, session, occurred_at=occurred_at)
+        return session
 
     def register_pending_sync_confirmation(
         self,
@@ -241,8 +276,8 @@ class MessageRouter:
                         f"已有进行中的全员同步（{active.progress_summary()}），本次确认未重复发起。",
                     ),
                 }
-            session = await self.service.start_progress_sync(
-                project_id, initiated_by=operator_id
+            session = await self.start_sync(
+                project_id, initiated_by=operator_id, occurred_at=now
             )
             return {
                 "code": 0,
@@ -320,6 +355,15 @@ class MessageRouter:
         # messages (3a.1): the pending probe clarification provides the answer
         # context, and the handlers merge/complete/notify the coordinator.
 
+        # Session housekeeping: idle sessions must expire even when every
+        # participant is silent, so every inbound message ticks the clock. The
+        # coordinator's agent is refreshed first so any timeout briefing it
+        # synthesizes reflects the latest persisted claims.
+        coordinator = await self.service.get_sync_coordinator(project_id)
+        coordinator.agent = agent
+        coordinator.adapter = agent.adapter
+        coordinator.get_active_session(project_id, now=occurred_at)
+
         # Layer 1: classify (with one retry), layer 2: guardrails + handlers
         context = await self._build_context(
             project_id=project_id,
@@ -384,8 +428,8 @@ class MessageRouter:
                         "intent_summary": {"command": head},
                     },
                 )
-            session = await self.service.start_progress_sync(
-                project_id, initiated_by=member.member_id
+            session = await self.start_sync(
+                project_id, initiated_by=member.member_id, occurred_at=occurred_at
             )
             return RouterOutcome(
                 msg="sync_session_started",
@@ -457,7 +501,7 @@ class MessageRouter:
             pending_question=(
                 PendingQuestionView(
                     question=pending.question,
-                    task_id=pending.task_id,
+                    task_ids=list(pending.task_ids),
                     asked_rounds=pending.asked_rounds,
                 )
                 if pending

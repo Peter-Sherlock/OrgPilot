@@ -15,6 +15,9 @@ class MemberProbeState(BaseModel):
     display_name: str = ""
     assigned_tasks: list[str] = Field(default_factory=list)
     status: ProbeMemberStatus = ProbeMemberStatus.PENDING
+    # True when the member's answers stayed partial after the max clarification
+    # rounds: collected, but the briefing must flag the information gap (3a.1).
+    incomplete: bool = False
     turns_count: int = 0
     raw_replies: list[str] = Field(default_factory=list)
     clarification_questions: list[str] = Field(default_factory=list)

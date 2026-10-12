@@ -512,7 +512,9 @@ class LayeredSystemUnderTest(BaselineSystemUnderTest):
                 self._project.project_id,
                 sample.sender,
                 context.pending_question.question,
-                task_id=context.pending_question.task_id,
+                task_ids=[context.pending_question.task_id]
+                if context.pending_question.task_id
+                else [],
                 source="clarify",
                 occurred_at=sample.occurred_at,
             )

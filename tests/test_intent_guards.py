@@ -92,7 +92,7 @@ def test_task_reference_rejects_unknown_task() -> None:
 def test_answer_pending_inherits_pending_question_task() -> None:
     context = CONTEXT.model_copy(
         update={
-            "pending_question": PendingQuestionView(question="什么时候恢复？", task_id="pay_sdk")
+            "pending_question": PendingQuestionView(question="什么时候恢复？", task_ids=["pay_sdk"])
         }
     )
     item = _item("明天恢复", intent=IntentType.ANSWER_PENDING, task_id=None)

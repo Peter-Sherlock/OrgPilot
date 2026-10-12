@@ -47,10 +47,10 @@ class TaskSnapshot(StrictModel):
 
 
 class PendingQuestionView(StrictModel):
-    """The clarification the bot is waiting on (probe or router-asked)."""
+    """The clarification the bot is waiting on, with every task it targets."""
 
     question: str
-    task_id: str | None = None
+    task_ids: list[str] = Field(default_factory=list)
     asked_rounds: int = 0
 
 
@@ -115,11 +115,17 @@ class HeuristicIntentClient:
 
     async def classify(self, message: str, context: IntentContext) -> IntentResult:
         def _run_extraction() -> Any:
+            # Scope to the sender's own tasks when known: a probe answer like
+            # "预计排查需要到明天下午5点" refers to the probed task, and the old
+            # coordinator path extracted with exactly this scoping (3a.1).
+            scoped = [
+                task for task in context.known_tasks if task.task_id in context.sender_task_ids
+            ] or context.known_tasks
             message_context = MessageContext(
                 project_id=context.project_id,
                 actor_id=context.sender_id,
                 occurred_at=context.occurred_at,
-                known_tasks={task.task_id: task.title for task in context.known_tasks},
+                known_tasks={task.task_id: task.title for task in scoped},
                 known_members={},
             )
             return self._extractor.extract_from_message(message, message_context)[0]

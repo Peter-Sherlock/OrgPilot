@@ -20,8 +20,8 @@ def test_pending_clarification_roundtrip_and_clear() -> None:
         "proj",
         "ou_a",
         "预计什么时候能恢复？",
-        task_id="backend_api",
-        claim=PendingClaimDraft(task_id="backend_api", health_status="at_risk"),
+        task_ids=["backend_api"],
+        claims={"backend_api": PendingClaimDraft(task_id="backend_api", health_status="at_risk")},
         created_at=NOW,
     )
     assert entry.asked_rounds == 0

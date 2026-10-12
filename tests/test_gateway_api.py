@@ -8,6 +8,7 @@ import pytest
 
 from orgpilot.config import OrgPilotSettings
 from orgpilot.gateway.app import create_app
+from orgpilot.gateway.service import GatewayService
 from orgpilot.storage.database import Database
 
 # Anchored to the real clock so approval expiry (created_at + 2 days) never lapses
@@ -27,6 +28,19 @@ async def client() -> httpx.AsyncClient:
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+    await db.close()
+
+
+@pytest.fixture
+async def sandbox_harness() -> tuple[httpx.AsyncClient, GatewayService]:
+    """Client + service pair for tests that inspect router/coordinator state."""
+    db = Database("sqlite+aiosqlite:///:memory:")
+    await db.init_db()
+    settings = OrgPilotSettings(collaboration_adapter="mock", feishu_use_ws=False)
+    app = create_app(db, settings=settings)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac, app.state.gateway_service
     await db.close()
 
 
@@ -307,7 +321,10 @@ async def test_approval_decision_error_paths(client: httpx.AsyncClient) -> None:
     assert resp_again.status_code == 400
 
 
-async def test_coordination_sandbox_endpoints(client: httpx.AsyncClient) -> None:
+async def test_coordination_sandbox_endpoints(
+    sandbox_harness: tuple[httpx.AsyncClient, GatewayService],
+) -> None:
+    client, service = sandbox_harness
     project_id = "sandbox-proj"
     resp = await client.post(f"/api/v1/projects/{project_id}/bootstrap-sandbox")
     assert resp.status_code == 200
@@ -339,17 +356,27 @@ async def test_coordination_sandbox_endpoints(client: httpx.AsyncClient) -> None
         assert resp_chat.status_code == 200
         return resp_chat.json()
 
-    # Sync intent from the PM through the chat surface
-    started = await chat("ou_pm", "/同步")
-    assert started["type"] == "sync_started"
+    # Register probe clarifications through the router's public API so the chat
+    # flow below behaves like the real probe conversation (3a.1).
+    coordinator = await service.get_sync_coordinator(project_id)
+    session = coordinator.get_active_session(project_id)
+    assert session is not None
+    service.intent_router.register_probe_clarifications(project_id, session)
 
-    # Vague reply -> autonomous clarification; a sync keyword inside a probed
-    # member's reply stays a reply instead of starting another session
+    # PM repeats /同步 while the REST-started session is still live: no second
+    # session, just a status reply (3a.1)
+    started = await chat("ou_pm", "/同步")
+    assert started["type"] == "normal_turn"
+    assert "已有进行中的全员同步" in started["bot_reply"]
+    assert "已回复 0/3" in started["bot_reply"]
+
+    # Vague reply -> claim recorded but time missing -> autonomous clarification
     clarified = await chat("ou_alice", "支付SDK报错卡住了")
     assert clarified["type"] == "clarification_needed"
 
+    # A probed member's off-topic reply is handled (smalltalk) and re-asks (R9)
     keyword_reply = await chat("ou_bob", "我这边当前进度正常")
-    assert keyword_reply["type"] == "member_collected"
+    assert keyword_reply["type"] == "clarification_needed"
 
     collected = await chat("ou_alice", "预计排查需要到明天下午5点")
     assert collected["type"] == "member_collected"
@@ -357,6 +384,9 @@ async def test_coordination_sandbox_endpoints(client: httpx.AsyncClient) -> None
     # A collected member's unrelated follow-up routes normally instead of re-probing
     followup = await chat("ou_alice", "另外支付SDK的文档还没写")
     assert followup["type"] == "normal_turn"
+
+    bob_done = await chat("ou_bob", "收银台前端一切正常，按原计划推进")
+    assert bob_done["type"] == "member_collected"
 
     final = await chat("ou_david", "压测全部调通，按原计划推进")
     assert final["type"] == "sync_completed"

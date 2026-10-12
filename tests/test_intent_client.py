@@ -90,7 +90,7 @@ async def test_heuristic_flags_answers_pending_with_open_question() -> None:
                 "health_status": "unknown",
             }
         ],
-        pending_question={"question": "大概什么时候能恢复？", "task_id": "backend_api"},
+        pending_question={"question": "大概什么时候能恢复？", "task_ids": ["backend_api"]},
     )
     result = await client.classify(context.message, context)
     assert result.answers_pending is True

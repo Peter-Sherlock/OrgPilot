@@ -36,12 +36,17 @@ class PendingClaimDraft(StrictModel):
 
 
 class PendingClarification(StrictModel):
-    """An open question the bot asked and the draft claim it wants to complete."""
+    """An open question the bot asked and the draft claims it wants to complete.
+
+    ``task_ids`` holds EVERY task the question targets (a sync probe targets all
+    tasks the member owns, 3a.1); ``claims`` keeps the partially-merged draft per
+    task and ``missing`` the still-missing slots per task.
+    """
 
     question: str
-    task_id: str | None = None
-    claim: PendingClaimDraft | None = None
-    missing_slots: list[str] = Field(default_factory=list)
+    task_ids: list[str] = Field(default_factory=list)
+    claims: dict[str, PendingClaimDraft] = Field(default_factory=dict)
+    missing: dict[str, list[str]] = Field(default_factory=dict)
     asked_rounds: int = 0
     created_at: datetime
     source: str = CLARIFICATION_SOURCE_CLARIFY
@@ -77,18 +82,20 @@ class DialogueStateStore:
         project_id: str,
         sender_id: str,
         question: str,
-        task_id: str | None = None,
+        task_ids: list[str] | None = None,
         *,
         source: str = CLARIFICATION_SOURCE_CLARIFY,
-        claim: PendingClaimDraft | None = None,
-        missing_slots: list[str] | None = None,
+        claims: dict[str, PendingClaimDraft] | None = None,
+        missing: dict[str, list[str]] | None = None,
+        asked_rounds: int = 0,
         created_at: datetime | None = None,
     ) -> PendingClarification:
         entry = PendingClarification(
             question=question,
-            task_id=task_id,
-            claim=claim,
-            missing_slots=missing_slots or [],
+            task_ids=list(task_ids or []),
+            claims=claims or {},
+            missing=missing or {},
+            asked_rounds=asked_rounds,
             created_at=created_at or datetime.now(UTC),
             source=source,
         )

@@ -474,8 +474,10 @@ async def test_probe_reply_with_sync_keyword_is_not_treated_as_new_sync(
     assert start.status_code == 200
     session_id = start.json()["data"]["session_id"]
 
-    # "当前进度" is a sync keyword, but the sender is a probed member of the
-    # active session, so the message must be handled as that member's reply.
+    # The sender is a probed member (probe clarification registered at /同步),
+    # so the off-topic message must never start a second sync; it routes through
+    # the intent pipeline as a topic switch: normal handling + R9 re-ask, and the
+    # probe round counter stays untouched.
     reply = await client.post(
         "/api/v1/feishu/events",
         json=_message_payload("ou_alice", "我这边当前进度正常", "om_t2_reply"),
@@ -487,7 +489,10 @@ async def test_probe_reply_with_sync_keyword_is_not_treated_as_new_sync(
     coordinator = await service.get_sync_coordinator(project_id)
     assert len(coordinator._sessions) == 1
     assert coordinator.get_session(session_id) is not None
-    assert coordinator.get_session(session_id).member_probes["ou_alice"].turns_count == 1
+    router = service.intent_router
+    pending = router.dialogue.get_pending_clarification(project_id, "ou_alice")
+    assert pending is not None and pending.source == "probe"
+    assert pending.asked_rounds == 0  # commands / topic switches never consume rounds
 
 
 async def test_non_pm_member_cannot_trigger_progress_sync(
@@ -530,22 +535,18 @@ async def test_converged_probe_reply_is_idempotent_per_message_id(
         events = (await client.get(f"/api/v1/projects/{project_id}/events")).json()
         return sum(1 for e in events if e["event_type"] == "task.health_reported")
 
-    async def probe_state(message_id: str | None = None):
-        coordinator = await service.get_sync_coordinator(project_id)
-        return coordinator
+    def asked_rounds() -> int:
+        router = service.intent_router
+        pending = router.dialogue.get_pending_clarification(project_id, "ou_alice")
+        return pending.asked_rounds if pending else -1
 
-    start = await client.post(
+    await client.post(
         "/api/v1/feishu/events",
         json=_message_payload("ou_carol", "/同步", "om_t4_start"),
         params={"project_id": project_id},
     )
-    session_id = start.json()["data"]["session_id"]
 
-    async def turns_count() -> int:
-        coordinator = await service.get_sync_coordinator(project_id)
-        return coordinator.get_session(session_id).member_probes["ou_alice"].turns_count
-
-    # 1. Vague risk report -> autonomous clarification, one ingested claim
+    # 1. Vague risk report -> clarification, one claim recorded, one round asked
     vague = await client.post(
         "/api/v1/feishu/events",
         json=_message_payload("ou_alice", "支付SDK报错卡住了", "om_t4_vague"),
@@ -553,7 +554,7 @@ async def test_converged_probe_reply_is_idempotent_per_message_id(
     )
     assert vague.json()["msg"] == "clarification_sent"
     assert await health_event_count() == 1
-    assert await turns_count() == 1
+    assert asked_rounds() == 1
 
     # 2. Feishu redelivers the same message_id -> no new turn, no new events
     redelivered = await client.post(
@@ -562,8 +563,9 @@ async def test_converged_probe_reply_is_idempotent_per_message_id(
         params={"project_id": project_id},
     )
     assert redelivered.status_code == 200
+    assert redelivered.json()["msg"] == "duplicate_suppressed"
     assert await health_event_count() == 1
-    assert await turns_count() == 1
+    assert asked_rounds() == 1
 
     # 3. Complete answer converges the probe and yields exactly one claim event
     full = await client.post(
@@ -571,9 +573,9 @@ async def test_converged_probe_reply_is_idempotent_per_message_id(
         json=_message_payload("ou_alice", "预计排查需要到明天下午5点", "om_t4_full"),
         params={"project_id": project_id},
     )
-    assert full.json()["msg"] == "probe_collected"
+    assert full.json()["msg"] == "success"
+    assert full.json()["data"]["reply_category"] == "claim_recorded"
     assert await health_event_count() == 2
-    assert await turns_count() == 2
 
     # 4. Redelivery of the converged reply must not add anything
     total_before = len((await client.get(f"/api/v1/projects/{project_id}/events")).json())
@@ -586,7 +588,6 @@ async def test_converged_probe_reply_is_idempotent_per_message_id(
     total_after = len((await client.get(f"/api/v1/projects/{project_id}/events")).json())
     assert total_after == total_before
     assert await health_event_count() == 2
-    assert await turns_count() == 2
 
 async def test_unregistered_sender_writes_no_events_and_pm_still_works(
     harness: tuple[httpx.AsyncClient, GatewayService],
@@ -670,12 +671,12 @@ async def test_collected_member_is_not_re_probed_by_later_messages(
         json=_message_payload("ou_alice", "支付SDK报错，排查需要到明天下午5点", "om_f1_a1"),
         params={"project_id": project_id},
     )
-    assert first.json()["msg"] == "probe_collected"
+    assert first.json()["msg"] == "success"
+    assert first.json()["data"]["reply_category"] == "claim_recorded"
 
     coordinator = await service.get_sync_coordinator(project_id)
     session = coordinator.get_session(session_id)
     assert session.member_probes["ou_alice"].status is ProbeMemberStatus.COLLECTED
-    assert session.member_probes["ou_alice"].turns_count == 1
     assert session.member_probes["ou_bob"].status is ProbeMemberStatus.PENDING
 
     # Unrelated follow-up while the session is still active (bob has not replied)
@@ -690,7 +691,6 @@ async def test_collected_member_is_not_re_probed_by_later_messages(
 
     # The probe state must not regress and no clarification may be re-sent
     assert session.member_probes["ou_alice"].status is ProbeMemberStatus.COLLECTED
-    assert session.member_probes["ou_alice"].turns_count == 1
     assert session.member_probes["ou_alice"].clarification_questions == []
     assert session.member_probes["ou_bob"].status is ProbeMemberStatus.PENDING
 
@@ -718,7 +718,8 @@ async def test_session_timeout_briefs_collected_info_and_routes_normally(
         json=_message_payload("ou_alice", "支付SDK报错，排查需要到明天下午5点", "om_f1b_a1"),
         params={"project_id": project_id},
     )
-    assert reply.json()["msg"] == "probe_collected"
+    assert reply.json()["msg"] == "success"
+    assert reply.json()["data"]["reply_category"] == "claim_recorded"
 
     # 25 hours later the silent session has expired; bob's message routes normally
     late = NOW + timedelta(hours=25)
