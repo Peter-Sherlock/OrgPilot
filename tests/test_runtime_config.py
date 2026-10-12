@@ -208,6 +208,61 @@ def test_settings_max_topic_reasks_from_env(monkeypatch: pytest.MonkeyPatch) -> 
         OrgPilotSettings(max_topic_reasks=-1).validate()
 
 
+def test_settings_deepseek_provider_and_thinking_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ORGPILOT_LLM_PROVIDER", "deepseek")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "ds-key")
+    monkeypatch.delenv("ORGPILOT_LLM_THINKING", raising=False)
+    settings = OrgPilotSettings.from_env()
+    assert settings.deepseek_base_url == "https://api.deepseek.com/anthropic"
+    assert settings.deepseek_model == "deepseek-flash"
+    assert settings.llm_thinking == "disabled"  # deepseek server-side default is enabled
+
+    # aihubmix keeps its omit default and unchanged behavior
+    monkeypatch.setenv("ORGPILOT_LLM_PROVIDER", "aihubmix")
+    monkeypatch.setenv("AIHUBMIX_API_KEY", "ah-key")
+    assert OrgPilotSettings.from_env().llm_thinking == "omit"
+
+
+def test_settings_deepseek_env_overrides_and_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ORGPILOT_LLM_PROVIDER", "deepseek")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "ds-key")
+    monkeypatch.setenv("DEEPSEEK_BASE_URL", "https://ds.example/anthropic/")
+    monkeypatch.setenv("DEEPSEEK_MODEL", "deepseek-flash-next")
+    monkeypatch.setenv("ORGPILOT_LLM_THINKING", "enabled")
+    settings = OrgPilotSettings.from_env()
+    assert settings.deepseek_base_url == "https://ds.example/anthropic"
+    assert settings.deepseek_model == "deepseek-flash-next"
+    assert settings.llm_thinking == "enabled"
+
+    with pytest.raises(ValueError, match="DEEPSEEK_API_KEY"):
+        OrgPilotSettings(llm_provider="deepseek").validate()
+    with pytest.raises(ValueError, match="ORGPILOT_LLM_PROVIDER"):
+        OrgPilotSettings(llm_provider="openai").validate()
+    with pytest.raises(ValueError, match="ORGPILOT_LLM_THINKING"):
+        OrgPilotSettings(llm_thinking="balanced").validate()
+
+
+def test_deepseek_provider_wires_shared_anthropic_client() -> None:
+    db = Database("sqlite+aiosqlite:///:memory:")
+    app = create_app(
+        db,
+        settings=OrgPilotSettings(
+            llm_provider="deepseek",
+            deepseek_api_key="ds-key",
+            llm_thinking="enabled",
+        ),
+    )
+    client = app.state.gateway_service.extractor.llm_client
+    assert isinstance(client, AnthropicCompatibleLLMClient)
+    assert client.model == "deepseek-flash"
+    assert client.base_url == "https://api.deepseek.com/anthropic"
+    assert client.thinking == "enabled"
+
+
 def test_settings_validate_requires_token_when_ws_disabled() -> None:
     settings = OrgPilotSettings(
         collaboration_adapter="feishu",

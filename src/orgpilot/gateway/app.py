@@ -38,6 +38,14 @@ def create_app(
             api_key=runtime_settings.aihubmix_api_key or "",
             base_url=runtime_settings.aihubmix_base_url,
             model=runtime_settings.aihubmix_model,
+            thinking=runtime_settings.llm_thinking,
+        )
+    elif runtime_settings.llm_provider == "deepseek":
+        llm_client = AnthropicCompatibleLLMClient(
+            api_key=runtime_settings.deepseek_api_key or "",
+            base_url=runtime_settings.deepseek_base_url,
+            model=runtime_settings.deepseek_model,
+            thinking=runtime_settings.llm_thinking,
         )
     extractor = ClaimExtractor(llm_client=llm_client)
 

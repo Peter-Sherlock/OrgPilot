@@ -36,6 +36,22 @@ $env:AIHUBMIX_MODEL = "gpt-5.6-luna"
 uv run uvicorn orgpilot.gateway.app:create_app --factory --port 8000
 ```
 
+For the DeepSeek official Anthropic-format endpoint (primary LLM candidate, ADR-0008 §7):
+
+```powershell
+$env:ORGPILOT_LLM_PROVIDER = "deepseek"
+$env:DEEPSEEK_API_KEY = "<set securely>"
+$env:DEEPSEEK_BASE_URL = "https://api.deepseek.com/anthropic"
+$env:DEEPSEEK_MODEL = "deepseek-flash"
+uv run uvicorn orgpilot.gateway.app:create_app --factory --port 8000
+```
+
+Both online providers share one Anthropic-compatible client. The optional
+`ORGPILOT_LLM_THINKING` switch (`omit` / `disabled` / `enabled`) controls the
+Anthropic-format thinking field: it defaults to `omit` on AIHubMix (field never
+sent, unchanged behavior) and `disabled` on DeepSeek (whose service-side default
+is enabled).
+
 The offline 20-sample extraction result is a deterministic regression benchmark; it is not a measured accuracy claim for the live model.
 
 - Feishu HTTP Webhook setup guide lives in `docs/feishu-setup-guide.md`.

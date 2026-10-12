@@ -27,7 +27,18 @@ class LLMClient(ABC):
 
 
 class AnthropicCompatibleLLMClient(LLMClient):
-    """Calls an Anthropic Messages-compatible endpoint and validates typed JSON output."""
+    """Calls an Anthropic Messages-compatible endpoint and validates typed JSON output.
+
+    Used by both online providers: AIHubMix (``https://aihubmix.com``) and the
+    DeepSeek official Anthropic-format endpoint
+    (``https://api.deepseek.com/anthropic``, model ``deepseek-flash``).
+
+    ``thinking`` controls the optional Anthropic-format thinking switch:
+    ``"omit"`` never sends the field (AIHubMix default, unchanged behaviour),
+    ``"disabled"``/``"enabled"`` send ``{"type": ...}`` (DeepSeek default
+    disabled — the service-side default is enabled). Response ``thinking``
+    content blocks are ignored; only ``text`` blocks are parsed.
+    """
 
     def __init__(
         self,
@@ -37,13 +48,17 @@ class AnthropicCompatibleLLMClient(LLMClient):
         max_tokens: int = 1024,
         timeout: float = 30.0,
         client: httpx.Client | None = None,
+        thinking: str = "omit",
     ) -> None:
         if not api_key:
             raise ValueError("api_key must not be empty")
+        if thinking not in ("omit", "disabled", "enabled"):
+            raise ValueError("thinking must be 'omit', 'disabled', or 'enabled'")
         self.api_key = api_key
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.max_tokens = max_tokens
+        self.thinking = thinking
         self._owns_client = client is None
         self._client = client or httpx.Client(timeout=timeout)
 
@@ -55,7 +70,7 @@ class AnthropicCompatibleLLMClient(LLMClient):
         context: MessageContext,
     ) -> ExtractionResult:
         schema = json.dumps(ExtractionResult.model_json_schema(), ensure_ascii=False)
-        payload = {
+        payload: dict[str, Any] = {
             "model": self.model,
             "system": system_prompt,
             "messages": [
@@ -67,6 +82,8 @@ class AnthropicCompatibleLLMClient(LLMClient):
             "max_tokens": self.max_tokens,
             "stream": False,
         }
+        if self.thinking != "omit":
+            payload["thinking"] = {"type": self.thinking}
         response = self._client.post(
             f"{self.base_url}/v1/messages",
             headers={

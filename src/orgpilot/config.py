@@ -9,6 +9,9 @@ DEFAULT_TIMEZONE = "Asia/Shanghai"
 DEFAULT_INTENT_TIMEOUT_SECONDS = 20.0
 DEFAULT_INTENT_CONFIDENCE_THRESHOLD = 0.6
 DEFAULT_MAX_TOPIC_REASKS = 1
+DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com/anthropic"
+DEFAULT_DEEPSEEK_MODEL = "deepseek-flash"
+LLM_THINKING_MODES = ("omit", "disabled", "enabled")
 
 
 def _load_dotenv_if_exists(dotenv_path: str = ".env") -> None:
@@ -45,6 +48,13 @@ class OrgPilotSettings:
     aihubmix_api_key: str | None = field(default=None, repr=False)
     aihubmix_base_url: str = "https://aihubmix.com"
     aihubmix_model: str = "gpt-5.6-luna"
+    deepseek_api_key: str | None = field(default=None, repr=False)
+    deepseek_base_url: str = DEFAULT_DEEPSEEK_BASE_URL
+    deepseek_model: str = DEFAULT_DEEPSEEK_MODEL
+    # Anthropic-format thinking switch sent to online providers: "omit" never
+    # sends the field, "disabled"/"enabled" send {"type": ...}. Defaults are
+    # provider-specific (aihubmix omit, deepseek disabled) via from_env.
+    llm_thinking: str = "omit"
     collaboration_adapter: str = "mock"
     feishu_use_ws: bool = True
     feishu_app_id: str | None = None
@@ -66,16 +76,23 @@ class OrgPilotSettings:
     def from_env(cls) -> "OrgPilotSettings":
         _load_dotenv_if_exists()
         use_ws_env = os.getenv("ORGPILOT_FEISHU_USE_WS", "true").strip().lower()
+        llm_provider = os.getenv("ORGPILOT_LLM_PROVIDER", "mock").strip().lower()
+        thinking_env = _optional_env("ORGPILOT_LLM_THINKING")
         settings = cls(
             database_url=os.getenv(
                 "ORGPILOT_DATABASE_URL",
                 "sqlite+aiosqlite:///./orgpilot.db",
             ),
             api_token=_optional_env("ORGPILOT_API_TOKEN"),
-            llm_provider=os.getenv("ORGPILOT_LLM_PROVIDER", "mock").strip().lower(),
+            llm_provider=llm_provider,
             aihubmix_api_key=_optional_env("AIHUBMIX_API_KEY"),
             aihubmix_base_url=os.getenv("AIHUBMIX_BASE_URL", "https://aihubmix.com").rstrip("/"),
             aihubmix_model=os.getenv("AIHUBMIX_MODEL", "gpt-5.6-luna"),
+            deepseek_api_key=_optional_env("DEEPSEEK_API_KEY"),
+            deepseek_base_url=os.getenv("DEEPSEEK_BASE_URL", DEFAULT_DEEPSEEK_BASE_URL).rstrip("/"),
+            deepseek_model=os.getenv("DEEPSEEK_MODEL", DEFAULT_DEEPSEEK_MODEL),
+            llm_thinking=thinking_env
+            or ("disabled" if llm_provider == "deepseek" else "omit"),
             collaboration_adapter=os.getenv("ORGPILOT_COLLABORATION_ADAPTER", "mock")
             .strip()
             .lower(),
@@ -120,10 +137,16 @@ class OrgPilotSettings:
             raise ValueError("ORGPILOT_INTENT_RECENT_TURNS must be non-negative")
         if self.max_topic_reasks < 0:
             raise ValueError("ORGPILOT_MAX_TOPIC_REASKS must be non-negative")
-        if self.llm_provider not in {"mock", "aihubmix"}:
-            raise ValueError("ORGPILOT_LLM_PROVIDER must be 'mock' or 'aihubmix'")
+        if self.llm_provider not in {"mock", "aihubmix", "deepseek"}:
+            raise ValueError("ORGPILOT_LLM_PROVIDER must be 'mock', 'aihubmix', or 'deepseek'")
         if self.llm_provider == "aihubmix" and not self.aihubmix_api_key:
             raise ValueError("AIHUBMIX_API_KEY is required when ORGPILOT_LLM_PROVIDER=aihubmix")
+        if self.llm_provider == "deepseek" and not self.deepseek_api_key:
+            raise ValueError("DEEPSEEK_API_KEY is required when ORGPILOT_LLM_PROVIDER=deepseek")
+        if self.llm_thinking not in LLM_THINKING_MODES:
+            raise ValueError(
+                "ORGPILOT_LLM_THINKING must be one of: " + ", ".join(LLM_THINKING_MODES)
+            )
 
         if self.collaboration_adapter not in {"mock", "feishu"}:
             raise ValueError("ORGPILOT_COLLABORATION_ADAPTER must be 'mock' or 'feishu'")
