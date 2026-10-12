@@ -10,10 +10,10 @@
 `evals/intent/test.yaml` 的 sha256：
 
 ```text
-82f55b9ef5f64ccfb861dd7a9ef02f9d1a4d84c5ec5bf5a1e2641998bea6320f
+b023ded8044a9f9f0888566cdb62245c1d4f0cadd5c75035038efc87c1ec36a3
 ```
 
-**之后修改 test 集需要先经过审批**；获批修改后必须同步更新此处的 sha256 与
+**之后修改 test 集需要先经过审批**（2026-10-12 的 answers_pending 修订经产品指示获批，哈希已同步更新）；获批修改后必须同步更新此处的 sha256 与
 `tests/test_intent_dataset.py::test_frozen_test_split_unchanged_without_approval`
 （该测试在校验失败时会提示需要审批）。
 

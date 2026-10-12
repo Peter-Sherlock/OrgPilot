@@ -151,3 +151,17 @@ dev_p1_p2_004（无疑问、要求催办）保留 dependency_wait + unsupported�
 | test_confirmation_flow_003 | sync_confirm | sync_started | 同上 |
 
 request_sync 8 条（自然语言、只发卡片）维持 `sync_confirm` 不变。
+
+### R11 补充（2026-10-12，第二轮）：multi_turn_topic_shift 的 answers_pending
+
+换话题说明没有回答追问，4 条样本的 `intents.answers_pending` true → false（按 R9，期望行为
+不变：仍重新追问，asks_clarification=true）：
+
+| 样本 | 旧标注 | 新标注 | 规则 |
+|---|---|---|---|
+| dev_multi_turn_topic_shift_001 | answers_pending=true | false | R9 |
+| dev_multi_turn_topic_shift_002 | answers_pending=true | false | R9 |
+| dev_multi_turn_topic_shift_003 | answers_pending=true | false | R9 |
+| test_multi_turn_topic_shift_001 | answers_pending=true | false | R9 |
+
+test.yaml 因此变更，属本指示审批通过的范围：BASELINE.md 中冻结 sha256 已同步更新。

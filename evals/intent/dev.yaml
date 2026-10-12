@@ -1826,7 +1826,7 @@ samples:
         asks_clarification: true
         reply_category: unsupported
       intents:
-        answers_pending: true
+        answers_pending: false
         items:
           - intent: out_of_scope
             speech_act: question
@@ -1848,7 +1848,7 @@ samples:
         asks_clarification: true
         reply_category: smalltalk
       intents:
-        answers_pending: true
+        answers_pending: false
         items:
           - intent: chitchat
             speech_act: statement
@@ -1870,7 +1870,7 @@ samples:
         asks_clarification: true
         reply_category: smalltalk
       intents:
-        answers_pending: true
+        answers_pending: false
         items:
           - intent: chitchat
             speech_act: question
