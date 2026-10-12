@@ -95,7 +95,9 @@ class MessageRouter:
         # A real LLM intent client arrives in ADR-0008 step 3b; until then the
         # heuristic wrapper keeps ORGPILOT_LLM_PROVIDER=mock demos working.
         self.intent_client = intent_client or HeuristicIntentClient()
-        self.dialogue = dialogue_store or DialogueStateStore()
+        self.dialogue = dialogue_store or DialogueStateStore(
+            max_topic_reasks=self.settings.max_topic_reasks
+        )
         self.messages = message_store or SqlMessageStore(service.db)
         self.recent_turns_limit = recent_turns_limit or self.settings.intent_recent_turns
         self.handlers = IntentHandlers(

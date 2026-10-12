@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 DEFAULT_TIMEZONE = "Asia/Shanghai"
 DEFAULT_INTENT_TIMEOUT_SECONDS = 20.0
 DEFAULT_INTENT_CONFIDENCE_THRESHOLD = 0.6
+DEFAULT_MAX_TOPIC_REASKS = 1
 
 
 def _load_dotenv_if_exists(dotenv_path: str = ".env") -> None:
@@ -54,6 +55,7 @@ class OrgPilotSettings:
     intent_timeout_seconds: float = DEFAULT_INTENT_TIMEOUT_SECONDS
     intent_confidence_threshold: float = DEFAULT_INTENT_CONFIDENCE_THRESHOLD
     intent_recent_turns: int = 6
+    max_topic_reasks: int = DEFAULT_MAX_TOPIC_REASKS
 
     @property
     def business_timezone(self) -> ZoneInfo:
@@ -96,6 +98,9 @@ class OrgPilotSettings:
                 )
             ),
             intent_recent_turns=int(os.getenv("ORGPILOT_INTENT_RECENT_TURNS", "6")),
+            max_topic_reasks=int(
+                os.getenv("ORGPILOT_MAX_TOPIC_REASKS", str(DEFAULT_MAX_TOPIC_REASKS))
+            ),
         )
         settings.validate()
         return settings
@@ -113,6 +118,8 @@ class OrgPilotSettings:
             raise ValueError("ORGPILOT_INTENT_CONFIDENCE_THRESHOLD must be within [0, 1]")
         if self.intent_recent_turns < 0:
             raise ValueError("ORGPILOT_INTENT_RECENT_TURNS must be non-negative")
+        if self.max_topic_reasks < 0:
+            raise ValueError("ORGPILOT_MAX_TOPIC_REASKS must be non-negative")
         if self.llm_provider not in {"mock", "aihubmix"}:
             raise ValueError("ORGPILOT_LLM_PROVIDER must be 'mock' or 'aihubmix'")
         if self.llm_provider == "aihubmix" and not self.aihubmix_api_key:

@@ -119,10 +119,19 @@ ledger_check 10-22、merchant_admin 10-23。
 按**新话题本身**的类别回复，同时**重新追问**还没得到回答的问题
 （asks_clarification=true）。
 
+换话题重新追问有次数上限（2026-10 补充）：同一个待回答问题因换话题最多**重新追问 1 次**
+（`ORGPILOT_MAX_TOPIC_REASKS`，默认 1），超过之后回复中不再附带追问（按新话题正常回复，
+asks_clarification=false），但待回答状态保留。追问总上限：
+`asked_rounds + reask_count` 达到 `max_clarification_rounds + max_topic_reasks`
+（默认 3 + 1 = 4）时**停止追问**——来源是探针的，标记为「信息不全」并通知协调器
+（处理方式同"多轮追问后仍不完整"）；来源是普通追问的，直接清除待回答状态。
+
 示例：
 
 - 待回答"支付SDK什么时候恢复？"时改问"周报这周还用写吗？"→ 回复 unsupported + 重新追问；
-- 待回答时聊"今天的热搜"→ 回复 smalltalk + 重新追问。
+- 待回答时聊"今天的热搜"→ 回复 smalltalk + 重新追问；
+- 第 2 次换话题 → 只按 smalltalk 回复，不再附带追问；
+- 连续换话题直至总上限（第 4 次换话题）→ 探针来源标记「信息不全」并收敛。
 
 ## R10 时间约定
 

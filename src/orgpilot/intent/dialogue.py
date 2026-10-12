@@ -16,6 +16,7 @@ from datetime import UTC, datetime, timedelta
 
 from pydantic import Field
 
+from orgpilot.config import DEFAULT_MAX_TOPIC_REASKS
 from orgpilot.extraction.models import StrictModel
 
 DEFAULT_CLARIFICATION_TTL = timedelta(hours=24)
@@ -48,6 +49,9 @@ class PendingClarification(StrictModel):
     claims: dict[str, PendingClaimDraft] = Field(default_factory=dict)
     missing: dict[str, list[str]] = Field(default_factory=dict)
     asked_rounds: int = 0
+    # Topic-switch re-asks (3a.2), counted SEPARATELY from asked_rounds: the
+    # combined asked_rounds + reask_count decides when the bot stops asking.
+    reask_count: int = 0
     created_at: datetime
     source: str = CLARIFICATION_SOURCE_CLARIFY
 
@@ -68,10 +72,12 @@ class DialogueStateStore:
         clarification_ttl: timedelta = DEFAULT_CLARIFICATION_TTL,
         confirmation_ttl: timedelta = DEFAULT_CONFIRMATION_TTL,
         max_clarification_rounds: int = DEFAULT_MAX_CLARIFICATION_ROUNDS,
+        max_topic_reasks: int = DEFAULT_MAX_TOPIC_REASKS,
     ) -> None:
         self.clarification_ttl = clarification_ttl
         self.confirmation_ttl = confirmation_ttl
         self.max_clarification_rounds = max_clarification_rounds
+        self.max_topic_reasks = max_topic_reasks
         self._clarifications: dict[tuple[str, str], PendingClarification] = {}
         self._confirmations: dict[tuple[str, str], PendingSyncConfirmation] = {}
 
@@ -88,6 +94,7 @@ class DialogueStateStore:
         claims: dict[str, PendingClaimDraft] | None = None,
         missing: dict[str, list[str]] | None = None,
         asked_rounds: int = 0,
+        reask_count: int = 0,
         created_at: datetime | None = None,
     ) -> PendingClarification:
         entry = PendingClarification(
@@ -96,6 +103,7 @@ class DialogueStateStore:
             claims=claims or {},
             missing=missing or {},
             asked_rounds=asked_rounds,
+            reask_count=reask_count,
             created_at=created_at or datetime.now(UTC),
             source=source,
         )

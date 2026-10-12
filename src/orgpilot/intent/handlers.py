@@ -236,15 +236,37 @@ class IntentHandlers:
             )
 
         # R9 topic switch: a pending question exists but this message did not
-        # answer it — re-ask at the end WITHOUT counting another round.
+        # answer it. The same question is re-attached at most `max_topic_reasks`
+        # times (3a.2), and once asked_rounds + reask_count reaches the combined
+        # cap the bot stops asking entirely: probe-source pendings are declared
+        # incomplete to the coordinator (as in conv_06), plain clarifications
+        # are quietly cleared.
         pending = self.dialogue.get_pending_clarification(
             project_id, member.member_id, now=occurred_at
         )
         if pending is not None and not result.answers_pending:
-            parts.append(f"另外，还想追问一下：{pending.question}")
-            asks = True
+            pending.reask_count += 1
+            total_cap = (
+                self.dialogue.max_clarification_rounds + self.dialogue.max_topic_reasks
+            )
             if pending.source == CLARIFICATION_SOURCE_PROBE:
                 data["probe_reply"] = True
+            if pending.asked_rounds + pending.reask_count >= total_cap:
+                if pending.source == CLARIFICATION_SOURCE_PROBE:
+                    session = await self._notify_probe(
+                        project_id,
+                        member.member_id,
+                        complete=False,
+                        occurred_at=occurred_at,
+                        note="信息不全",
+                    )
+                    if session is not None:
+                        data["session_id"] = session.session_id
+                    parts.append("多次沟通仍未获得回答，简报中将标注「信息不全」。")
+                self.dialogue.clear_pending_clarification(project_id, member.member_id)
+            elif pending.reask_count <= self.dialogue.max_topic_reasks:
+                parts.append(f"另外，还想追问一下：{pending.question}")
+                asks = True
 
         merged = merge_reply_kinds(kinds) or ReplyKind.SMALLTALK
         msg = "success"
@@ -471,8 +493,12 @@ class IntentHandlers:
             kinds.append(ReplyKind.CLAIM_RECORDED)
             return asks
 
+        # Total re-ask budget (3a.2): follow-up rounds AND topic-switch re-asks
+        # draw on one combined cap of max_clarification_rounds + max_topic_reasks.
         asked = entry.asked_rounds if entry else 0
-        exhausted = asked >= self.dialogue.max_clarification_rounds
+        reasked = entry.reask_count if entry else 0
+        total_cap = self.dialogue.max_clarification_rounds + self.dialogue.max_topic_reasks
+        exhausted = asked + reasked >= total_cap
         if probe_source and exhausted:
             # 多轮追问仍不完整：如实标注"信息不全"，交给协调器在简报中体现
             session = await self._notify_probe(

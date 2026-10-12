@@ -498,6 +498,123 @@ async def test_topic_switch_reasks_without_counting_rounds() -> None:
         assert "大概什么时候能恢复" in outcome.reply_text
         pending = router.dialogue.get_pending_clarification(PROJECT, "ou_alice", now=NOW)
         assert pending is not None and pending.asked_rounds == 0  # R9: not incremented
+        assert pending.reask_count == 1  # 3a.2: topic switches count separately
+    finally:
+        await db.close()
+
+
+async def test_topic_switch_reask_stops_after_budget() -> None:
+    message = "哈哈哈你们看热搜了吗"
+    scripted = _result(
+        _item(message, intent=IntentType.CHITCHAT, task_id=None), answers_pending=False
+    )
+    router, _service, _adapter, db = await _make_router(
+        ScriptedIntentClient(responses={message: scripted})
+    )
+    router.register_pending_clarification(
+        PROJECT,
+        "ou_alice",
+        "大概什么时候能恢复？",
+        task_ids=["backend_api"],
+        occurred_at=NOW,
+    )
+    try:
+        first = await router.handle_message(
+            project_id=PROJECT,
+            sender_id="ou_alice",
+            message_id="om_topic_1",
+            text=message,
+            occurred_at=NOW,
+        )
+        assert first.asks_clarification is True
+        second = await router.handle_message(
+            project_id=PROJECT,
+            sender_id="ou_alice",
+            message_id="om_topic_2",
+            text=message,
+            occurred_at=NOW,
+        )
+        # re-ask budget (ORGPILOT_MAX_TOPIC_REASKS=1) is used up: same friendly
+        # reply, but no question attached and the pending state stays open
+        assert second.reply_category == ReplyKind.SMALLTALK
+        assert second.asks_clarification is False
+        assert "大概什么时候能恢复" not in second.reply_text
+        pending = router.dialogue.get_pending_clarification(PROJECT, "ou_alice", now=NOW)
+        assert pending is not None and pending.reask_count == 2
+    finally:
+        await db.close()
+
+
+async def test_topic_switch_total_cap_declares_probe_incomplete() -> None:
+    message = "哈哈哈你们看热搜了吗"
+    scripted = _result(
+        _item(message, intent=IntentType.CHITCHAT, task_id=None), answers_pending=False
+    )
+    router, service, _adapter, db = await _make_router(
+        ScriptedIntentClient(responses={message: scripted})
+    )
+    try:
+        session = await service.start_progress_sync(PROJECT, initiated_by="ou_carol")
+        router.register_pending_clarification(
+            PROJECT,
+            "ou_alice",
+            "请汇报您负责任务的最新进展。",
+            task_ids=["backend_api"],
+            source="probe",
+            occurred_at=NOW,
+        )
+        outcome = None
+        for index in range(1, 5):
+            outcome = await router.handle_message(
+                project_id=PROJECT,
+                sender_id="ou_alice",
+                message_id=f"om_topic_cap_{index}",
+                text=message,
+                occurred_at=NOW,
+            )
+        # asked_rounds(0) + reask_count(4) reached the combined cap (3 + 1):
+        # the probe is declared incomplete and the pending state is cleared
+        assert outcome is not None
+        assert outcome.reply_category == ReplyKind.SMALLTALK
+        assert outcome.asks_clarification is False
+        assert "信息不全" in outcome.reply_text
+        assert router.dialogue.get_pending_clarification(PROJECT, "ou_alice", now=NOW) is None
+        coordinator = await service.get_sync_coordinator(PROJECT)
+        probe = coordinator.get_session(session.session_id).member_probes["ou_alice"]
+        assert probe.status == ProbeMemberStatus.COLLECTED
+        assert probe.incomplete is True
+    finally:
+        await db.close()
+
+
+async def test_clarify_total_cap_clears_quietly_on_topic_switch() -> None:
+    message = "哈哈哈你们看热搜了吗"
+    scripted = _result(
+        _item(message, intent=IntentType.CHITCHAT, task_id=None), answers_pending=False
+    )
+    router, _service, _adapter, db = await _make_router(
+        ScriptedIntentClient(responses={message: scripted})
+    )
+    router.register_pending_clarification(
+        PROJECT,
+        "ou_alice",
+        "大概什么时候能恢复？",
+        task_ids=["backend_api"],
+        occurred_at=NOW,
+        asked_rounds=router.dialogue.max_clarification_rounds,
+    )
+    try:
+        outcome = await router.handle_message(
+            project_id=PROJECT,
+            sender_id="ou_alice",
+            message_id="om_topic_clarify_cap",
+            text=message,
+            occurred_at=NOW,
+        )
+        assert outcome.reply_category == ReplyKind.SMALLTALK
+        assert outcome.asks_clarification is False
+        assert "信息不全" not in outcome.reply_text
+        assert router.dialogue.get_pending_clarification(PROJECT, "ou_alice", now=NOW) is None
     finally:
         await db.close()
 
@@ -760,13 +877,16 @@ async def test_clarify_source_gives_up_quietly_after_max_rounds() -> None:
     router, service, _adapter, db = await _make_router(
         ScriptedIntentClient(responses={message: scripted})
     )
+    total_cap = (
+        router.dialogue.max_clarification_rounds + router.dialogue.max_topic_reasks
+    )
     router.register_pending_clarification(
         PROJECT,
         "ou_alice",
         "大概什么时候能恢复？",
         task_ids=["backend_api"],
         occurred_at=NOW,
-        asked_rounds=3,
+        asked_rounds=total_cap,
     )
     try:
         outcome = await router.handle_message(
@@ -802,7 +922,9 @@ async def test_probe_declares_incomplete_after_max_rounds() -> None:
             task_ids=["backend_api"],
             source="probe",
             occurred_at=NOW,
-            asked_rounds=3,
+            asked_rounds=(
+                router.dialogue.max_clarification_rounds + router.dialogue.max_topic_reasks
+            ),
         )
         outcome = await router.handle_message(
             project_id=PROJECT,

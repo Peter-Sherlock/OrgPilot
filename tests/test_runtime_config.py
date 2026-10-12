@@ -199,6 +199,15 @@ def test_settings_validate_rejects_unknown_collaboration_adapter() -> None:
         settings.validate()
 
 
+def test_settings_max_topic_reasks_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ORGPILOT_MAX_TOPIC_REASKS", "2")
+    assert OrgPilotSettings.from_env().max_topic_reasks == 2
+    monkeypatch.delenv("ORGPILOT_MAX_TOPIC_REASKS")
+    assert OrgPilotSettings.from_env().max_topic_reasks == 1
+    with pytest.raises(ValueError, match="ORGPILOT_MAX_TOPIC_REASKS"):
+        OrgPilotSettings(max_topic_reasks=-1).validate()
+
+
 def test_settings_validate_requires_token_when_ws_disabled() -> None:
     settings = OrgPilotSettings(
         collaboration_adapter="feishu",
