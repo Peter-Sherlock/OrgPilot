@@ -96,6 +96,80 @@ async def test_heuristic_flags_answers_pending_with_open_question() -> None:
     assert result.answers_pending is True
 
 
+async def test_heuristic_falls_back_to_answer_pending_with_open_question() -> None:
+    client = HeuristicIntentClient()
+    backend = {
+        "task_id": "backend_api",
+        "title": "后端接口",
+        "owner_id": "ou_alice",
+        "deadline": None,
+        "health_status": "unknown",
+    }
+    ledger = {
+        "task_id": "ledger_check",
+        "title": "对账模块",
+        "owner_id": "ou_alice",
+        "deadline": None,
+        "health_status": "unknown",
+    }
+
+    # no keyword claim matches, but an open question exists -> answer attempt
+    context = _context(
+        "预计明天下午5点能恢复",
+        known_tasks=[backend],
+        pending_question={"question": "大概什么时候能恢复？", "task_ids": ["backend_api"]},
+    )
+    result = await client.classify(context.message, context)
+    assert result.answers_pending is True
+    item = result.items[0]
+    assert item.intent == IntentType.ANSWER_PENDING
+    assert item.task_id == "backend_api"
+    assert item.expected_completion == datetime(2026, 10, 14, 17, 0, tzinfo=BJ)
+
+    # multiple target tasks: prefer the one the message actually names
+    multi = _context(
+        "对账模块说不准",
+        known_tasks=[backend, ledger],
+        pending_question={
+            "question": "两项任务进展如何？",
+            "task_ids": ["backend_api", "ledger_check"],
+        },
+    )
+    result = await client.classify(multi.message, multi)
+    assert result.items[0].task_id == "ledger_check"
+
+    # nothing named -> the task-less answer applies to every target task
+    vague = _context(
+        "再等等吧",
+        known_tasks=[backend, ledger],
+        pending_question={
+            "question": "两项任务进展如何？",
+            "task_ids": ["backend_api", "ledger_check"],
+        },
+    )
+    result = await client.classify(vague.message, vague)
+    assert result.answers_pending is True
+    assert result.items[0].task_id is None
+
+    # bare acknowledgments and obvious social chatter never become answers
+    for text in ("好的", "收到", "哈哈哈你们看热搜了吗", "/同步"):
+        turn = _context(
+            text,
+            known_tasks=[backend],
+            pending_question={"question": "大概什么时候能恢复？", "task_ids": ["backend_api"]},
+        )
+        result = await client.classify(turn.message, turn)
+        assert result.items[0].intent == IntentType.CHITCHAT
+        assert result.answers_pending is False
+
+
+async def test_heuristic_keeps_chitchat_fallback_without_open_question() -> None:
+    client = HeuristicIntentClient()
+    result = await client.classify("再等等吧", _context("再等等吧"))
+    assert result.items[0].intent == IntentType.CHITCHAT
+    assert result.answers_pending is False
+
+
 async def test_scripted_client_returns_presets_and_records_calls() -> None:
     scripted_result = IntentResult(reasoning="preset")
     client = ScriptedIntentClient(responses={"你好": scripted_result})

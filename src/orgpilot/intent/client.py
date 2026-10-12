@@ -26,6 +26,7 @@ from orgpilot.config import DEFAULT_INTENT_TIMEOUT_SECONDS
 from orgpilot.extraction.client import LLMClient, MockLLMClient
 from orgpilot.extraction.extractor import ClaimExtractor
 from orgpilot.extraction.models import MessageContext, StrictModel
+from orgpilot.extraction.verifier import TemporalResolver
 from orgpilot.intent.models import (
     Certainty,
     IntentItem,
@@ -33,6 +34,42 @@ from orgpilot.intent.models import (
     IntentType,
     Polarity,
     SpeechAct,
+)
+
+# Bare acknowledgments ("好的" alone) are NOT answers to an open question
+# (3a.2); matched exactly so "明天可以恢复" is never mistaken for one.
+_BARE_ACKNOWLEDGMENTS = {
+    "好",
+    "好的",
+    "好的。",
+    "好嘞",
+    "好呀",
+    "嗯",
+    "嗯嗯",
+    "行",
+    "可以",
+    "确认",
+    "收到",
+    "收到！",
+    "ok",
+    "okay",
+    "yes",
+}
+
+# Obvious social chatter; only consulted when the extractor found nothing.
+_CHITCHAT_MARKERS = (
+    "你好",
+    "hello",
+    "哈哈",
+    "早安",
+    "晚安",
+    "吃饭",
+    "天气",
+    "热搜",
+    "周末",
+    "谢谢",
+    "辛苦",
+    "红包",
 )
 
 
@@ -108,6 +145,12 @@ class HeuristicIntentClient:
     Quality is explicitly not a goal (ADR-0008): this exists so ORGPILOT_LLM_PROVIDER=mock
     keeps a working end-to-end demo. The synchronous MockLLMClient runs in a worker
     thread so the event loop is never blocked.
+
+    One deliberate affordance beyond the keyword rules (3a.2): with an open
+    question pending, a message that is neither a command, an obvious social
+    message, nor a bare acknowledgment is treated as an attempt to answer it
+    (intent ``answer_pending``), so probe conversations can actually converge in
+    mock mode. The completion time still comes from TemporalResolver, unchanged.
     """
 
     def __init__(self, llm_client: LLMClient | None = None) -> None:
@@ -165,6 +208,17 @@ class HeuristicIntentClient:
                     confidence=commitment.confidence,
                 )
             )
+
+        # 3a.2 fallback: with a question pending, treat a non-command, non-chitchat,
+        # non-acknowledgment message as an answer attempt so mock-mode probes converge.
+        fallback_answer = (
+            context.pending_question is not None
+            and not items
+            and self._looks_like_answer(message)
+        )
+        if fallback_answer:
+            items.append(self._answer_pending_item(message, context))
+
         if not items:
             items.append(
                 IntentItem(
@@ -180,9 +234,55 @@ class HeuristicIntentClient:
         return IntentResult(
             items=items,
             answers_pending=(
-                context.pending_question is not None and extraction.is_actionable
+                context.pending_question is not None
+                and (extraction.is_actionable or fallback_answer)
             ),
             reasoning="heuristic: MockLLMClient keyword rules mapped to intents",
+        )
+
+    @staticmethod
+    def _looks_like_answer(message: str) -> bool:
+        stripped = message.strip()
+        if not stripped or stripped.startswith("/"):
+            return False
+        lowered = stripped.lower()
+        if lowered in _BARE_ACKNOWLEDGMENTS:
+            return False
+        return not any(marker in lowered for marker in _CHITCHAT_MARKERS)
+
+    @staticmethod
+    def _select_pending_task(message: str, context: IntentContext) -> str | None:
+        """Defaults to the pending question's target task; with several targets,
+        prefers the one the message actually names (3a.2)."""
+        targets = (
+            list(context.pending_question.task_ids) if context.pending_question else []
+        )
+        if not targets:
+            return None
+        if len(targets) == 1:
+            return targets[0]
+        compact = message.replace(" ", "").lower()
+        for task in context.known_tasks:
+            if task.task_id in targets:
+                title = task.title.replace(" ", "").lower()
+                if title and title in compact:
+                    return task.task_id
+        # Nothing named: a task-less answer item applies to every target task.
+        return None
+
+    @classmethod
+    def _answer_pending_item(cls, message: str, context: IntentContext) -> IntentItem:
+        return IntentItem(
+            intent=IntentType.ANSWER_PENDING,
+            task_id=cls._select_pending_task(message, context),
+            speech_act=SpeechAct.STATEMENT,
+            polarity=Polarity.AFFIRMATIVE,
+            certainty=Certainty.CERTAIN,
+            expected_completion=TemporalResolver.resolve_relative_time(
+                message, context.occurred_at
+            ),
+            source_quote=message[:50],
+            confidence=0.7,
         )
 
 
