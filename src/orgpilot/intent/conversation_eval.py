@@ -33,6 +33,10 @@ from orgpilot.intent.evaluator import (
 )
 from orgpilot.storage.database import Database
 
+# 3a.2 heuristic gate: the only conversation the keyword client must converge
+# (probe -> time completion). Other conversations are recorded without a gate.
+HEURISTIC_GATE_CONVERSATIONS = frozenset({"conv_01_probe_clarify_time"})
+
 
 class ConversationSetup(StrictModel):
     """Initial state for one conversation, applied through public APIs only."""

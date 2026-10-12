@@ -513,3 +513,40 @@ def test_cli_eval_conversations_oracle_gate_fails_without_annotations(
     # the mini conversation has no intent annotations, so the oracle cannot
     # drive it and the all-pass gate must fail loudly
     assert main() == 1
+
+
+def test_cli_eval_conversations_heuristic_gate_fails_when_conv_01_fails(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import sys
+
+    dataset_dir = tmp_path / "intent"
+    dataset_dir.mkdir()
+    _write_conversation_dataset(dataset_dir)
+    # rename the mini conversation to the heuristic-gate id and corrupt its
+    # expectation so the keyword client cannot converge it
+    path = dataset_dir / "conversations.yaml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data["conversations"][0]["id"] = "conv_01_probe_clarify_time"
+    data["conversations"][0]["turns"][0]["expected"]["behavior"][
+        "reply_category"
+    ] = "no_permission"
+    path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "orgpilot",
+            "eval-intent",
+            "--conversations",
+            "--system",
+            "layered",
+            "--intent",
+            "heuristic",
+            "--dataset-dir",
+            str(dataset_dir),
+            "--report-dir",
+            str(tmp_path / "reports"),
+        ],
+    )
+    assert main() == 1

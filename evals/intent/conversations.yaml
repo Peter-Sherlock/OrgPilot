@@ -359,7 +359,7 @@ conversations:
               - task_id: pay_e2e_test
                 health_status: at_risk
             reply_category: claim_recorded
-            asks_clarification: false
+            asks_clarification: true
           intents:
             answers_pending: true
             items:
@@ -370,6 +370,26 @@ conversations:
                 certainty: hedged
                 health_status: at_risk
                 source_quote: "实在说不好什么时候能好"
+      - sender: ou_lei_chen
+        after_minutes: 120
+        message: "真的说不好，先这样吧"
+        expected:
+          behavior:
+            claims:
+              - task_id: pay_e2e_test
+                health_status: at_risk
+            reply_category: claim_recorded
+            asks_clarification: false
+          intents:
+            answers_pending: true
+            items:
+              - intent: answer_pending
+                task_id: pay_e2e_test
+                speech_act: statement
+                polarity: affirmative
+                certainty: hedged
+                health_status: at_risk
+                source_quote: "真的说不好，先这样吧"
     final:
       collected: [ou_wei_wang, ou_fang_liu, ou_lei_chen]
       claims:
@@ -543,3 +563,294 @@ conversations:
           health_status: on_track
       briefing_generated: false
       briefing_marks_incomplete: false
+
+  # 9. 连续换话题：第 2 次换话题不再追问（重问预算 1 次用尽）；
+  #    第 4 次换话题时 asked_rounds + reask_count 达到总上限（3+1=4），
+  #    探针标记「信息不全」并收敛生成简报
+  - id: conv_09_repeated_topic_switch_cap
+    description: 连续换话题在总上限处标记信息不全并收敛
+    occurred_at_base: "2026-10-16T09:00:00+08:00"
+    setup:
+      start_sync_by: ou_pm_zhao
+    turns:
+      - sender: ou_wei_wang
+        after_minutes: 5
+        message: "支付SDK和商户后台都正常了"
+        expected:
+          behavior:
+            claims:
+              - task_id: pay_sdk
+                health_status: on_track
+              - task_id: merchant_admin
+                health_status: on_track
+            reply_category: claim_recorded
+            asks_clarification: false
+          intents:
+            answers_pending: true
+            items:
+              - intent: answer_pending
+                speech_act: statement
+                polarity: affirmative
+                certainty: certain
+                health_status: on_track
+                source_quote: "支付SDK和商户后台都正常了"
+      - sender: ou_fang_liu
+        after_minutes: 10
+        message: "收银台和对账模块都正常"
+        expected:
+          behavior:
+            claims:
+              - task_id: checkout_page
+                health_status: on_track
+              - task_id: ledger_check
+                health_status: on_track
+            reply_category: claim_recorded
+            asks_clarification: false
+          intents:
+            answers_pending: true
+            items:
+              - intent: answer_pending
+                speech_act: statement
+                polarity: affirmative
+                certainty: certain
+                health_status: on_track
+                source_quote: "收银台和对账模块都正常"
+      - sender: ou_lei_chen
+        after_minutes: 15
+        message: "哈哈哈周末去哪玩了"
+        expected:
+          behavior:
+            reply_category: smalltalk
+            asks_clarification: true
+          intents:
+            answers_pending: false
+            items:
+              - intent: chitchat
+                speech_act: statement
+                polarity: affirmative
+                certainty: certain
+                source_quote: "哈哈哈周末去哪玩了"
+      - sender: ou_lei_chen
+        after_minutes: 5
+        message: "刚出的新手机真不错"
+        expected:
+          behavior:
+            reply_category: smalltalk
+            asks_clarification: false
+          intents:
+            answers_pending: false
+            items:
+              - intent: chitchat
+                speech_act: statement
+                polarity: affirmative
+                certainty: certain
+                source_quote: "刚出的新手机真不错"
+      - sender: ou_lei_chen
+        after_minutes: 5
+        message: "晚上想吃火锅"
+        expected:
+          behavior:
+            reply_category: smalltalk
+            asks_clarification: false
+          intents:
+            answers_pending: false
+            items:
+              - intent: chitchat
+                speech_act: statement
+                polarity: affirmative
+                certainty: certain
+                source_quote: "晚上想吃火锅"
+      - sender: ou_lei_chen
+        after_minutes: 5
+        message: "哈哈哈笑死我了"
+        expected:
+          behavior:
+            reply_category: smalltalk
+            asks_clarification: false
+          intents:
+            answers_pending: false
+            items:
+              - intent: chitchat
+                speech_act: statement
+                polarity: affirmative
+                certainty: certain
+                source_quote: "哈哈哈笑死我了"
+    final:
+      collected: [ou_wei_wang, ou_fang_liu, ou_lei_chen]
+      claims:
+        - task_id: pay_sdk
+          health_status: on_track
+        - task_id: merchant_admin
+          health_status: on_track
+        - task_id: checkout_page
+          health_status: on_track
+        - task_id: ledger_check
+          health_status: on_track
+      briefing_generated: true
+      briefing_marks_incomplete: true
+
+  # 10. 成员始终不正面回答：连续 4 轮含糊回复都只追问时间，第 5 轮达到
+  #     总上限（asked_rounds=4）后停止追问，简报标注「信息不全」并收敛
+  - id: conv_10_evasive_member_incomplete
+    description: 始终不正面回答的成员在总上限处收敛
+    occurred_at_base: "2026-10-16T11:00:00+08:00"
+    setup:
+      start_sync_by: ou_pm_zhao
+    turns:
+      - sender: ou_wei_wang
+        after_minutes: 5
+        message: "支付SDK和商户后台都正常了"
+        expected:
+          behavior:
+            claims:
+              - task_id: pay_sdk
+                health_status: on_track
+              - task_id: merchant_admin
+                health_status: on_track
+            reply_category: claim_recorded
+            asks_clarification: false
+          intents:
+            answers_pending: true
+            items:
+              - intent: answer_pending
+                speech_act: statement
+                polarity: affirmative
+                certainty: certain
+                health_status: on_track
+                source_quote: "支付SDK和商户后台都正常了"
+      - sender: ou_fang_liu
+        after_minutes: 10
+        message: "收银台和对账模块都正常"
+        expected:
+          behavior:
+            claims:
+              - task_id: checkout_page
+                health_status: on_track
+              - task_id: ledger_check
+                health_status: on_track
+            reply_category: claim_recorded
+            asks_clarification: false
+          intents:
+            answers_pending: true
+            items:
+              - intent: answer_pending
+                speech_act: statement
+                polarity: affirmative
+                certainty: certain
+                health_status: on_track
+                source_quote: "收银台和对账模块都正常"
+      - sender: ou_lei_chen
+        after_minutes: 15
+        message: "这个我真说不好"
+        expected:
+          behavior:
+            claims:
+              - task_id: pay_e2e_test
+                health_status: at_risk
+            reply_category: claim_recorded
+            asks_clarification: true
+          intents:
+            answers_pending: true
+            items:
+              - intent: answer_pending
+                task_id: pay_e2e_test
+                speech_act: statement
+                polarity: affirmative
+                certainty: hedged
+                health_status: at_risk
+                source_quote: "这个我真说不好"
+      - sender: ou_lei_chen
+        after_minutes: 30
+        message: "再等等吧，我也说不准"
+        expected:
+          behavior:
+            claims:
+              - task_id: pay_e2e_test
+                health_status: at_risk
+            reply_category: claim_recorded
+            asks_clarification: true
+          intents:
+            answers_pending: true
+            items:
+              - intent: answer_pending
+                task_id: pay_e2e_test
+                speech_act: statement
+                polarity: affirmative
+                certainty: hedged
+                health_status: at_risk
+                source_quote: "再等等吧，我也说不准"
+      - sender: ou_lei_chen
+        after_minutes: 60
+        message: "真给不出具体时间"
+        expected:
+          behavior:
+            claims:
+              - task_id: pay_e2e_test
+                health_status: at_risk
+            reply_category: claim_recorded
+            asks_clarification: true
+          intents:
+            answers_pending: true
+            items:
+              - intent: answer_pending
+                task_id: pay_e2e_test
+                speech_act: statement
+                polarity: affirmative
+                certainty: hedged
+                health_status: at_risk
+                source_quote: "真给不出具体时间"
+      - sender: ou_lei_chen
+        after_minutes: 60
+        message: "暂时定不下来"
+        expected:
+          behavior:
+            claims:
+              - task_id: pay_e2e_test
+                health_status: at_risk
+            reply_category: claim_recorded
+            asks_clarification: true
+          intents:
+            answers_pending: true
+            items:
+              - intent: answer_pending
+                task_id: pay_e2e_test
+                speech_act: statement
+                polarity: affirmative
+                certainty: hedged
+                health_status: at_risk
+                source_quote: "暂时定不下来"
+      - sender: ou_lei_chen
+        after_minutes: 60
+        message: "先不承诺时间了"
+        expected:
+          behavior:
+            claims:
+              - task_id: pay_e2e_test
+                health_status: at_risk
+            reply_category: claim_recorded
+            asks_clarification: false
+          intents:
+            answers_pending: true
+            items:
+              - intent: answer_pending
+                task_id: pay_e2e_test
+                speech_act: statement
+                polarity: affirmative
+                certainty: hedged
+                health_status: at_risk
+                source_quote: "先不承诺时间了"
+    final:
+      collected: [ou_wei_wang, ou_fang_liu, ou_lei_chen]
+      claims:
+        - task_id: pay_sdk
+          health_status: on_track
+        - task_id: merchant_admin
+          health_status: on_track
+        - task_id: checkout_page
+          health_status: on_track
+        - task_id: ledger_check
+          health_status: on_track
+        - task_id: pay_e2e_test
+          health_status: at_risk
+      briefing_generated: true
+      briefing_marks_incomplete: true

@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from orgpilot.intent.client import HeuristicIntentClient
 from orgpilot.intent.conversation_eval import (
     ConversationSystemUnderTest,
     load_conversations,
@@ -62,7 +63,7 @@ async def test_duplicate_delivery_turn_reports_duplicate() -> None:
 
 
 async def test_full_oracle_gate_on_committed_conversations(tmp_path: Path) -> None:
-    """The committed oracle gate: ALL 8 conversations must pass."""
+    """The committed oracle gate: ALL 10 conversations must pass."""
 
     project = load_intent_project(EVAL_DIR / "project.yaml")
     scripts = load_conversations(EVAL_DIR / "conversations.yaml")
@@ -79,6 +80,21 @@ async def test_full_oracle_gate_on_committed_conversations(tmp_path: Path) -> No
     markdown = markdown_path.read_text(encoding="utf-8")
     assert "多轮对话评测报告" in markdown
     assert "失败 0" in markdown
+
+
+async def test_heuristic_mode_converges_conv_01() -> None:
+    """The 3a.2 heuristic gate: conv_01 converges with the right completion time."""
+    project = load_intent_project(EVAL_DIR / "project.yaml")
+    scripts = {
+        script.id: script
+        for script in load_conversations(EVAL_DIR / "conversations.yaml")
+    }
+    system = ConversationSystemUnderTest(project, HeuristicIntentClient())
+    result = await system.run(scripts["conv_01_probe_clarify_time"])
+    assert result.passed, result.issues
+    claim = [c for c in result.final_claims if c["task_id"] == "pay_e2e_test"][-1]
+    assert claim["health_status"] == "at_risk"
+    assert claim["expected_completion"] is not None
 
 
 async def test_failing_expectations_surface_issues(tmp_path: Path) -> None:

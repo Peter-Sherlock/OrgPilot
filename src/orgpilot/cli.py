@@ -120,6 +120,7 @@ def _eval_conversations(
 
     from orgpilot.intent.client import HeuristicIntentClient
     from orgpilot.intent.conversation_eval import (
+        HEURISTIC_GATE_CONVERSATIONS,
         ConversationSystemUnderTest,
         run_conversation_eval,
     )
@@ -167,6 +168,19 @@ def _eval_conversations(
     if intent == "oracle" and passed != total:
         print("  - oracle gate violated: all conversations must pass")
         return 1
+    if intent == "heuristic" and HEURISTIC_GATE_CONVERSATIONS:
+        # 3a.2: heuristic quality is a non-goal except for the one demo
+        # conversation — conv_01 must converge with the right completion time.
+        gate = [r for r in results if r.script_id in HEURISTIC_GATE_CONVERSATIONS]
+        failed = [r.script_id for r in gate if not r.passed]
+        print(
+            "  - heuristic gate: "
+            f"{', '.join(HEURISTIC_GATE_CONVERSATIONS)} must converge "
+            "(other conversations are recorded without a gate)"
+        )
+        if failed:
+            print(f"  - heuristic gate violated: {', '.join(failed)} failed")
+            return 1
     return 0
 
 
