@@ -3,6 +3,9 @@
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from zoneinfo import ZoneInfo
+
+DEFAULT_TIMEZONE = "Asia/Shanghai"
 
 
 def _load_dotenv_if_exists(dotenv_path: str = ".env") -> None:
@@ -45,6 +48,12 @@ class OrgPilotSettings:
     feishu_app_secret: str | None = field(default=None, repr=False)
     feishu_verification_token: str | None = field(default=None, repr=False)
     feishu_project_id: str = "feishu-project"
+    timezone: str = DEFAULT_TIMEZONE
+
+    @property
+    def business_timezone(self) -> ZoneInfo:
+        """IANA zone used to interpret relative time in messages (B5)."""
+        return ZoneInfo(self.timezone)
 
     @classmethod
     def from_env(cls) -> "OrgPilotSettings":
@@ -68,11 +77,18 @@ class OrgPilotSettings:
             feishu_app_secret=_optional_env("FEISHU_APP_SECRET"),
             feishu_verification_token=_optional_env("FEISHU_VERIFICATION_TOKEN"),
             feishu_project_id=os.getenv("ORGPILOT_FEISHU_PROJECT_ID", "feishu-project"),
+            timezone=os.getenv("ORGPILOT_TIMEZONE", DEFAULT_TIMEZONE).strip(),
         )
         settings.validate()
         return settings
 
     def validate(self) -> None:
+        try:
+            ZoneInfo(self.timezone)
+        except Exception as exc:
+            raise ValueError(
+                f"ORGPILOT_TIMEZONE is not a valid IANA timezone: {self.timezone!r}"
+            ) from exc
         if self.llm_provider not in {"mock", "aihubmix"}:
             raise ValueError("ORGPILOT_LLM_PROVIDER must be 'mock' or 'aihubmix'")
         if self.llm_provider == "aihubmix" and not self.aihubmix_api_key:

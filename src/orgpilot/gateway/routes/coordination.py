@@ -217,7 +217,9 @@ async def sandbox_chat_endpoint(
     service: GatewayService = Depends(get_service),
 ) -> dict:
     """Handles sandbox chat from any role (PM, Alice, Bob), returning bot responses."""
-    now = datetime.now(UTC)
+    # Same business-timezone normalization as the Feishu entries (B5) so relative
+    # time in messages resolves against the team's local date.
+    now = service.to_business_timezone(datetime.now(UTC))
     agent = await service.get_or_replay_agent(project_id)
     member = agent.projector.state.members.get(actor_id)
     if member is None:

@@ -1,5 +1,7 @@
 """Event and natural language message ingestion endpoints."""
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from orgpilot.gateway.schemas import (
@@ -49,12 +51,18 @@ async def ingest_message(
     service: GatewayService = Depends(get_service),
 ) -> MessageIngestResponse:
     """Ingests a natural language chat message, extracts claims, and optionally triggers a turn."""
+    # Same business-timezone normalization as the Feishu entries (B5).
+    occurred_at = (
+        service.to_business_timezone(body.occurred_at)
+        if body.occurred_at is not None
+        else service.to_business_timezone(datetime.now(UTC))
+    )
     try:
         is_act, ext_events, agent, reason, round_num, error = await service.ingest_message(
             project_id=project_id,
             message=body.message,
             actor_id=body.actor_id,
-            occurred_at=body.occurred_at,
+            occurred_at=occurred_at,
             source_ref=body.message_id,
             auto_run_turn=body.auto_run_turn,
         )

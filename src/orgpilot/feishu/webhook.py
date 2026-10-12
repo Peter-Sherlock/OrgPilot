@@ -97,6 +97,9 @@ class FeishuWebhookHandler:
             if occurred_ts
             else datetime.now(UTC)
         )
+        # Feishu timestamps are UTC epoch millis; relative phrases like "明天下午5点"
+        # must resolve against the team's business-timezone date, not UTC (B5).
+        occurred_at = self.service.to_business_timezone(occurred_at)
 
         # Auto-bootstrap demo tasks for first-time solo tester
         agent_init = await self.service.get_or_replay_agent(self.project_id)

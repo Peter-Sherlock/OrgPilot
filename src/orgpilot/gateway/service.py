@@ -5,6 +5,7 @@ import logging
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from orgpilot.adapter.base import CollaborationAdapter
 from orgpilot.adapter.mock import MockCollaborationAdapter
@@ -24,6 +25,8 @@ from orgpilot.storage.state_store import SqlStateStore
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_BUSINESS_TIMEZONE = ZoneInfo("Asia/Shanghai")
+
 
 class GatewayService:
     """Coordinates event ingestion, natural language extraction, and agent execution with
@@ -36,6 +39,7 @@ class GatewayService:
         extractor: ClaimExtractor | None = None,
         adapter_factory: Callable[[str], CollaborationAdapter] | None = None,
         sync_session_timeout: timedelta = timedelta(hours=24),
+        business_timezone: ZoneInfo = DEFAULT_BUSINESS_TIMEZONE,
     ) -> None:
         self.db = db
         self.event_store = SqlEventStore(db)
@@ -45,7 +49,16 @@ class GatewayService:
             lambda project_id: MockCollaborationAdapter(project_id=project_id)
         )
         self.sync_session_timeout = sync_session_timeout
+        self.business_timezone = business_timezone
         self._sync_coordinators: dict[str, ProgressSyncCoordinator] = {}
+
+    def to_business_timezone(self, moment: datetime) -> datetime:
+        """Re-expresses an instant in the business timezone so relative phrases like
+        "明天" resolve against the team's local date. Event storage stays timezone
+        -aware, so this is a zone conversion, not a time shift."""
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=UTC)
+        return moment.astimezone(self.business_timezone)
 
     async def get_or_replay_agent(self, project_id: str) -> CoordinationAgent:
         """Constructs an Agent with state restored from the persistent SQL event log and stores."""

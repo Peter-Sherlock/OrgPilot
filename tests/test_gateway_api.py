@@ -1,6 +1,7 @@
 """Async API integration tests for FastAPI event gateway."""
 
 from datetime import UTC, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
@@ -12,6 +13,9 @@ from orgpilot.storage.database import Database
 # Anchored to the real clock so approval expiry (created_at + 2 days) never lapses
 # between message ingestion and the approval decision callbacks under test.
 NOW = datetime.now(UTC)
+# Relative time in messages resolves against the business timezone (B5), so the
+# "明天下午5点" deadline the approval flow persists is 17:00 Beijing time.
+BUSINESS_TZ = ZoneInfo("Asia/Shanghai")
 
 
 @pytest.fixture
@@ -151,7 +155,11 @@ async def test_gateway_natural_language_message_and_approval_flow(
     resp_state = await client.get("/api/v1/projects/proj-nl-flow/state")
     assert resp_state.status_code == 200
     state_data = resp_state.json()
-    expected_deadline = datetime.combine(NOW.date() + timedelta(days=1), time(17, 0), tzinfo=UTC)
+    expected_deadline = datetime.combine(
+        NOW.astimezone(BUSINESS_TZ).date() + timedelta(days=1),
+        time(17, 0),
+        tzinfo=BUSINESS_TZ,
+    )
     persisted_deadline = state_data["tasks"]["backend_api"]["deadline"].replace("Z", "+00:00")
     assert datetime.fromisoformat(persisted_deadline) == expected_deadline
     assert len(state_data["active_cases"]) == 0
