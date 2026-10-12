@@ -246,9 +246,10 @@ async def test_baseline_and_metrics_on_mini_dataset(mini_dataset_dir: Path, tmp_
     assert metrics.false_claim_rate == pytest.approx(1 / 4)
     # none of the no-sync-no-card samples shows a sync side effect
     assert metrics.sync_false_trigger_rate == 0.0
-    # mini_sync_001 requires a confirmation card first; the baseline starts directly
+    # mini_sync_001 requires a confirmation card first; the heuristic pipeline
+    # does not start a sync at all for it (so it cannot mass-send either)
     assert metrics.unconfirmed_sync_expected == 1
-    assert metrics.unconfirmed_sync_count == 1
+    assert metrics.unconfirmed_sync_count == 0
     # reply matches: mini_report_001 and mini_answer_001 only. The baseline starts
     # the sync directly, so even the reply for card-only mini_sync_001 (sync_confirm)
     # diverges (observed sync_started).
@@ -319,7 +320,7 @@ async def test_run_intent_eval_writes_reports(mini_dataset_dir: Path, tmp_path: 
     payload = json.loads(json_path.read_text(encoding="utf-8"))
     assert payload["split"] == "dev"
     assert payload["metrics"]["total_samples"] == 6
-    assert payload["metrics"]["unconfirmed_sync_count"] == 1
+    assert payload["metrics"]["unconfirmed_sync_count"] == 0
     assert {failure["sample_id"] for failure in payload["failures"]} == {
         "mini_sync_001",
         "mini_sync_002",
@@ -331,7 +332,7 @@ async def test_run_intent_eval_writes_reports(mini_dataset_dir: Path, tmp_path: 
     assert "按类别统计" in markdown
     assert "失败样本（4 条）" in markdown
     assert "意图层指标 | N/A" in markdown
-    assert "未经确认群发次数 | 1" in markdown
+    assert "未经确认群发次数 | 0" in markdown
     # every mini category has fewer than 5 samples and is marked as such
     assert "样本不足，仅供参考" in markdown
 

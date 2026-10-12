@@ -167,32 +167,15 @@ class GatewayService:
 
         extraction_result, extracted_events = self.extractor.extract_from_message(message, context)
 
-        # Validate the whole batch against a throwaway copy of the projection before
-        # any persistence: an event that fails projection (e.g. from an unregistered
-        # actor) must never reach the event store, where every later replay of it
-        # would raise and permanently break the project.
-        validation_projector = OrgProjector(project_id=project_id)
-        validation_projector.state = agent.projector.state.model_copy(deep=True)
-        try:
-            for evt in extracted_events:
-                validation_projector.apply(evt)
-        except DomainInvariantError as exc:
-            logger.warning(
-                "Rejected message from actor %r in project %r: %s", actor_id, project_id, exc
-            )
-            return (False, [], agent, None, None, str(exc))
-
-        # Persist extracted events
-        for evt in extracted_events:
-            await self.event_store.append(evt)
-
-        turn_reason: str | None = None
-        round_num: int | None = None
-
-        if auto_run_turn and extracted_events:
-            turn_trace, _ = await self.run_agent_turn(agent, extracted_events, ts)
-            turn_reason = turn_trace.termination_reason.value
-            round_num = turn_trace.round_number
+        agent, turn_reason, round_num, error = await self.commit_extracted_events(
+            project_id,
+            extracted_events,
+            actor_id=actor_id,
+            occurred_at=ts,
+            auto_run_turn=auto_run_turn,
+        )
+        if error is not None:
+            return (False, [], agent, None, None, error)
 
         return (
             extraction_result.is_actionable,
@@ -202,6 +185,52 @@ class GatewayService:
             round_num,
             None,
         )
+
+    async def commit_extracted_events(
+        self,
+        project_id: str,
+        events: list[OrgEvent],
+        *,
+        actor_id: str,
+        occurred_at: datetime,
+        auto_run_turn: bool = True,
+    ) -> tuple[CoordinationAgent, str | None, int | None, str | None]:
+        """Validates a batch in memory, persists it, and optionally runs one turn.
+
+        Shared by the legacy extraction path and the intent handlers (ADR-0008
+        layer 2). Returns an error string instead of raising when in-memory
+        projection validation fails, so nothing unprojectable is ever persisted.
+        """
+        agent = await self.get_or_replay_agent(project_id)
+        if not events:
+            return agent, None, None, None
+
+        # Validate the whole batch against a throwaway copy of the projection before
+        # any persistence: an event that fails projection (e.g. from an unregistered
+        # actor) must never reach the event store, where every later replay of it
+        # would raise and permanently break the project.
+        validation_projector = OrgProjector(project_id=project_id)
+        validation_projector.state = agent.projector.state.model_copy(deep=True)
+        try:
+            for evt in events:
+                validation_projector.apply(evt)
+        except DomainInvariantError as exc:
+            logger.warning(
+                "Rejected events from actor %r in project %r: %s", actor_id, project_id, exc
+            )
+            return (agent, None, None, str(exc))
+
+        for evt in events:
+            await self.event_store.append(evt)
+
+        turn_reason: str | None = None
+        round_num: int | None = None
+        if auto_run_turn:
+            turn_trace, _ = await self.run_agent_turn(agent, events, occurred_at)
+            turn_reason = turn_trace.termination_reason.value
+            round_num = turn_trace.round_number
+
+        return (agent, turn_reason, round_num, None)
 
     async def get_sync_coordinator(self, project_id: str) -> ProgressSyncCoordinator:
         """Retrieves or creates a ProgressSyncCoordinator bound to the current project agent."""

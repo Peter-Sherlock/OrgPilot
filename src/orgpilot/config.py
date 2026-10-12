@@ -53,6 +53,7 @@ class OrgPilotSettings:
     timezone: str = DEFAULT_TIMEZONE
     intent_timeout_seconds: float = DEFAULT_INTENT_TIMEOUT_SECONDS
     intent_confidence_threshold: float = DEFAULT_INTENT_CONFIDENCE_THRESHOLD
+    intent_recent_turns: int = 6
 
     @property
     def business_timezone(self) -> ZoneInfo:
@@ -94,6 +95,7 @@ class OrgPilotSettings:
                     str(DEFAULT_INTENT_CONFIDENCE_THRESHOLD),
                 )
             ),
+            intent_recent_turns=int(os.getenv("ORGPILOT_INTENT_RECENT_TURNS", "6")),
         )
         settings.validate()
         return settings
@@ -109,6 +111,8 @@ class OrgPilotSettings:
             raise ValueError("ORGPILOT_INTENT_TIMEOUT_SECONDS must be positive")
         if not 0.0 <= self.intent_confidence_threshold <= 1.0:
             raise ValueError("ORGPILOT_INTENT_CONFIDENCE_THRESHOLD must be within [0, 1]")
+        if self.intent_recent_turns < 0:
+            raise ValueError("ORGPILOT_INTENT_RECENT_TURNS must be non-negative")
         if self.llm_provider not in {"mock", "aihubmix"}:
             raise ValueError("ORGPILOT_LLM_PROVIDER must be 'mock' or 'aihubmix'")
         if self.llm_provider == "aihubmix" and not self.aihubmix_api_key:

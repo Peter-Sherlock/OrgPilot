@@ -50,7 +50,10 @@ async def ingest_message(
     body: MessageIngestRequest,
     service: GatewayService = Depends(get_service),
 ) -> MessageIngestResponse:
-    """Ingests a natural language chat message, extracts claims, and optionally triggers a turn."""
+    """Legacy low-level extraction interface (ADR-0008 §3): bypasses the intent
+    router and runs the raw ClaimExtractor directly. Kept for scripts and tests;
+    chat surfaces (webhook/WS/sandbox) go through the MessageRouter instead.
+    """
     # Same business-timezone normalization as the Feishu entries (B5).
     occurred_at = (
         service.to_business_timezone(body.occurred_at)

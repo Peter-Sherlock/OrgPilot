@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Request
 
-from orgpilot.domain.enums import ProbeMemberStatus, WorkflowStatus
+from orgpilot.domain.enums import WorkflowStatus
 from orgpilot.events.models import (
     EventSource,
     MemberRegisteredEvent,
@@ -217,41 +217,40 @@ async def sandbox_chat_endpoint(
     service: GatewayService = Depends(get_service),
 ) -> dict:
     """Handles sandbox chat from any role (PM, Alice, Bob), returning bot responses."""
+    from uuid import uuid4
+
+    from orgpilot.intent.router import MessageRouter
+
     # Same business-timezone normalization as the Feishu entries (B5) so relative
     # time in messages resolves against the team's local date.
     now = service.to_business_timezone(datetime.now(UTC))
-    agent = await service.get_or_replay_agent(project_id)
-    member = agent.projector.state.members.get(actor_id)
-    if member is None:
-        # Never ingest messages from non-members: their events would fail
-        # projection on every replay and permanently break the project.
-        detail = f"unknown project member {actor_id!r}"
-        return {
-            "type": "message_rejected",
-            "detail": detail,
-            "bot_reply": f"消息处理失败：{detail}",
-        }
+    router = getattr(service, "intent_router", None) or MessageRouter(service=service)
+    outcome = await router.handle_message(
+        project_id=project_id,
+        sender_id=actor_id,
+        message_id=f"sandbox-{uuid4().hex}",
+        text=message,
+        occurred_at=now,
+        chat_type="p2p",
+    )
 
-    # Replies to an active sync probe always take priority over intent keywords
-    coordinator = await service.get_sync_coordinator(project_id)
-    active_session = coordinator.get_active_session(project_id, now=now)
-    probe = active_session.member_probes.get(actor_id) if active_session else None
-    if probe is not None and probe.status in (
-        ProbeMemberStatus.PENDING,
-        ProbeMemberStatus.CLARIFYING,
-    ):
-        converged, clarify_q, session, _new_events = await service.handle_sync_member_reply(
-            project_id=project_id,
-            member_id=actor_id,
-            message=message,
-            occurred_at=now,
-        )
-        if not converged and clarify_q:
-            return {
-                "type": "clarification_needed",
-                "bot_reply": clarify_q,
-                "session": session.model_dump(mode="json") if session else None,
-            }
+    if outcome.msg == "sync_session_started":
+        return {
+            "type": "sync_started",
+            "session_id": outcome.data.get("session_id"),
+            "bot_reply": outcome.reply_text,
+            "reply_category": outcome.reply_category.value,
+        }
+    if outcome.msg == "clarification_sent":
+        return {
+            "type": "clarification_needed",
+            "bot_reply": outcome.reply_text,
+            "reply_category": outcome.reply_category.value,
+        }
+    if outcome.msg == "probe_collected":
+        coordinator = await service.get_sync_coordinator(project_id)
+        session_id = outcome.data.get("session_id")
+        session = coordinator.get_session(session_id) if session_id else None
         if session and session.briefing:
             return {
                 "type": "sync_completed",
@@ -261,58 +260,21 @@ async def sandbox_chat_endpoint(
             }
         return {
             "type": "member_collected",
-            "bot_reply": "收到！您的任务进度已登记，等待其余成员同步收敛...",
+            "bot_reply": outcome.reply_text or "收到！您的任务进度已登记，等待其余成员同步收敛...",
             "session": session.model_dump(mode="json") if session else None,
         }
-
-    is_sync = any(
-        k in message
-        for k in [
-            "跟进进度",
-            "同步进度",
-            "项目进度",
-            "进度汇总",
-            "检查进度",
-            "当前进度",
-            "我要知道当前的项目进度",
-        ]
-    )
-    if is_sync and member.role == "pm":
-        session = await service.start_progress_sync(project_id, initiated_by=actor_id)
-        probes_cnt = len(session.member_probes)
-        return {
-            "type": "sync_started",
-            "session_id": session.session_id,
-            "bot_reply": (
-                f"🚀 **收到指令！已启动全员进度探针与协同工作流**\n\n"
-                f"• **探测范围**：已向 {probes_cnt} 位任务负责人发起 1 对 1 私聊探针\n"
-                f"• **智能追问**：若成员回复存在时间或阻塞模糊，系统将自主多轮追问收敛\n"
-                f"• **拓扑决策**：全员信息就绪后，将自动推演关键路径并呈送【决策简报】！"
-            ),
-            "probed_members": list(session.member_probes.keys()),
-            "session": session.model_dump(mode="json"),
-        }
-
-    # Normal message
-    is_act, ext_events, agent, reason, round_num, error = await service.ingest_message(
-        project_id=project_id,
-        message=message,
-        actor_id=actor_id,
-        occurred_at=now,
-        auto_run_turn=True,
-    )
-    if error:
+    if outcome.msg in ("sender_not_registered", "message_rejected"):
         return {
             "type": "message_rejected",
-            "detail": error,
-            "bot_reply": f"消息处理失败：{error}",
+            "detail": outcome.msg,
+            "bot_reply": outcome.reply_text or f"消息处理失败：{outcome.msg}",
         }
+    if outcome.msg == "fallback":
+        return {"type": "fallback", "bot_reply": outcome.reply_text}
     return {
         "type": "normal_turn",
-        "is_actionable": is_act,
-        "extracted_events_count": len(ext_events),
-        "bot_reply": (
-            "已识别任务状态变更并更新项目账本" if is_act else "收到消息，当前无需要变更的任务状态"
-        ),
-        "turn_reason": reason,
+        "is_actionable": bool(outcome.data.get("is_actionable", False)),
+        "bot_reply": outcome.reply_text,
+        "reply_category": outcome.reply_category.value,
+        "turn_reason": outcome.data.get("turn_termination_reason"),
     }

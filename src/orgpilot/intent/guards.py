@@ -36,6 +36,9 @@ P1_P2_INTENTS = {
 # Intents that cannot be processed without knowing which task they concern.
 TASK_REQUIRED_INTENTS = {IntentType.REPORT_STATUS, IntentType.MAKE_COMMITMENT}
 
+# Only claim-worthy items risk a side effect; low-confidence smalltalk must not nag.
+CONFIDENCE_GATED_INTENTS = TASK_REQUIRED_INTENTS | {IntentType.ANSWER_PENDING}
+
 DEFAULT_CONFIDENCE_THRESHOLD = 0.6
 
 
@@ -123,6 +126,8 @@ def check_hedging(item: IntentItem) -> GuardOutcome:
 def check_confidence(
     item: IntentItem, threshold: float = DEFAULT_CONFIDENCE_THRESHOLD
 ) -> GuardOutcome:
+    if item.intent not in CONFIDENCE_GATED_INTENTS:
+        return GuardOutcome(verdict="KEEP", reason="confidence gate not applicable")
     if item.confidence < threshold:
         return GuardOutcome(
             verdict="ASK",

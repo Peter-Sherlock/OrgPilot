@@ -381,7 +381,7 @@ async def test_sync_probe_reply_persists_health_event_and_replays_consistently(
     # PM starts a progress sync; ou_alice owns the only active task and gets probed
     start = await client.post(
         "/api/v1/feishu/events",
-        json=_message_payload("ou_carol", "我要知道当前的项目进度", "om_sync_start"),
+        json=_message_payload("ou_carol", "/同步", "om_sync_start"),
         params={"project_id": project_id},
     )
     assert start.status_code == 200
@@ -435,7 +435,7 @@ async def test_sync_reply_persists_turn_outputs_and_survives_replay() -> None:
     shared_adapter.script_reply("ou_carol", scripted_update)
 
     start = await handler.handle_event(
-        _message_payload("ou_carol", "我要知道当前的项目进度", "om_t6_start")
+        _message_payload("ou_carol", "/同步", "om_t6_start")
     )
     assert start["msg"] == "sync_session_started"
 
@@ -468,7 +468,7 @@ async def test_probe_reply_with_sync_keyword_is_not_treated_as_new_sync(
 
     start = await client.post(
         "/api/v1/feishu/events",
-        json=_message_payload("ou_carol", "我要知道当前的项目进度", "om_t2_start"),
+        json=_message_payload("ou_carol", "/同步", "om_t2_start"),
         params={"project_id": project_id},
     )
     assert start.status_code == 200
@@ -536,7 +536,7 @@ async def test_converged_probe_reply_is_idempotent_per_message_id(
 
     start = await client.post(
         "/api/v1/feishu/events",
-        json=_message_payload("ou_carol", "我要知道当前的项目进度", "om_t4_start"),
+        json=_message_payload("ou_carol", "/同步", "om_t4_start"),
         params={"project_id": project_id},
     )
     session_id = start.json()["data"]["session_id"]
@@ -603,9 +603,7 @@ async def test_unregistered_sender_writes_no_events_and_pm_still_works(
     # An unregistered group member reports a blocker; nothing may be recorded
     outsider = await client.post(
         "/api/v1/feishu/events",
-        json=_message_payload(
-            "ou_dev", "支付SDK报错卡住了", "om_t5_outsider", chat_type="group", chat_id="oc_dev"
-        ),
+        json=_message_payload("ou_dev", "支付SDK报错卡住了", "om_t5_outsider"),
         params={"project_id": project_id},
     )
     assert outsider.status_code == 200
@@ -662,7 +660,7 @@ async def test_collected_member_is_not_re_probed_by_later_messages(
 
     start = await client.post(
         "/api/v1/feishu/events",
-        json=_message_payload("ou_carol", "我要知道当前的项目进度", "om_f1_start"),
+        json=_message_payload("ou_carol", "/同步", "om_f1_start"),
         params={"project_id": project_id},
     )
     session_id = start.json()["data"]["session_id"]
@@ -710,7 +708,7 @@ async def test_session_timeout_briefs_collected_info_and_routes_normally(
 
     start = await client.post(
         "/api/v1/feishu/events",
-        json=_message_payload("ou_carol", "我要知道当前的项目进度", "om_f1b_start"),
+        json=_message_payload("ou_carol", "/同步", "om_f1b_start"),
         params={"project_id": project_id},
     )
     session_id = start.json()["data"]["session_id"]

@@ -19,6 +19,7 @@ from orgpilot.feishu.client import AsyncFeishuClient
 from orgpilot.feishu.ws import FeishuWebSocketListener
 from orgpilot.gateway.routes import approvals, cases, coordination, dag, events, feishu
 from orgpilot.gateway.service import GatewayService
+from orgpilot.intent.router import MessageRouter
 from orgpilot.storage.database import Database
 
 
@@ -60,6 +61,10 @@ def create_app(
         adapter_factory=adapter_factory,
         business_timezone=runtime_settings.business_timezone,
     )
+
+    # Layered intent router (ADR-0008 §3): mock provider keeps the heuristic client.
+    intent_router = MessageRouter(service=gateway_service, settings=runtime_settings)
+    gateway_service.intent_router = intent_router  # type: ignore[attr-defined]
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:

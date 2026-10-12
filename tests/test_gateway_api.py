@@ -340,7 +340,7 @@ async def test_coordination_sandbox_endpoints(client: httpx.AsyncClient) -> None
         return resp_chat.json()
 
     # Sync intent from the PM through the chat surface
-    started = await chat("ou_pm", "我要知道当前的项目进度")
+    started = await chat("ou_pm", "/同步")
     assert started["type"] == "sync_started"
 
     # Vague reply -> autonomous clarification; a sync keyword inside a probed
