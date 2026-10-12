@@ -130,3 +130,31 @@
 - 每条私聊消息一次 LLM 调用，引入延迟与费用；
 - 结构化输出的可靠性取决于中转端点的兼容性；
 - P1、P2 意图本版只识别不处理，用户会收到“暂不支持”的回复。
+
+## 实施记录
+
+### 第 3a 步（2026-10-12，分支 `feat/intent-router`）：第 0–2 层、对话状态、消息幂等与 oracle 评测
+
+模块结构：
+
+- `intent/client.py`：`IntentClient` 协议 + `IntentContext`（消息、业务时区 occurred_at、发送者身份与任务、全部任务快照、待回答/待确认上下文、最近 N 轮对话，N 默认 6 可配置）；`HeuristicIntentClient`（包装 MockLLMClient，`ORGPILOT_LLM_PROVIDER=mock` 时的默认实现，效果不作考核）；`ScriptedIntentClient`（测试替身：预设结果，可模拟超时/异常/非法输出）；所有调用经 `classify_with_timeout`（`asyncio.wait_for`，默认 20 秒，`ORGPILOT_INTENT_TIMEOUT_SECONDS`），同步实现走 `asyncio.to_thread`；
+- `intent/router.py`：`MessageRouter` 按固定顺序处理每条消息：消息幂等 → 群聊拒收（`group_not_supported`）→ 未注册拒收 → 同步探针回复（优先于命令与意图，延续 B2/F1 的决策）→ 显式命令（`/同步`、`/帮助`、未知 `/xxx`，不调用意图客户端）→ 构建对话上下文 → 意图分类（失败重试一次，仍失败回复"没理解……"并记 `fallback` 类别，不改任何状态）→ 护栏 → 处理器。每条消息只发一次回复，结果落消息表；
+- `intent/dialogue.py`：`DialogueStateStore`，按（项目+发送者）存放 `PendingClarification`（问题、目标任务、待补全 claim、缺失槽位、已追问轮数、来源 probe/clarify）与 `PendingSyncConfirmation`（发起人、将被询问成员、创建时间）；过期时间追问 24 小时、确认卡片 30 分钟，均可配置。**本轮仅在内存中，重启后丢失**（见开发日志已知限制）；探针产生的追问同样登记在此，探针回复仍委托协调器收敛（保留简报与升级路径），probe 来源 claim 的合并统一留到第 4 步；
+- `storage/message_store.py`：持久化 `processed_messages` 表（project_id、message_id、发送者、原文、意图摘要、回复类别、回复文本、响应、时间），message_id 已存在时直接返回上次结果，不重新识别也不重复发送；同一张表提供"最近 N 轮对话"；
+- `intent/guards.py`：纯函数护栏，按 ADR 顺序执行 grounding → 任务 → 语气 → 含糊 → 置信度 → 时间 → 角色 → 分期；
+- `intent/handlers.py`：各意图的处理逻辑；`extraction/event_builder.py` 把 ClaimExtractor 的事件构造抽成可复用函数（两条路径产生完全相同的事件 id 与载荷）；`GatewayService.commit_extracted_events` 复用"先内存校验再持久化再跑一轮"的既有路径；
+- `intent/oracle.py` + `evaluator.LayeredSystemUnderTest`：oracle 客户端只在评测代码路径（CLI/评测器）被构造，运行时配置无法选中；置信度固定 0.95，`expected_completion` 取同任务行为标注；评测状态（待回答/待确认）一律通过 router 公开注册 API 构造，不触碰私有字段。CLI 新增 `--system baseline|layered --intent heuristic|oracle`（oracle 仅限 layered，报告标题标注"oracle：流水线上限，不代表模型效果"）。
+
+实施中做出的设计决定（评审基准）：
+
+1. **回复类别合并优先级**（一条消息多个条目时取最高）：`no_permission > sync_started > sync_confirm > clarify > claim_recorded > query_answer > noted > unsupported > help > smalltalk`；重新追问（R9 换话题）只置 asks_clarification 标志，不改回复类别；
+2. **时间只比对日期**：`time_expression` 必须是原文子串；TemporalResolver 能解析时只比对解析日期与槽位日期，不一致才追问。原因：解析器不支持"半"和中文数字（"5点半""晚上八点"解析不出小时），按小时比对会对大量合法消息误追问；
+3. **否定且无健康度的 report_status 直接丢弃**（"商户后台的接口我还没碰"断言不了任何状态），有健康度标注的否定按 R2 生成 claim；
+4. **角色闸门只拦肯定句**：否定句的 request_sync（"不用同步进度了"）是拒绝而非请求，任何角色都按 noted 回复，不触发 no_permission；
+5. **置信度闸门只作用于会产生 claim 的意图**（report_status / make_commitment / answer_pending）：闲聊、帮助等低置信度条目若也追问会造成每次寒暄都被反问；
+6. **clarify 来源的追问合并答案时只补时间槽**：SlotCompletenessEvaluator 的"delayed 必须有阻塞根因"是探针卡片（追问卡点+时间）的规则；router 自己的追问（R6/R7）只问时间，按探针规则执行会对"大概要到下周三"这类合法回答误追问。probe 来源保留完整规则；
+7. **欢迎/引导文本只出现在首次 bootstrap 与 `/帮助`**：原"不可处理一律回欢迎语"的行为删除，不可处理消息按 smalltalk 简短回复；
+8. **`/messages` REST 接口保留为 legacy 低层抽取接口**（绕过意图路由直连 ClaimExtractor），docstring 已标注；webhook（含 WS）与 sandbox-chat 的重复路由逻辑（同步关键词列表、欢迎语兜底）已删除，统一走 MessageRouter。
+
+评测结论（详见 `evals/intent/BASELINE.md`）：layered + oracle 在 dev 与 test 上均为 100% 通过，
+未经确认群发、同步误触发、错误 claim 全部为 0；layered + heuristic 与 oracle 的差距即 3b 的模型误差空间。

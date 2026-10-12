@@ -1,5 +1,37 @@
 # 开发记录
 
+## 2026-10-12：意图识别第 3a 步——三层路由、对话状态、消息幂等与 oracle 评测（分支 `feat/intent-router`）
+
+### 已实现
+
+- **意图客户端接口**（`intent/client.py`）：`IntentClient` 协议 + `IntentContext`（消息、业务时区 occurred_at、发送者 id/角色/显示名、负责的任务、全部任务快照、待回答/待确认上下文、最近 N 轮对话含机器人发言，N 默认 6 可配 `ORGPILOT_INTENT_RECENT_TURNS`）；`HeuristicIntentClient`（包装 MockLLMClient，mock provider 默认，效果不作考核）；`ScriptedIntentClient`（预设结果 + 可模拟超时/异常/非法输出）；所有调用经 `classify_with_timeout`（`asyncio.wait_for`，默认 20 秒 = `ORGPILOT_INTENT_TIMEOUT_SECONDS`），同步实现 `asyncio.to_thread` 包装；
+- **MessageRouter**（`intent/router.py`）：webhook（含 WS）与 sandbox-chat 全部改走 router，两处的重复路由逻辑（同步关键词列表、"不可处理回欢迎语"）已删除；`/messages` 保留为 legacy 低层抽取接口（docstring 标注）。消息处理顺序：**幂等 → 群聊拒收 → 未注册拒收 → 探针回复 → 显式命令 → 对话状态+意图分类 → 护栏 → 处理器**；意图分类失败重试一次，仍失败回复"没理解，可以换个说法吗？也可以发送 /帮助 查看用法"，回复类别 `fallback`，不改状态；
+- **消息级幂等**（`storage/message_store.py` 新增 `processed_messages` 持久化表）：project_id + message_id 已存在时直接返回上次结果，不重新识别、不重复发送；同一张表提供"最近 N 轮对话"上下文；
+- **DialogueStateStore**（`intent/dialogue.py`）：按（项目+发送者）存放 PendingClarification（问题/目标任务/待补全 claim/缺失槽位/轮数/来源 probe|clarify）与 PendingSyncConfirmation（发起人/成员/时间）；过期 24 小时/30 分钟可配置；探针追问登记于此，探针回复仍委托协调器收敛；**本轮仅内存，重启丢失**（已知限制）；
+- **护栏**（`intent/guards.py`，纯函数 + 单测）：grounding（复用 verify_quote）→ 任务（R7 追问列出发送者任务）→ 语气（question+report → 查询；hypothetical → noted）→ 含糊无时间追问（R6）→ 置信度阈值（默认 0.6，`ORGPILOT_INTENT_CONFIDENCE_THRESHOLD`）→ 时间原文子串 + **只比对日期** → request_sync 仅 PM → P1/P2 → unsupported；
+- **处理器**（`intent/handlers.py`）：report_status/make_commitment 走可复用事件构造（`extraction/event_builder.py`）+ `commit_extracted_events`（内存校验→持久化→跑一轮），回复"已记录：支付SDK接入 → 有风险，预计 10/14 17:00 完成"式摘要；answer_pending 把答案合并进待补全 claim（字段覆盖、健康度缺省链、无原 claim 则新建），SlotCompletenessEvaluator 判完整性，不完整且未达轮数只追问剩余槽位；换话题（answers_pending=false）正常处理并末尾重新追问、轮数不增（R9）；query_status 直接从投影回答；request_sync PM 发 `kind=sync_confirmation` 确认卡片（按钮 sync_confirm/sync_cancel，仅发起人且 PM 可操作，过期原地更新"已过期"），否定句 → noted；acknowledge 有待确认卡片时肯定 → 发起（sync_started）/否定 → 取消（noted），无卡片 → smalltalk；一条消息多条目分别处理合并回复，类别按优先级 `no_permission > sync_started > sync_confirm > clarify > claim_recorded > query_answer > noted > unsupported > help > smalltalk`（已写入 ADR）；
+- **oracle 评测**（`intent/oracle.py` 仅评测路径 + `evaluator.LayeredSystemUnderTest` + CLI `--system baseline|layered --intent heuristic|oracle`，oracle 仅限 layered，报告标题标注上限口径）；oracle 达标：**dev 100/100、test 58/58 全部通过（100% ≥ 95%），未经确认群发 0、同步误触发 0、错误 claim 0**，0 条失败即无需修流水线 bug 也无需上报标注问题。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS
+pytest: 251 passed（新增 router 集成 19、guards 15、client 6、dialogue/message_store 6、oracle 流水线 1 等）
+coverage: 90.07% branch-aware total coverage (fail_under=90%)
+ruff: All checks passed
+git diff --check: PASS
+eval-intent 四种组合可运行；oracle+baseline 组合按设计拒绝（SystemExit 提示只能与 layered 组合）
+```
+
+### 已知限制（如实标注）
+
+- **DialogueStateStore 仅在内存**：进程重启后待回答追问与待确认卡片全部丢失（探针自身的会话状态仍由协调器管理）；持久化留给后续步骤；
+- probe 来源的 claim 合并仍由协调器内旧抽取路径完成（router 登记其追问状态但处理委托给协调器），统一的"按探针合并"留到第 4 步（claim 合并规则）；
+- `--system baseline` 在运行时与 layered+heuristic 同链路（旧 webhook 路由已删除），仅观测口径不同；BASELINE.md 中 baseline 行为第 3a 步之前的历史数字；
+- oracle 每个样本需要唯一 (sender, message) 键，同一 split 内消息重复会构造失败（当前数据集满足）。
+
+---
+
 ## 2026-10-12：评测集小修订（R11）并冻结 test 集（分支 `feat/intent-eval-baseline`）
 
 ### 已实现

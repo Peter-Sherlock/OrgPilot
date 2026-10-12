@@ -168,7 +168,13 @@ def check_time_expression(
 
 
 def check_role(item: IntentItem, context: IntentContext) -> GuardOutcome:
-    if item.intent == IntentType.REQUEST_SYNC and context.sender_role != "pm":
+    # A NEGATIVE request_sync ("不用同步进度了") declines a sync rather than
+    # attempting one, so the PM-only gate applies to affirmative requests only.
+    if (
+        item.intent == IntentType.REQUEST_SYNC
+        and item.polarity == Polarity.AFFIRMATIVE
+        and context.sender_role != "pm"
+    ):
         return GuardOutcome(
             verdict="NO_PERMISSION", reason="request_sync is PM-only (ADR-0008 §4)"
         )

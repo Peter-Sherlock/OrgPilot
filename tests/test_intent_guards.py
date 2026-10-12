@@ -211,3 +211,16 @@ def test_clean_item_passes_all_guards() -> None:
         item, "支付SDK报错了，明天下午5点能修好", CONTEXT
     )
     assert outcome.verdict == "KEEP"
+
+
+def test_negative_request_sync_bypasses_role_gate() -> None:
+    # "不用同步进度了" from a non-PM declines a sync instead of requesting one,
+    # so it must NOT hit the PM-only gate (R8 / R2 negative request_sync → noted).
+    item = _item(
+        "不用同步进度了", intent=IntentType.REQUEST_SYNC, task_id=None, polarity=Polarity.NEGATIVE
+    )
+    assert check_role(item, CONTEXT).verdict == "KEEP"
+    affirmative = _item(
+        "同步一下", intent=IntentType.REQUEST_SYNC, task_id=None, polarity=Polarity.AFFIRMATIVE
+    )
+    assert check_role(affirmative, CONTEXT).verdict == "NO_PERMISSION"

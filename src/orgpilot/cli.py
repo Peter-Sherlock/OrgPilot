@@ -34,6 +34,10 @@ def _build_parser() -> argparse.ArgumentParser:
     intent_eval.add_argument("--split", choices=["dev", "test"], default="dev")
     intent_eval.add_argument("--mode", choices=["mock", "replay", "live"], default="mock")
     intent_eval.add_argument(
+        "--system", choices=["baseline", "layered"], default="baseline"
+    )
+    intent_eval.add_argument("--intent", choices=["heuristic", "oracle"], default="heuristic")
+    intent_eval.add_argument(
         "--dataset-dir", type=Path, default=Path("evals/intent"), help="dataset directory"
     )
     intent_eval.add_argument(
@@ -101,23 +105,66 @@ def _eval_extraction(dataset_path: Path) -> int:
     return 0 if metrics.passed else 1
 
 
-def _eval_intent(split: str, mode: str, dataset_dir: Path, report_dir: Path) -> int:
+def _eval_intent(
+    split: str,
+    mode: str,
+    dataset_dir: Path,
+    report_dir: Path,
+    system: str = "baseline",
+    intent: str = "heuristic",
+) -> int:
     import asyncio
 
-    from orgpilot.intent.evaluator import run_intent_eval
+    from orgpilot.intent.client import HeuristicIntentClient
+    from orgpilot.intent.evaluator import (
+        ORACLE_TITLE_SUFFIX,
+        LayeredSystemUnderTest,
+        load_intent_project,
+        load_intent_samples,
+        run_intent_eval,
+    )
+    from orgpilot.intent.oracle import OracleIntentClient
 
     if mode != "mock":
         raise SystemExit(
             f"eval-intent --mode {mode} needs the intent layer or an online model; "
             "this step only supports --mode mock (ADR-0008 implementation step 1)"
         )
+    if intent == "oracle" and system != "layered":
+        raise SystemExit("eval-intent --intent oracle 只能与 --system layered 组合使用")
     if not (dataset_dir / f"{split}.yaml").exists():
         raise SystemExit(f"dataset file not found: {dataset_dir / f'{split}.yaml'}")
 
+    eval_system = None
+    title_suffix = None
+    if system == "layered":
+        if intent == "oracle":
+            project = load_intent_project(dataset_dir / "project.yaml")
+            samples = load_intent_samples(dataset_dir / f"{split}.yaml")
+            eval_system = LayeredSystemUnderTest(project, OracleIntentClient(samples))
+            title_suffix = ORACLE_TITLE_SUFFIX
+        else:
+            project = load_intent_project(dataset_dir / "project.yaml")
+            eval_system = LayeredSystemUnderTest(project, HeuristicIntentClient())
+        run_kwargs = {"system": eval_system, "title_suffix": title_suffix}
+    else:
+        run_kwargs = {}
+
     metrics, failures = asyncio.run(
-        run_intent_eval(split=split, mode=mode, dataset_dir=dataset_dir, report_dir=report_dir)
+        run_intent_eval(
+            split=split,
+            mode=mode,
+            dataset_dir=dataset_dir,
+            report_dir=report_dir,
+            **run_kwargs,
+        )
     )
-    print(f"Intent Behavior Evaluation (split={split}, mode={mode}, no pass gate this step):")
+    print(
+        f"Intent Behavior Evaluation (split={split}, mode={mode}, system={system}, "
+        f"intent={intent}, no pass gate this step)"
+    )
+    if title_suffix:
+        print(f"  - {title_suffix}")
     print(f"  - Samples: {metrics.total_samples}")
     print(
         f"  - Claim precision: {metrics.claim_precision:.2%}, "
@@ -206,7 +253,14 @@ def main() -> int:
     if args.command == "eval-extraction":
         return _eval_extraction(args.dataset)
     if args.command == "eval-intent":
-        return _eval_intent(args.split, args.mode, args.dataset_dir, args.report_dir)
+        return _eval_intent(
+            args.split,
+            args.mode,
+            args.dataset_dir,
+            args.report_dir,
+            system=args.system,
+            intent=args.intent,
+        )
     if args.command == "start-feishu-ws":
         return _start_feishu_ws(args.project_id)
     return 2

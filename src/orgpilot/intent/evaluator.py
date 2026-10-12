@@ -32,6 +32,7 @@ from orgpilot.intent.models import (
     Polarity,
     SpeechAct,
 )
+from orgpilot.intent.router import MessageRouter
 from orgpilot.storage.database import Database
 
 FIXTURE_OCCURRED_AT = "2026-10-12T09:00:00+08:00"
@@ -79,6 +80,7 @@ class ReplyCategory(StrEnum):
     SMALLTALK = "smalltalk"
     HELP = "help"
     CLARIFY = "clarify"
+    FALLBACK = "fallback"
 
 
 # ---------------------------------------------------------------------------
@@ -288,12 +290,17 @@ class BaselineSystemUnderTest:
 
             stored_events = await service.event_store.get_events(self._project.project_id)
             outbound_records = [*adapter.client.sent_messages, *adapter.client.sent_cards]
-            return self._collect_behavior(
-                response,
-                stored_events,
-                coordinator=coordinator,
-                sessions_before=sessions_before,
-                confirmation_card=_has_sync_confirmation_marker(outbound_records),
+            claims, commitments = _collect_claim_events(stored_events)
+            msg = response.get("msg")
+            return ObservedBehavior(
+                claims=claims,
+                commitments=commitments,
+                starts_sync=(
+                    msg == "sync_session_started" or len(coordinator._sessions) > sessions_before
+                ),
+                sends_confirmation_card=_has_sync_confirmation_marker(outbound_records),
+                asks_clarification=msg == "clarification_sent",
+                reply_category=_baseline_reply_category(response, claims, commitments),
             )
         finally:
             await db.close()
@@ -389,66 +396,138 @@ class BaselineSystemUnderTest:
             },
         }
 
-    def _collect_behavior(
-        self,
-        response: dict[str, Any],
-        stored_events: list[OrgEvent],
-        *,
-        coordinator: Any,
-        sessions_before: int,
-        confirmation_card: bool,
-    ) -> ObservedBehavior:
-        claims: list[ObservedClaim] = []
-        commitments: list[ObservedCommitment] = []
-        for event in stored_events:
-            if event.event_type == "task.health_reported":
-                health = event.payload.health_status
-                claims.append(
-                    ObservedClaim(
-                        task_id=event.payload.task_id,
-                        health_status=str(health.value if hasattr(health, "value") else health),
-                        expected_completion=event.payload.expected_completion,
-                    )
+
+def _collect_claim_events(
+    stored_events: list[OrgEvent],
+) -> tuple[list[ObservedClaim], list[ObservedCommitment]]:
+    claims: list[ObservedClaim] = []
+    commitments: list[ObservedCommitment] = []
+    for event in stored_events:
+        if event.event_type == "task.health_reported":
+            health = event.payload.health_status
+            claims.append(
+                ObservedClaim(
+                    task_id=event.payload.task_id,
+                    health_status=str(health.value if hasattr(health, "value") else health),
+                    expected_completion=event.payload.expected_completion,
                 )
-            elif event.event_type == "commitment.made":
-                commitments.append(
-                    ObservedCommitment(
-                        task_id=event.payload.target_id,
-                        predicate=str(event.payload.predicate),
-                        expected_value=str(event.payload.expected_value),
-                        due_at=event.payload.due_at,
-                    )
+            )
+        elif event.event_type == "commitment.made":
+            commitments.append(
+                ObservedCommitment(
+                    task_id=event.payload.target_id,
+                    predicate=str(event.payload.predicate),
+                    expected_value=str(event.payload.expected_value),
+                    due_at=event.payload.due_at,
                 )
+            )
+    return claims, commitments
 
-        msg = response.get("msg")
-        starts_sync = msg == "sync_session_started" or len(coordinator._sessions) > sessions_before
-        # A confirmation card only counts when the system reports it explicitly via the
-        # kind=sync_confirmation marker on a message sent BEFORE the side effect
-        # (LABELING.md R8). Post-sync notifications never count as confirmation cards.
-        sends_confirmation_card = confirmation_card
-        asks_clarification = msg == "clarification_sent"
 
-        if starts_sync:
-            reply_category = ReplyCategory.SYNC_STARTED
-        elif sends_confirmation_card:
-            reply_category = ReplyCategory.SYNC_CONFIRM
-        elif claims or commitments:
-            reply_category = ReplyCategory.CLAIM_RECORDED
-        elif msg == "clarification_sent":
-            reply_category = ReplyCategory.CLARIFY
-        elif msg in {"sender_not_registered", "message_rejected"}:
-            reply_category = ReplyCategory.NO_PERMISSION
-        else:
-            reply_category = ReplyCategory.SMALLTALK
+def _baseline_reply_category(
+    response: dict[str, Any],
+    claims: list[ObservedClaim],
+    commitments: list[ObservedCommitment],
+) -> ReplyCategory:
+    """Baseline category derivation: response msg + persisted events only.
 
-        return ObservedBehavior(
-            claims=claims,
-            commitments=commitments,
-            starts_sync=starts_sync,
-            sends_confirmation_card=sends_confirmation_card,
-            asks_clarification=asks_clarification,
-            reply_category=reply_category,
-        )
+    The baseline never sends a kind=sync_confirmation card, so SYNC_CONFIRM is
+    unreachable here by construction.
+    """
+    msg = response.get("msg")
+    if msg == "sync_session_started":
+        return ReplyCategory.SYNC_STARTED
+    if claims or commitments:
+        return ReplyCategory.CLAIM_RECORDED
+    if msg == "clarification_sent":
+        return ReplyCategory.CLARIFY
+    if msg in {"sender_not_registered", "message_rejected"}:
+        return ReplyCategory.NO_PERMISSION
+    return ReplyCategory.SMALLTALK
+
+
+class LayeredSystemUnderTest(BaselineSystemUnderTest):
+    """Drives the layered MessageRouter through the real webhook (ADR-0008 §3).
+
+    The intent client is injectable (heuristic for the current-pipeline number,
+    oracle for the pipeline upper bound). Test state — pending clarifications and
+    pending sync confirmations — is constructed exclusively through the router's
+    public registration API, never by touching private fields.
+    """
+
+    def __init__(self, project: IntentProjectFixture, intent_client: Any) -> None:
+        super().__init__(project)
+        self._intent_client = intent_client
+
+    async def observe(self, sample: EvalSample) -> ObservedBehavior:
+        db = Database("sqlite+aiosqlite:///:memory:")
+        await db.init_db()
+        try:
+            adapter = _RecordingAdapter(self._project.project_id)
+            service = GatewayService(db, adapter_factory=lambda _project: adapter)
+            await service.ingest_raw_events(self._project.project_id, self._fixture_events())
+            coordinator = await service.get_sync_coordinator(self._project.project_id)
+            router = MessageRouter(service=service, intent_client=self._intent_client)
+            self._construct_dialogue_state(router, sample)
+
+            sessions_before = len(coordinator._sessions)
+            handler = FeishuWebhookHandler(
+                service=service, project_id=self._project.project_id, router=router
+            )
+            response = await handler.handle_event(self._message_payload(sample))
+
+            stored_events = await service.event_store.get_events(self._project.project_id)
+            outbound_records = [*adapter.client.sent_messages, *adapter.client.sent_cards]
+            claims, commitments = _collect_claim_events(stored_events)
+            data = response.get("data", {}) or {}
+            observed_category = str(data.get("reply_category", "smalltalk"))
+            try:
+                reply_category = ReplyCategory(observed_category)
+            except ValueError:
+                reply_category = ReplyCategory.SMALLTALK
+            return ObservedBehavior(
+                claims=claims,
+                commitments=commitments,
+                starts_sync=(
+                    response.get("msg") == "sync_session_started"
+                    or len(coordinator._sessions) > sessions_before
+                ),
+                sends_confirmation_card=_has_sync_confirmation_marker(outbound_records),
+                asks_clarification=(
+                    bool(data.get("asks_clarification"))
+                    or response.get("msg") == "clarification_sent"
+                ),
+                reply_category=reply_category,
+            )
+        finally:
+            await db.close()
+
+    def _construct_dialogue_state(self, router: Any, sample: EvalSample) -> None:
+        """Builds pending dialogue state through the router's public API only."""
+        context = sample.context
+        if context is None:
+            return
+        if context.pending_question is not None:
+            router.register_pending_clarification(
+                self._project.project_id,
+                sample.sender,
+                context.pending_question.question,
+                task_id=context.pending_question.task_id,
+                source="clarify",
+                occurred_at=sample.occurred_at,
+            )
+        if context.pending_confirmation is not None:
+            # The card belongs to the INITIATOR: only their acknowledgement can
+            # confirm it; anyone else replying "好的" has no pending item (R8).
+            initiator = context.pending_confirmation.initiated_by
+            others = sorted(self._project.member_ids - {initiator})
+            router.register_pending_sync_confirmation(
+                self._project.project_id,
+                initiator,
+                initiated_by=initiator,
+                member_ids=others,
+                occurred_at=sample.occurred_at,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -825,9 +904,13 @@ def render_markdown_report(
     mode: str,
     metrics: IntentEvalMetrics,
     failures: list[SampleComparison],
+    title_suffix: str | None = None,
 ) -> str:
     lines: list[str] = []
-    lines.append(f"# 意图行为评测报告（split={split}, mode={mode}）")
+    title = f"# 意图行为评测报告（split={split}, mode={mode}）"
+    if title_suffix:
+        title = f"{title} — {title_suffix}"
+    lines.append(title)
     lines.append("")
     lines.append("评测以系统行为为准（ADR-0008 §8）；baseline 无意图层，意图指标记为 N/A。")
     lines.append("")
@@ -896,6 +979,7 @@ def write_reports(
     metrics: IntentEvalMetrics,
     failures: list[SampleComparison],
     report_dir: Path,
+    title_suffix: str | None = None,
 ) -> tuple[Path, Path]:
     report_dir.mkdir(parents=True, exist_ok=True)
     json_path = report_dir / f"report-{split}-{mode}.json"
@@ -903,6 +987,7 @@ def write_reports(
     payload = {
         "split": split,
         "mode": mode,
+        "title_suffix": title_suffix,
         "generated_at": datetime.now(UTC).isoformat(),
         "metrics": metrics.model_dump(mode="json"),
         "failures": [
@@ -918,9 +1003,12 @@ def write_reports(
     }
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     markdown_path.write_text(
-        render_markdown_report(split, mode, metrics, failures), encoding="utf-8"
+        render_markdown_report(split, mode, metrics, failures, title_suffix), encoding="utf-8"
     )
     return json_path, markdown_path
+
+
+ORACLE_TITLE_SUFFIX = "oracle：流水线上限，不代表模型效果"
 
 
 async def run_intent_eval(
@@ -929,6 +1017,7 @@ async def run_intent_eval(
     dataset_dir: Path,
     report_dir: Path,
     system: IntentSystemUnderTest | None = None,
+    title_suffix: str | None = None,
 ) -> tuple[IntentEvalMetrics, list[SampleComparison]]:
     """Loads the dataset, runs the system under test, and writes both reports."""
     project = load_intent_project(dataset_dir / "project.yaml")
@@ -954,7 +1043,7 @@ async def run_intent_eval(
 
     metrics = compute_metrics(comparisons)
     failures = [c for c in comparisons if not c.passed]
-    write_reports(split, mode, metrics, failures, report_dir)
+    write_reports(split, mode, metrics, failures, report_dir, title_suffix=title_suffix)
     return metrics, failures
 
 
@@ -963,6 +1052,7 @@ __all__ = [
     "CATEGORY_MINIMUMS",
     "IntentEvalMetrics",
     "IntentSystemUnderTest",
+    "LayeredSystemUnderTest",
     "ObservedBehavior",
     "ReplyCategory",
     "SampleComparison",

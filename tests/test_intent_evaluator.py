@@ -9,6 +9,7 @@ import yaml
 from orgpilot.cli import main
 from orgpilot.intent.evaluator import (
     BaselineSystemUnderTest,
+    LayeredSystemUnderTest,
     ReplyCategory,
     _has_sync_confirmation_marker,
     compare_sample,
@@ -386,3 +387,28 @@ def test_cli_eval_intent_rejects_live_mode(monkeypatch: pytest.MonkeyPatch) -> N
     )
     with pytest.raises(SystemExit, match="mock"):
         main()
+
+
+async def test_layered_oracle_pipeline_matches_annotations_on_mini_dataset(
+    mini_dataset_dir: Path,
+) -> None:
+    from orgpilot.intent.oracle import OracleIntentClient
+
+    project = load_intent_project(mini_dataset_dir / "project.yaml")
+    samples = load_intent_samples(mini_dataset_dir / "dev.yaml")
+    system = LayeredSystemUnderTest(project, OracleIntentClient(samples))
+
+    comparisons = []
+    for sample in samples:
+        observed = await system.observe(sample)
+        comparisons.append(compare_sample(sample, observed))
+
+    metrics = compute_metrics(comparisons)
+    # Oracle = pipeline upper bound: only the deliberate trap fails.
+    failure_ids = {c.sample_id for c in comparisons if not c.passed}
+    assert failure_ids == {"mini_trap_001"}
+    # four mini samples expect no claims; only mini_trap_001 produces one
+    assert metrics.false_claim_rate == pytest.approx(1 / 4)
+    assert metrics.sync_false_trigger_rate == 0.0
+    assert metrics.unconfirmed_sync_count == 0
+    assert metrics.reply_category_accuracy == pytest.approx(5 / 6)

@@ -25,6 +25,7 @@ from orgpilot.feishu.cards import build_sync_confirmation_card
 from orgpilot.intent.client import IntentContext
 from orgpilot.intent.dialogue import (
     CLARIFICATION_SOURCE_CLARIFY,
+    CLARIFICATION_SOURCE_PROBE,
     DialogueStateStore,
     PendingClaimDraft,
 )
@@ -397,6 +398,12 @@ class IntentHandlers:
         complete, missing = SlotCompletenessEvaluator.evaluate_completeness(
             extraction_view, message
         )
+        if entry is not None and entry.source != CLARIFICATION_SOURCE_PROBE and not complete:
+            # Router-asked clarifications (R6/R7) only ever asked for the missing
+            # TIME; the probe-specific blocker requirement does not apply (ADR
+            # implementation log).
+            missing = [slot for slot in missing if "时间" in slot]
+            complete = not missing
         title = target_task or ""
         if target_task in agent.projector.state.tasks:
             title = agent.projector.state.tasks[target_task].title
