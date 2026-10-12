@@ -477,10 +477,11 @@ async def test_probe_reply_with_sync_keyword_is_not_treated_as_new_sync(
     # The sender is a probed member (probe clarification registered at /同步),
     # so the off-topic message must never start a second sync; it routes through
     # the intent pipeline as a topic switch: normal handling + R9 re-ask, and the
-    # probe round counter stays untouched.
+    # probe round counter stays untouched. (A vague ANSWER attempt like "进度正常"
+    # would consume a round under the 3a.2 fallback — this message is pure chat.)
     reply = await client.post(
         "/api/v1/feishu/events",
-        json=_message_payload("ou_alice", "我这边当前进度正常", "om_t2_reply"),
+        json=_message_payload("ou_alice", "哈哈哈你们看热搜了吗", "om_t2_reply"),
         params={"project_id": project_id},
     )
     assert reply.status_code == 200
