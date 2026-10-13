@@ -1,0 +1,55 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "0ad8d521e6e14302bae6f877db357276",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 389,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 226,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:08:05.646642+00:00",
+  "response": {
+    "id": "cff0d653-604d-4f78-aa59-44fcc56f9c3e",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_g3QtmwC2dnW78eFilPoh3149",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟汇报自己负责的支付SDK接入进展，提到今晚能提测，属完成类事件需填时间；\"应该\"为不确定词，certainty=hedged，无未解决问题，健康度按正常推进。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "task_id": "pay_sdk",
+              "health_status": "on_track",
+              "time_expression": "今晚",
+              "expected_completion": "2026-10-14T20:00:00+08:00",
+              "source_quote": "支付SDK接入了新渠道，今晚应该能提测",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 389,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 226,
+      "service_tier": "standard"
+    }
+  }
+}

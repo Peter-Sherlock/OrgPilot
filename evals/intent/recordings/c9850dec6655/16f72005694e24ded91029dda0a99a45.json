@@ -1,0 +1,53 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "16f72005694e24ded91029dda0a99a45",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 395,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 176,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:01:00.451505+00:00",
+  "response": {
+    "id": "b2d34556-0d73-40b8-a2b4-8975addcbce2",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_3ruTieRWfY6GchA3lG827775",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳承认收银台页面被自己改坏，正在回滚，属于未解决问题的状态汇报，至少 at_risk；未给出完成时间。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "checkout_page",
+              "health_status": "at_risk",
+              "source_quote": "收银台页面刚才是我改坏了，马上回滚",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 395,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 176,
+      "service_tier": "standard"
+    }
+  }
+}

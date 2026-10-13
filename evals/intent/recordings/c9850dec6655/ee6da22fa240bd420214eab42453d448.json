@@ -1,0 +1,63 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "ee6da22fa240bd420214eab42453d448",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 399,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 259,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:00:41.967778+00:00",
+  "response": {
+    "id": "b78ded36-dde7-4e0f-9e02-9a60df6a8ad4",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_i3u1Qr1FxrZDIZEsN4Xr9414",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳汇报自己负责的两个任务：收银台页面改版还有视觉问题待改，对账模块联调差异未对平，均属未解决问题，至少 at_risk。未提及完成时间。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "收银台还有两个视觉问题要改",
+              "confidence": 0.9,
+              "task_id": "checkout_page",
+              "health_status": "at_risk"
+            },
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "source_quote": "对账模块的差异也没对平",
+              "confidence": 0.9,
+              "task_id": "ledger_check",
+              "health_status": "at_risk"
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 399,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 259,
+      "service_tier": "standard"
+    }
+  }
+}

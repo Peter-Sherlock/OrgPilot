@@ -1,0 +1,55 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "43a5fb37282bfb3d8f41acadc57da796",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 263,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2688,
+    "output_tokens": 217,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:00:49.246866+00:00",
+  "response": {
+    "id": "d910de1b-9e35-4850-a177-2d90c4223cac",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_THROIq0XN5uUpfVXftf34288",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟汇报自己负责的支付SDK接入任务，报错仍在修复中，属于未解决问题，至少 at_risk；预计下午三点修好，填 expected_completion。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_sdk",
+              "health_status": "at_risk",
+              "time_expression": "下午三点",
+              "expected_completion": "2026-10-13T15:00:00+08:00",
+              "source_quote": "支付SDK的报错还在修，预计下午三点能修好",
+              "confidence": 0.92
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 263,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2688,
+      "output_tokens": 217,
+      "service_tier": "standard"
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "f34e22c49289b6d0308abd19918308b9",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 378,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 139,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:09:12.045959+00:00",
+  "response": {
+    "id": "f090342a-9697-40cd-85b1-2e27e4f7f826",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_BHzITQjsYMbyua4Y9EeL3556",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "发送者明确表示暂不需要进度同步，属于 request_sync 的否定表达。",
+          "items": [
+            {
+              "intent": "request_sync",
+              "speech_act": "imperative",
+              "polarity": "negative",
+              "certainty": "certain",
+              "source_quote": "同步进度的事先放一放",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 378,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 139,
+      "service_tier": "standard"
+    }
+  }
+}

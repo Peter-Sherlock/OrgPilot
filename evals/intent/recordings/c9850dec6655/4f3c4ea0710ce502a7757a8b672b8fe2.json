@@ -1,0 +1,54 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "4f3c4ea0710ce502a7757a8b672b8fe2",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 387,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 214,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:00:43.721815+00:00",
+  "response": {
+    "id": "303b2366-121e-4d64-b7b7-2a742ca32722",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_qRa0638dqiVzIxwhQKJu9033",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊汇报自己负责的支付全链路压测环境已就绪，但需等待支付SDK稳定，属于依赖未解除的阻塞，健康度 at_risk；等待依赖写入该条目 blocker，不另出 dependency_wait。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_e2e_test",
+              "health_status": "at_risk",
+              "blocker": "就等支付SDK那边稳定",
+              "source_quote": "支付全链路压测的环境搭好了，就等支付SDK那边稳定",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 387,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 214,
+      "service_tier": "standard"
+    }
+  }
+}

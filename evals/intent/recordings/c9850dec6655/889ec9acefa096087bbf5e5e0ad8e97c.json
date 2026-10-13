@@ -1,0 +1,55 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "889ec9acefa096087bbf5e5e0ad8e97c",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 409,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 220,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:00:26.952444+00:00",
+  "response": {
+    "id": "eeee9be0-e1f5-402e-bd08-40d8e365d41a",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_RJZVKcgrDTDxi5r0t5aa2419",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟继续汇报支付SDK报错排查进展，预计明天能修好但存在不确定性，属于带未解决问题的状态汇报，至少 at_risk；完成时间填明天 18:00。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "task_id": "pay_sdk",
+              "health_status": "at_risk",
+              "time_expression": "明天",
+              "expected_completion": "2026-10-14T18:00:00+08:00",
+              "source_quote": "理论上明天能修好，但如果有隐藏问题就说不准了",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 409,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 220,
+      "service_tier": "standard"
+    }
+  }
+}

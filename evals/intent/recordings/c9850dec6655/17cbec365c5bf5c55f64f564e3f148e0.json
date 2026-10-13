@@ -1,0 +1,55 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "17cbec365c5bf5c55f64f564e3f148e0",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 402,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 226,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:08:17.758345+00:00",
+  "response": {
+    "id": "d5f64329-087c-423a-8faf-aadceaf7a0a9",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_phvk3Kt19d78gjzLDgey4229",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "直接回答机器人关于支付SDK恢复时间的追问，给出明确时间「明天下午5点半之前」，属于 answer_pending；恢复时间在截止日 10-16 之前，但当前处于未解决状态，健康度 at_risk。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_sdk",
+              "health_status": "at_risk",
+              "time_expression": "明天下午5点半之前",
+              "expected_completion": "2026-10-15T17:30:00+08:00",
+              "source_quote": "明天下午5点半之前肯定恢复",
+              "confidence": 0.95
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 402,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 226,
+      "service_tier": "standard"
+    }
+  }
+}

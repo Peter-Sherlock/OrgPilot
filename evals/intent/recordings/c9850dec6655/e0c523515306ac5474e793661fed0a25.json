@@ -1,0 +1,53 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "e0c523515306ac5474e793661fed0a25",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 561,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 171,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:03:11.431355+00:00",
+  "response": {
+    "id": "1ad61085-7b2c-4482-9d88-44c8961ba432",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_BrwhrYtRQuuMUalW7QyF4798",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "发送者仍在回答机器人关于支付全链路压测完成时间的追问，表示时间定不下来，属于被追问时给不出时间，健康度为 at_risk。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "hedged",
+              "task_id": "pay_e2e_test",
+              "health_status": "at_risk",
+              "source_quote": "暂时定不下来",
+              "confidence": 0.85
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 561,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 171,
+      "service_tier": "standard"
+    }
+  }
+}

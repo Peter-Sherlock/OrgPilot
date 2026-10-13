@@ -1,0 +1,62 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "2cb6b3afaeb03ccf2df2a05b7e4e322c",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 387,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 233,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:01:13.298557+00:00",
+  "response": {
+    "id": "66510463-58d1-4037-a163-25dd10ec69f5",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_KRiuIpes1lOMeKOFtR062882",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟汇报自己负责的支付SDK进度正常，属于状态汇报；同时明确表示不需要单独同步/汇总，按 request_sync 且 polarity=negative 处理。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "我这边支付SDK进度正常",
+              "confidence": 0.9,
+              "task_id": "pay_sdk",
+              "health_status": "on_track"
+            },
+            {
+              "intent": "request_sync",
+              "speech_act": "imperative",
+              "polarity": "negative",
+              "certainty": "certain",
+              "source_quote": "不用单独问我",
+              "confidence": 0.75,
+              "task_id": null
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 387,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 233,
+      "service_tier": "standard"
+    }
+  }
+}

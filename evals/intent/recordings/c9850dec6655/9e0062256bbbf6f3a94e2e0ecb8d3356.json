@@ -1,0 +1,53 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "9e0062256bbbf6f3a94e2e0ecb8d3356",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 382,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 176,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:59:16.713436+00:00",
+  "response": {
+    "id": "09148647-813f-4c95-9107-473ee0db05a3",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_QqamrS1ErNtQZmYzM4nM7701",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊汇报自己负责的支付全链路压测，脚本跑通、链路无报错，属正常推进已完成阶段，无未解决问题。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_e2e_test",
+              "health_status": "on_track",
+              "source_quote": "压测脚本全部跑通了，链路没有报错",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 382,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 176,
+      "service_tier": "standard"
+    }
+  }
+}

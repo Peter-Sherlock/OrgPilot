@@ -1,0 +1,53 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "aa507e646429e99715862f22e9e5b7c8",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 376,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 173,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:08:46.496699+00:00",
+  "response": {
+    "id": "b3ab2da2-ce5b-4ca8-9bab-127aeb5461e4",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_qcw1V8w77eMqtC19KPtJ4905",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊汇报自己负责的支付全链路压测，用「应该」表示推测，属 hedged 陈述；无未解决问题，视为正常推进。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "task_id": "pay_e2e_test",
+              "health_status": "on_track",
+              "source_quote": "压测应该问题不大",
+              "confidence": 0.75
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 376,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 173,
+      "service_tier": "standard"
+    }
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "20a0901968e4def0a04062e7f0a419c4",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 423,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 295,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:01:32.060134+00:00",
+  "response": {
+    "id": "36826f8e-7491-4e54-846f-f79e2cf8b95b",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_dUBl51xYTHLmYZierMVM2729",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟回答负责人的进度追问，分别汇报 pay_sdk 与 merchant_admin 的状态。pay_sdk 明天下午5点能修好，属将来完成时间需填；merchant_admin 已正常。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_sdk",
+              "health_status": "at_risk",
+              "time_expression": "明天下午5点",
+              "expected_completion": "2026-10-16T17:00:00+08:00",
+              "source_quote": "支付SDK明天下午5点能修好",
+              "confidence": 0.9
+            },
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "merchant_admin",
+              "health_status": "on_track",
+              "source_quote": "商户后台已经正常了",
+              "confidence": 0.9
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 423,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 295,
+      "service_tier": "standard"
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "b0c5e121a620be5722b454ac9bc936ec",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 385,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 137,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:00:03.556267+00:00",
+  "response": {
+    "id": "ea0609ba-eb6b-4b01-b4ad-b8ba0d96ca9b",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_NmV26diNBvBEIiv65qSW4832",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "用户在询问如何让机器人发起全员进度询问，属于询问机器人用法。",
+          "items": [
+            {
+              "intent": "help",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "怎么让机器人给大家发进度询问啊？",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 385,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 137,
+      "service_tier": "standard"
+    }
+  }
+}

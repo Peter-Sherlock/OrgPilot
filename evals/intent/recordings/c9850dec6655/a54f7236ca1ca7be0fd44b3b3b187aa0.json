@@ -1,0 +1,51 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "a54f7236ca1ca7be0fd44b3b3b187aa0",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 383,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 135,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:59:52.804226+00:00",
+  "response": {
+    "id": "c18cebb0-17e7-42ca-80db-bdaf7c197aaf",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_wqeo6m8Wt9cgNg6fqnL90141",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "「收到收到」是单纯的确认应答，无待回答问题，也无任务状态内容。",
+          "items": [
+            {
+              "intent": "acknowledge",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "收到收到",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 383,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 135,
+      "service_tier": "standard"
+    }
+  }
+}

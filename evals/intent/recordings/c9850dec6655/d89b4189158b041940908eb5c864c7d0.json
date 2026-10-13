@@ -1,0 +1,53 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "d89b4189158b041940908eb5c864c7d0",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 392,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 172,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:00:47.586569+00:00",
+  "response": {
+    "id": "c58d7bd1-99d3-4d1d-b3a7-8f1b2c135949",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_QEGT4cCOajY6j3MigejF9878",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟汇报自己负责的支付SDK接入可以收尾，属正常推进；压测准备明确说没管，不输出条目。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "支付SDK接入这块可以收尾了",
+              "confidence": 0.85,
+              "task_id": "pay_sdk",
+              "health_status": "on_track"
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 392,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 172,
+      "service_tier": "standard"
+    }
+  }
+}

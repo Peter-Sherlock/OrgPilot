@@ -1,0 +1,55 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "3c739f1fec9fea12a7d8eed590217a4d",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 411,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 220,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:59:30.807798+00:00",
+  "response": {
+    "id": "293ce847-bd08-4bf1-8179-e20eefc3f3ff",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_emKQmZ1lvNMx2tUfbSFg3947",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "正面回答待回答的问题，给出根因（证书过期）和完成时间（今天下班前=18:00），属于 answer_pending；问题仍在处理中，健康度 at_risk。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_sdk",
+              "health_status": "at_risk",
+              "time_expression": "今天下班前",
+              "expected_completion": "2026-10-13T18:00:00+08:00",
+              "source_quote": "根因找到了，是证书过期，今天下班前能搞定",
+              "confidence": 0.92
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 411,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 220,
+      "service_tier": "standard"
+    }
+  }
+}

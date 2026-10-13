@@ -1,0 +1,55 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "2f181c42e439da642c4c46e01797a968",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 379,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 227,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:08:56.154268+00:00",
+  "response": {
+    "id": "fab7b29b-e019-4c95-a128-a5bb95fcd880",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_7u2v7I4lhxDTWbuZBt0M1838",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊负责支付全链路压测，明确说压测要拖到月底才能做完，属延期汇报。月底=2026-10-31T18:00:00+08:00，晚于任务截止 10-20，故 delayed。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_e2e_test",
+              "health_status": "delayed",
+              "time_expression": "月底",
+              "expected_completion": "2026-10-31T18:00:00+08:00",
+              "source_quote": "压测要拖到月底才能做完",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 379,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 227,
+      "service_tier": "standard"
+    }
+  }
+}

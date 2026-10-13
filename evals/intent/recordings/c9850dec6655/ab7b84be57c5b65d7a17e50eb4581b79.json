@@ -1,0 +1,53 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "ab7b84be57c5b65d7a17e50eb4581b79",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 386,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 166,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:08:48.003775+00:00",
+  "response": {
+    "id": "facd6c3e-727a-46d0-9c2d-ea5eca6dc6e9",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_YJuSOKL37sNLPM2WR21r0447",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳汇报自己负责的对账模块联调进展，用“大概快了”含糊描述，无未解决问题，属正常推进。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "task_id": "ledger_check",
+              "health_status": "on_track",
+              "source_quote": "对账那边大概快了",
+              "confidence": 0.75
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 386,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 166,
+      "service_tier": "standard"
+    }
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "42c1fabfe88306fc64bf746e9289164f",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 383,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 190,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:08:44.910273+00:00",
+  "response": {
+    "id": "a1c70c45-b728-4ae3-aeb2-031db5be2662",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_qp6ttXYGfSnLRCRLJxJY2450",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息为假设句（“如果……就能……”），假设不产生状态变更，故不记录状态；仅识别为假设语气。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "hypothetical",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "task_id": "pay_e2e_test",
+              "health_status": null,
+              "time_expression": "下周三",
+              "expected_completion": null,
+              "source_quote": "如果压测全过，下周三就能上预发",
+              "confidence": 0.6
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 383,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 190,
+      "service_tier": "standard"
+    }
+  }
+}

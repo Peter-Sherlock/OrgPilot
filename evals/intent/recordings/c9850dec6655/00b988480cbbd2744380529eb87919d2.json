@@ -1,0 +1,51 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "00b988480cbbd2744380529eb87919d2",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 376,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 153,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:01:20.079549+00:00",
+  "response": {
+    "id": "b25bdb3f-8cc2-40bd-a28e-282e00f8e0ff",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_4hOyhoUf9WATLnQYo0JI3830",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "发送者明确要求发起一次全员进度同步，属于 request_sync；但发送者角色为 qa，非项目负责人，权限由系统判定。",
+          "items": [
+            {
+              "intent": "request_sync",
+              "speech_act": "imperative",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "发起一次全员进度同步",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 376,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 153,
+      "service_tier": "standard"
+    }
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "8ba1e4137eec9d27d6e629576b9485bc",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 382,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 225,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:00:52.788257+00:00",
+  "response": {
+    "id": "ee73bb0a-667e-4640-b831-436f008708bd",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_3zco80lvKjz8LAc8VyEu3364",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊汇报自己负责的支付全链路压测进度，第一轮预计拖到下周三完成，属延期风险；\"可能\"为不确定词，但明确说\"拖到\"表示延期。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "task_id": "pay_e2e_test",
+              "health_status": "delayed",
+              "time_expression": "下周三",
+              "expected_completion": "2026-10-21T18:00:00+08:00",
+              "blocker": null,
+              "source_quote": "压测第一轮可能要拖到下周三才能跑完",
+              "confidence": 0.8
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 382,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 225,
+      "service_tier": "standard"
+    }
+  }
+}

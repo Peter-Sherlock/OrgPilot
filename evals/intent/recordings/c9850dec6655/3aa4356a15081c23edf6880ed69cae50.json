@@ -1,0 +1,50 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "3aa4356a15081c23edf6880ed69cae50",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 395,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 143,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:59:42.726735+00:00",
+  "response": {
+    "id": "c6428bd8-c36e-4d32-93c4-5dd74925cafd",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_gxzDurZaHz3qlNqfHBVq6405",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳询问后端接口何时提供，属于催促依赖方，识别为 dependency_wait；同时提到自己页面已干等两天，隐含进度受阻。",
+          "items": [
+            {
+              "intent": "dependency_wait",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "后端的接口什么时候给我？我这边页面都干等两天了",
+              "confidence": 0.8
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 395,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 143,
+      "service_tier": "standard"
+    }
+  }
+}

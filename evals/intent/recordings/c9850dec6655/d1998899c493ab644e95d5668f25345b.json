@@ -1,0 +1,53 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "d1998899c493ab644e95d5668f25345b",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 388,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 177,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:00:31.276735+00:00",
+  "response": {
+    "id": "1c2434d2-31d1-4989-b174-544d0ea6944b",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_2oevrLba6zZbDbkysrqx1658",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳汇报自己负责的收银台页面改版进展，语气为带“感觉”的推测，属 hedged 陈述；无未解决问题，视为正常推进。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "task_id": "checkout_page",
+              "health_status": "on_track",
+              "source_quote": "收银台那边感觉问题不大",
+              "confidence": 0.75
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 388,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 177,
+      "service_tier": "standard"
+    }
+  }
+}

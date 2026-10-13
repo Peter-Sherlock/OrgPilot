@@ -1,0 +1,54 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "c6268fe4bf8f4fb3a65a88a5a037eac3",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 387,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 205,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:08:50.681593+00:00",
+  "response": {
+    "id": "47f572ce-0c96-47b4-8ae0-1cf0822959f0",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_1aH62YLoSrRqWQrCoYC57636",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊汇报压测准备文档已完成，并说明依赖支付SDK恢复后才能开跑；「一恢复就开跑」是依赖等待，写入该条目的 blocker，不另出 dependency_wait。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_e2e_test",
+              "health_status": "at_risk",
+              "blocker": "支付SDK一恢复",
+              "source_quote": "压测准备文档都写完了，支付SDK一恢复我就开跑",
+              "confidence": 0.8
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 387,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 205,
+      "service_tier": "standard"
+    }
+  }
+}

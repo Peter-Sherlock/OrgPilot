@@ -1,0 +1,51 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "9e7268e3ba02e3d77965ef2a5f59d28a",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 376,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 135,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:00:06.063759+00:00",
+  "response": {
+    "id": "4cfb271d-1d9b-40dd-a950-457e618b17f3",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_lUCDpg0Q7ePEF95hCJwX4324",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "询问是否有使用说明文档，属于询问机器人能力/用法，归为 help。",
+          "items": [
+            {
+              "intent": "help",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "有没有使用说明文档？",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 376,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 135,
+      "service_tier": "standard"
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "86457921b6681f60cbaee5e86a124405",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 418,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 192,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:08:16.136754+00:00",
+  "response": {
+    "id": "64f347c2-01ea-4dd9-a332-9a9419a3d795",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_uwwuTZGiMQyV9z3wiLFL9954",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳回答了对账差异的追问，说明金额已对平、根因是四舍五入配置，属于 answer_pending；问题已解决，健康度 on_track，已完成不填时间。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "ledger_check",
+              "health_status": "on_track",
+              "source_quote": "金额对平了，问题出在一个四舍五入的配置上",
+              "confidence": 0.9
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 418,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 192,
+      "service_tier": "standard"
+    }
+  }
+}

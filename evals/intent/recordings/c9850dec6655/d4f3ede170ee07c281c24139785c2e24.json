@@ -1,0 +1,54 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "d4f3ede170ee07c281c24139785c2e24",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 384,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 196,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:08:07.305844+00:00",
+  "response": {
+    "id": "ffd3e27c-f252-4983-b5a0-50730677251e",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_xuIKhArY1ebBcqtFTlEr2550",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊汇报自己负责的支付全链路压测环境故障，部署组正在抢修，属未解决问题，至少 at_risk；未给出恢复时间。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_e2e_test",
+              "health_status": "at_risk",
+              "blocker": "环境又挂了，部署组正在抢修",
+              "source_quote": "全链路压测的环境又挂了，部署组正在抢修",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 384,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 196,
+      "service_tier": "standard"
+    }
+  }
+}

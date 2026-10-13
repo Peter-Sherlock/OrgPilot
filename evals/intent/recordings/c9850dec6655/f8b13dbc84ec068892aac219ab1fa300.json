@@ -1,0 +1,51 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "f8b13dbc84ec068892aac219ab1fa300",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 381,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 149,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:09:06.022949+00:00",
+  "response": {
+    "id": "461cf4df-a6dc-4006-a9c1-fa744b07b265",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_Dg8chpowqzbmogEGtS1a7291",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊说明明天下午因看牙可能不在线，属于个人不可用性声明，非任务状态汇报。",
+          "items": [
+            {
+              "intent": "unavailability",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "source_quote": "我明天下午要去看牙，可能不太在线",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 381,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 149,
+      "service_tier": "standard"
+    }
+  }
+}

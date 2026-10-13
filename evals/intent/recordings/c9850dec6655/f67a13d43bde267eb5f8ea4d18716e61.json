@@ -1,0 +1,54 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "f67a13d43bde267eb5f8ea4d18716e61",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 387,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 210,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:08:59.466989+00:00",
+  "response": {
+    "id": "2be7b83b-d17c-45d0-ac3b-3574cf6e175e",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_wR3kIOEUdqyRzQuWNMIV9769",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟汇报自己负责的支付SDK接入任务，承诺后天中午前联调打通，属于带完成时间的承诺。后天=2026-10-16，中午=12:00。",
+          "items": [
+            {
+              "intent": "make_commitment",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_sdk",
+              "time_expression": "后天中午前",
+              "expected_completion": "2026-10-16T12:00:00+08:00",
+              "source_quote": "支付SDK的联调后天中午前能通",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 387,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 210,
+      "service_tier": "standard"
+    }
+  }
+}

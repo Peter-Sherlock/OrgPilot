@@ -1,0 +1,63 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "df6f6e40c34958eaafa93b0e63c506be",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 424,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 243,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:02:58.171913+00:00",
+  "response": {
+    "id": "a5b46d67-4737-4cfb-8421-645a187a318c",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_4JXBJHawqZjVHfx0MMAi6322",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳正面回答负责人的进度追问，汇报两个任务均正常推进，无未解决问题，健康度为 on_track。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "收银台和对账模块都正常",
+              "confidence": 0.9,
+              "task_id": "checkout_page",
+              "health_status": "on_track"
+            },
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "收银台和对账模块都正常",
+              "confidence": 0.9,
+              "task_id": "ledger_check",
+              "health_status": "on_track"
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 424,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 243,
+      "service_tier": "standard"
+    }
+  }
+}

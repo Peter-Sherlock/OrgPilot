@@ -1,0 +1,53 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "b7f719823497de4e92e885e2bf90b25e",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 413,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 168,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:02:40.381078+00:00",
+  "response": {
+    "id": "15bbfc19-7f33-444d-b092-4e60b83edae7",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_Jzeeztq8dzEdEDbefLoH6557",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊回答机器人追问，汇报其负责的支付全链路压测仍卡住，属于未解决问题，健康度至少 at_risk。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "task_id": "pay_e2e_test",
+              "health_status": "at_risk",
+              "source_quote": "压测还是卡住了",
+              "confidence": 0.9
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 413,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 168,
+      "service_tier": "standard"
+    }
+  }
+}

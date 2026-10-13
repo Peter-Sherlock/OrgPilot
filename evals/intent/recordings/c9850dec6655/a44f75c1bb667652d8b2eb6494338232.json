@@ -1,0 +1,53 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "a44f75c1bb667652d8b2eb6494338232",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 609,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 175,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:03:12.816250+00:00",
+  "response": {
+    "id": "794b7ae7-63f2-4ef0-b0a8-117cfbba4089",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_G1mmdiA2j7tR8w8Wq1FL9997",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "发送者回应机器人追问，明确表示暂不承诺完成时间，属于对支付全链路压测进展的回答；被追问时给不出时间，健康度为 at_risk。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "task_id": "pay_e2e_test",
+              "health_status": "at_risk",
+              "source_quote": "先不承诺时间了",
+              "confidence": 0.85
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 609,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 175,
+      "service_tier": "standard"
+    }
+  }
+}

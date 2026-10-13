@@ -1,0 +1,51 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "f525f7f8495f5c9b075eb036dd0f7a8e",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 384,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 139,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:08:25.273868+00:00",
+  "response": {
+    "id": "b942aa81-3a4f-41cc-932a-6d1ca45d3f13",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_Sf9DlwKVeXMJ8Liu9Ebf8785",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "「好嘞」是单纯的应答确认，无任务状态或请求内容，也无待回答问题。",
+          "items": [
+            {
+              "intent": "acknowledge",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "好嘞",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 384,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 139,
+      "service_tier": "standard"
+    }
+  }
+}

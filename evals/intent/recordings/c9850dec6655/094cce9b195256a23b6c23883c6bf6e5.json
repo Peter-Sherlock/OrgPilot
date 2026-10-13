@@ -1,0 +1,53 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "094cce9b195256a23b6c23883c6bf6e5",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 609,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 172,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:02:46.111475+00:00",
+  "response": {
+    "id": "7e8118b6-245b-46ac-b3c3-ba3562412003",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_Br0IPqhF9pLTKsgMs6gC6443",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "发送者回应机器人追问，明确表示给不出恢复时间，属于回答待回答问题；被追问时答\"说不好\"→at_risk。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "hedged",
+              "task_id": "pay_e2e_test",
+              "health_status": "at_risk",
+              "source_quote": "真的说不好，先这样吧",
+              "confidence": 0.9
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 609,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 172,
+      "service_tier": "standard"
+    }
+  }
+}

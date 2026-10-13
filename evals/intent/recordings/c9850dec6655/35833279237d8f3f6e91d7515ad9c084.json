@@ -1,0 +1,53 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "35833279237d8f3f6e91d7515ad9c084",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 482,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 161,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:02:32.419877+00:00",
+  "response": {
+    "id": "fc77a607-34fc-45b0-a79b-39a799a0f703",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_pU4eOsTmZ843jlObUwAY7458",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "回答机器人追问的商户后台管理端进展，说明已全部正常，属于已完成、无未解决问题。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "merchant_admin",
+              "health_status": "on_track",
+              "source_quote": "商户后台已经全部正常了",
+              "confidence": 0.9
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 482,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 161,
+      "service_tier": "standard"
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "c8fdc1777874f873be8b6043588a1706",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 385,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 176,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:01:03.581679+00:00",
+  "response": {
+    "id": "cb07de30-9ea1-4408-92e8-d7431d972fda",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_sTD7igzmHMlHXyJNTHId9919",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟汇报自己负责的商户后台管理端进展，整体还行但导出功能有点慢，属于存在未解决问题，至少 at_risk。无明确完成时间。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "merchant_admin",
+              "health_status": "at_risk",
+              "source_quote": "商户后台还行，就是导出功能有点慢",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 385,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 176,
+      "service_tier": "standard"
+    }
+  }
+}

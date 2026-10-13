@@ -1,0 +1,53 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "4b9ce5837ae3df002f03e01a4ea26b69",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 386,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 184,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:00:21.049499+00:00",
+  "response": {
+    "id": "36a2c8ee-338d-4beb-b218-c962b73c2d57",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_K5T5OzZ3X25i6Zp1hsgM1569",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟澄清自己负责的商户后台管理端仍在正常推进，属于状态汇报；否定词用于否认停工传闻，实际含义为正常推进，故 polarity=negative、health_status=on_track。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "source_quote": "商户后台没有停工，别听人瞎传",
+              "confidence": 0.85,
+              "task_id": "merchant_admin",
+              "health_status": "on_track"
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 386,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 184,
+      "service_tier": "standard"
+    }
+  }
+}

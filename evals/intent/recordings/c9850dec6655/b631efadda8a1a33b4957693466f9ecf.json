@@ -1,0 +1,53 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "b631efadda8a1a33b4957693466f9ecf",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 378,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 167,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:00:16.319388+00:00",
+  "response": {
+    "id": "b49a6fba-1d2e-44dc-a20c-803bad1c0b08",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_2OSYHnWOGGMzea0xR4p95612",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊负责支付全链路压测，本条是对该任务进度的陈述，明确表示不会延期，属正常推进。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_e2e_test",
+              "health_status": "on_track",
+              "source_quote": "压测不会延期的，放心",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 378,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 167,
+      "service_tier": "standard"
+    }
+  }
+}

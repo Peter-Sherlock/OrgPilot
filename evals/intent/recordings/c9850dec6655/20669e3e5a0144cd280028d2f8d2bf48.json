@@ -1,0 +1,63 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "20669e3e5a0144cd280028d2f8d2bf48",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 385,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 248,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:00:38.512489+00:00",
+  "response": {
+    "id": "d889e5db-07a1-411f-902c-4e8c1cefb848",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_08OOOf73nBiu1wsaEfxx3264",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊汇报压测环境已恢复（阻塞解除），但支付SDK回调仍报错，属未解决问题，至少 at_risk。两条信息拆成两个条目。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "压测环境恢复了",
+              "confidence": 0.85,
+              "task_id": "pay_e2e_test",
+              "health_status": "on_track"
+            },
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "source_quote": "支付SDK的回调还在报错",
+              "confidence": 0.85,
+              "task_id": "pay_sdk",
+              "health_status": "at_risk"
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 385,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 248,
+      "service_tier": "standard"
+    }
+  }
+}

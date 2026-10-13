@@ -1,0 +1,51 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "9f22130ab5506d7607c7755c7ed62113",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 456,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 142,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:03:00.515385+00:00",
+  "response": {
+    "id": "026d36dc-79ea-4940-8b13-1c7620dfd710",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_AMbfeFSnP8psZXdaIDPH9672",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息在聊新手机，与工作进度无关，也未回答待汇报的压测进展问题。",
+          "items": [
+            {
+              "intent": "chitchat",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "刚出的新手机真不错",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 456,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 142,
+      "service_tier": "standard"
+    }
+  }
+}

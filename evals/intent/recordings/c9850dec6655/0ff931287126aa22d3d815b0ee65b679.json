@@ -1,0 +1,51 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "0ff931287126aa22d3d815b0ee65b679",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 366,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 136,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:08:19.670713+00:00",
+  "response": {
+    "id": "420317b8-7938-4caa-a0ff-fad60b7e6a5c",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_YUaugDUAQobDaDYapysu9185",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "发送者在询问迭代内未完成任务的整体情况，属于向机器人查询状态。",
+          "items": [
+            {
+              "intent": "query_status",
+              "speech_act": "question",
+              "polarity": "negative",
+              "certainty": "certain",
+              "source_quote": "这个迭代还剩几个任务没有完成？",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 366,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 136,
+      "service_tier": "standard"
+    }
+  }
+}

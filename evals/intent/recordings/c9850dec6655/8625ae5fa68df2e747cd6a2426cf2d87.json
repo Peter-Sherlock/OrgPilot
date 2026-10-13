@@ -1,0 +1,51 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "8625ae5fa68df2e747cd6a2426cf2d87",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 406,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 140,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:02:33.613660+00:00",
+  "response": {
+    "id": "a8ff0ef2-214d-4b5d-86d4-9b7f921205bc",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_9YwiKYSsez6uIwbjadWO5345",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息只是闲聊热搜，与工作进度无关，也没有回答待回答的进度汇报问题。",
+          "items": [
+            {
+              "intent": "chitchat",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "哈哈哈今天热搜太离谱了",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 406,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 140,
+      "service_tier": "standard"
+    }
+  }
+}
