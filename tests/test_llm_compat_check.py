@@ -218,6 +218,7 @@ async def test_run_check_reports_rates_usage_and_call_records() -> None:
     assert results["token_usage"] == {
         "input_tokens": 120 + 2 * 300 + 2 * 120,
         "output_tokens": 40 + 2 * 90 + 2 * 40,
+        "cache_read_input_tokens": 0,
     }
     assert results["latency_p95_ms"] >= results["latency_p50_ms"] >= 0
     assert results["errors"] == []
@@ -391,3 +392,54 @@ def test_main_rejects_non_positive_calls(monkeypatch: pytest.MonkeyPatch) -> Non
         llm_compat_check.main(
             ["--confirm-spend", "--calls", "0"], transport=_routing_handler([])
         )
+
+
+async def test_validation_error_types_are_recorded_per_probe() -> None:
+    broken = json.dumps(
+        {
+            "items": [
+                {
+                    "intent": "report_status",
+                    "speech_act": "statement",
+                    "polarity": "affirmative",
+                    "certainty": "certain",
+                    "source_quote": "x",
+                    "confidence": "high",  # wrong type -> recorded, not silently dropped
+                }
+            ]
+        },
+        ensure_ascii=False,
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.read().decode("utf-8"))
+        if payload.get("tool_choice"):
+            return _tool_response("record_intent", json.loads(broken), payload["model"])
+        if "tools" in payload:
+            return _tool_response("get_task_health", {"task_id": "pay_sdk"}, payload["model"])
+        return httpx.Response(
+            200,
+            json={
+                "content": [{"type": "text", "text": broken}],
+                "usage": {"input_tokens": 300, "output_tokens": 90, "cache_read_input_tokens": 700},
+            },
+        )
+
+    results = await llm_compat_check.run_check(
+        api_key="test-key",
+        base_url="https://aihubmix.test",
+        model="gpt-5.6-luna",
+        calls=1,
+        timeout=5.0,
+        transport=httpx.MockTransport(handler),
+    )
+    schema_errors = results["json_reliability"]["validation_errors"]
+    assert any(
+        error["loc"] == "items.0.confidence" and error["type"] == "float_parsing"
+        for error in schema_errors
+    )
+    assert all(error["probe"] == "json_schema" for error in schema_errors)
+    forced_errors = results["forced_tool_use"]["validation_errors"]
+    assert any(error["probe"] == "forced_tool_use" for error in forced_errors)
+    assert results["json_reliability"]["schema_pass"] == 0
+    assert results["token_usage"]["cache_read_input_tokens"] == 700

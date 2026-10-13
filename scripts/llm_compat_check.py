@@ -50,6 +50,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
+from pydantic import ValidationError
 
 from orgpilot.intent.models import IntentResult
 
@@ -217,7 +218,11 @@ class ProbeContext:
         self.api_key = api_key
         self.requested_model = requested_model
         self.latencies: list[float] = []
-        self.usage_totals = {"input_tokens": 0, "output_tokens": 0}
+        self.usage_totals = {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cache_read_input_tokens": 0,
+        }
         self.call_records: list[dict[str, Any]] = []
         self.errors: list[dict[str, Any]] = []
 
@@ -232,8 +237,11 @@ class ProbeContext:
         data = await post_messages(client, model, payload)
         self.latencies.append((time.perf_counter() - started) * 1000)
         usage = data.get("usage", {})
-        self.usage_totals["input_tokens"] += int(usage.get("input_tokens", 0))
-        self.usage_totals["output_tokens"] += int(usage.get("output_tokens", 0))
+        self.usage_totals["input_tokens"] += int(usage.get("input_tokens", 0) or 0)
+        self.usage_totals["output_tokens"] += int(usage.get("output_tokens", 0) or 0)
+        self.usage_totals["cache_read_input_tokens"] += int(
+            usage.get("cache_read_input_tokens", 0) or 0
+        )
         self.call_records.append(
             {
                 "probe": probe,
@@ -281,6 +289,7 @@ async def check_json_schema_reliability(
     user_prompt = SCHEMA_PROMPT_PREFIX + schema + SCHEMA_PROMPT_SUFFIX
     parse_ok = 0
     schema_ok = 0
+    validation_errors: list[dict[str, str]] = []
     for _ in range(calls):
         data = await ctx.call(
             client,
@@ -303,7 +312,8 @@ async def check_json_schema_reliability(
         parse_ok += 1
         try:
             IntentResult.model_validate(parsed)
-        except ValueError:
+        except ValidationError as exc:
+            _record_validation_errors("json_schema", exc, validation_errors)
             continue
         schema_ok += 1
     return {
@@ -312,7 +322,24 @@ async def check_json_schema_reliability(
         "json_parse_rate": parse_ok / calls if calls else 0.0,
         "schema_pass": schema_ok,
         "schema_pass_rate": schema_ok / calls if calls else 0.0,
+        "validation_errors": validation_errors,
     }
+
+
+def _record_validation_errors(
+    probe: str, exc: ValidationError, sink: list[dict[str, str]], cap: int = 50
+) -> None:
+    """Records loc + type per failed field so the report shows WHAT breaks."""
+    for error in exc.errors(include_url=False):
+        if len(sink) >= cap:
+            return
+        sink.append(
+            {
+                "probe": probe,
+                "loc": ".".join(str(part) for part in error["loc"]),
+                "type": error["type"],
+            }
+        )
 
 
 async def _forced_tool_round(
@@ -322,6 +349,7 @@ async def _forced_tool_round(
     thinking: str,
     tool: dict[str, Any],
     ctx: ProbeContext,
+    validation_errors: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     tool_use_seen = 0
     validated = 0
@@ -345,7 +373,9 @@ async def _forced_tool_round(
         tool_use_seen += 1
         try:
             IntentResult.model_validate(blocks[0].get("input") or {})
-        except ValueError:
+        except ValidationError as exc:
+            if validation_errors is not None:
+                _record_validation_errors("forced_tool_use", exc, validation_errors)
             continue
         validated += 1
     return {
@@ -354,6 +384,7 @@ async def _forced_tool_round(
         "tool_use_rate": tool_use_seen / calls if calls else 0.0,
         "pydantic_pass": validated,
         "pydantic_pass_rate": validated / calls if calls else 0.0,
+        "validation_errors": validation_errors or [],
     }
 
 
@@ -378,16 +409,25 @@ async def check_forced_tool_use(
         "input_schema": IntentResult.model_json_schema(),
     }
     schema_expanded = False
+    validation_errors: list[dict[str, str]] = []
     try:
-        stats = await _forced_tool_round(client, model, calls, thinking, tool, ctx)
+        stats = await _forced_tool_round(
+            client, model, calls, thinking, tool, ctx, validation_errors
+        )
     except httpx.HTTPStatusError as exc:
         if not _is_schema_rejection(exc):
             raise
         ctx.record_error("forced_tool_use", exc)
         tool = {**tool, "input_schema": expand_schema_refs(tool["input_schema"])}
         schema_expanded = True
-        stats = await _forced_tool_round(client, model, calls, thinking, tool, ctx)
-    return {**stats, "schema_expanded": schema_expanded}
+        stats = await _forced_tool_round(
+            client, model, calls, thinking, tool, ctx, validation_errors
+        )
+    return {
+        **stats,
+        "schema_expanded": schema_expanded,
+        "validation_errors": validation_errors,
+    }
 
 
 async def _guarded(probe: str, ctx: ProbeContext, factory: Any) -> Any:
