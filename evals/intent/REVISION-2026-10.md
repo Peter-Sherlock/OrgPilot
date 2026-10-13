@@ -192,3 +192,32 @@ acknowledge）。
 - conv_06 t04–t07、conv_10 t03–t07：S5 下重复回答照常重写 claim（supersession 语义），
   标注不变；unknown 回答不再产生 claim——模型输出 unknown 本就应判失败，失败形态从
   "写出 unknown claim"变为"不写 claim 并继续追问"。
+
+---
+
+## 2026-10-13（3b 下半·收尾）：最后一轮修正，之后冻结提示词
+
+### test 集（用户 2026-10-13 批准，冻结哈希同步更新）
+
+| 样本 | 旧标注 | 新标注 | 规则 |
+|---|---|---|---|
+| test_multi_task_002 | items 含 pay_sdk hypothetical 条目（"支付SDK一恢复我就开跑"） | 删除该条目，仅保留 pay_e2e_test 条目；行为期望不变 | R12（顺带提及不输出条目）——用户 2026-10-13 批准 |
+| test_multi_task_003 | items 含 merchant_admin negative 条目（"商户后台的接口我还没碰"） | 删除该条目，仅保留 checkout_page 条目；行为期望不变 | R12（非本人任务"没碰/没管"不输出条目）——用户 2026-10-13 批准 |
+| test_request_sync_003 | request_sync + 确认卡片 | **保持不变**（"每个人手上的任务"明确指向全员收集） | R8/S6 边界判定，用户批准保留 |
+
+冻结 sha256：`b023ded8…` → `1da96ed7…`（BASELINE.md 与
+`tests/test_intent_dataset.py` 的冻结常量已同步更新）。
+
+### dev 集
+
+| 样本 | 旧标注 | 新标注 | 规则 |
+|---|---|---|---|
+| dev_answer_pending_002 | item 与 behavior claim 的 health=on_track（"根因找到了，是证书过期，今天下班前能搞定"） | health=at_risk（两处）；完成时间期望不变 | R1 健康度：问题仍在处理中（根因找到 ≠ 已解决）→ 至少 at_risk |
+| dev_hypothetical_004 | 无上下文（发送者负责任务不唯一，模型按 R7 追问） | context.recent_messages 增加成员前句"支付SDK的报错还在排查"；期望不变（pay_sdk at_risk + 明天 18:00） | R7：结合最近对话与各任务健康度唯一确定任务；layered SUT 已接线 recent_messages → 意图上下文对话历史（baseline 不具备该机制，行为不受影响） |
+
+### 提示词措辞（同步 LABELING.md R3 / R11）
+
+- 完成时间：**已经发生**的完成（"已经修好了""已经上线"）不填；**将来**的完成
+  （"今天能提测""明天修好"）必须填（R11）；
+- 依赖等待：状态汇报中提到的等待依赖**写入该条目的 blocker**，不另外输出
+  dependency_wait 条目；dependency_wait 只用于单纯询问或催促依赖方的消息（R3）。

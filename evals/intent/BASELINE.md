@@ -21,12 +21,12 @@ layered + heuristic 2/10 通过（conv_01 探针补时间收敛 + conv_08 幂等
 `evals/intent/test.yaml` 的 sha256：
 
 ```text
-b023ded8044a9f9f0888566cdb62245c1d4f0cadd5c75035038efc87c1ec36a3
+1da96ed7848a964c200f7e52dbbed9bb412bff51b04d6caba59a8151c0ff9dc4
 ```
 
-**之后修改 test 集需要先经过审批**（2026-10-12 的 answers_pending 修订经产品指示获批，
-哈希已同步更新）；获批修改后必须同步更新此处的 sha256 与
-`tests/test_intent_dataset.py::test_frozen_test_split_unchanged_without_approval`
+**之后修改 test 集需要先经过审批**（2026-10-12 的 answers_pending 修订、
+2026-10-13 的 R12 顺带提及条目删除均经产品指示获批，哈希已同步更新）；获批修改后必须同步更新
+此处的 sha256 与 `tests/test_intent_dataset.py::test_frozen_test_split_unchanged_without_approval`
 （该测试在校验失败时会提示需要审批）。
 
 ## 三组对比（第 3a.2 步之后，当前口径 R1–R11 + R9 追问上限 + sync_started）
@@ -76,7 +76,10 @@ b023ded8044a9f9f0888566cdb62245c1d4f0cadd5c75035038efc87c1ec36a3
 | prompt 版本 | 日期 | dev 行为通过率 | 对话通过率 | 错误 claim 率 | 意图 macro-F1 | 每条消息费用 |
 |---|---|---|---|---|---|---|
 | de8ea8d71f69 | 2026-10-13 | 81.4%（83/102） | 8/10 | 1.54%（1/65） | 89.12% | $0.00037 |
+| ef5a12682a05 | 2026-10-13 | 96.1%（98/102） | 10/10 | 1.54%（1/65） | 93.59% | $0.00037 |
 
+- 已知分歧：dev_sync_near_negative_002（"同步进度的事先放一放"）两轮模型均未按 R8
+  判为 request_sync+negative，按产品决定不为其增加特例规则，保持现状记为已知分歧；
 - de8ea8d71f69 的 19 条失败已逐条归因，并落成三类修正（3b 下半第一轮）：
   确定性护栏（S4 截止日、S5 unknown 不写 claim）、提示词规则修订（R1/R3/R6/R7/R8/R11/R12/R13，
   与 LABELING.md 同源）、标注口径（dev_request_sync_003 → query_status/S6）。
