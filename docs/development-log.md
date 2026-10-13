@@ -1,5 +1,32 @@
 # 开发记录
 
+## 2026-10-13：第 3b 步（下半·收尾）——最后一轮修正，之后冻结提示词（分支 `feat/intent-router`）
+
+第二轮在线评测（prompt `ef5a12682a05`）：dev 行为 96.1%（98/102，+14.7pp）、对话 8/10 → 10/10、
+意图 macro-F1 89.12% → 93.59%；首轮 19 条失败修复 16 条，剩余 3 条中 2 条由本轮标注修正覆盖、
+1 条（dev_sync_near_negative_002）按产品决定记为已知分歧。**本轮后提示词冻结：`c9850dec6655`。**
+
+### 已实现（按部分提交）
+
+- **dev 修正 + recent_messages 接线**：dev_answer_pending_002 health on_track → at_risk（R1：根因找到 ≠ 已解决，问题仍在处理中）；dev_hypothetical_004 增加 `context.recent_messages`（成员前句"支付SDK的报错还在排查"），保留测试目的（含糊语气 + 假设从句 → at_risk + 明天 18:00）且任务在 R7 下唯一可定——layered SUT 新增 `_seed_recent_messages`：把样本提供的近期对话播种进消息表，路由器的"最近对话"上下文（进而 LLM 提示词）即可见到；bot 侧不播种（真实回复经实际发送进入历史）；baseline SUT 不具备该机制、行为不受影响（有测试固化接线）。
+- **test 集口径（用户 2026-10-13 批准）**：test_multi_task_002 删 pay_sdk hypothetical 条目、test_multi_task_003 删 merchant_admin negative 条目（R12 顺带提及不输出条目，行为期望不变）；test_request_sync_003 保持 request_sync；冻结 sha256 `b023ded8…` → `1da96ed7…`（BASELINE.md 与 `tests/test_intent_dataset.py` 同步）。
+- **提示词措辞（最后一改，同步 LABELING R3/R11）**：已经发生的完成（"已经修好了""已经上线"）不填、将来的完成（"今天能提测""明天修好"）必须填；状态汇报中的等待依赖写入该条目 blocker，不另外输出 dependency_wait 条目（dependency_wait 只用于单纯询问或催促依赖方）。
+- **不处理**：dev_sync_near_negative_002 在 BASELINE.md 记为已知分歧（两轮均未按 R8 negative 判定，产品决定不加特例规则）。
+- **记录**：`ef5a12682a05` 录制 132 文件入库（`--replay` 可离线复跑第二轮）；BASELINE.md LLM 评测记录表补第二轮行；REVISION-2026-10.md 登记全部修订（样本/旧值/新值/规则/批准）。
+
+### 自检与验收
+
+```text
+oracle: dev 0 失败 + 意图 100%（99/99）；test 0 失败 + 意图 100%（56/56）；对话 10/10
+orgpilot replay --all: 9/9 PASS
+pytest: 全部通过, coverage 90.86%（fail_under=90）
+ruff: All checks passed
+git diff --check: PASS
+测试全部离线；未 push；提示词自此冻结（c9850dec6655）
+```
+
+---
+
 ## 2026-10-13：第 3b 步（下半·第一轮）——按 dev 错误分析修正：确定性护栏 + 提示词规则 + 标注口径（分支 `feat/intent-router`）
 
 首轮在线评测（prompt `de8ea8d71f69`，录制已入库）：dev 行为 81.4%（83/102）、对话 8/10、

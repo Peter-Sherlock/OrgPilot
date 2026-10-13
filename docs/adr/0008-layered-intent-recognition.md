@@ -179,6 +179,16 @@
 5. **评测运行器**：eval-intent（单条与对话）新增 `--client llm`，在线需 `--live --confirm-spend` + 对应 key，否则必须 `--replay`；`--limit N`、`--max-spend-usd`（官方高峰价常数表估算，超出立即中止）；报告新增 llm_stats：schema 一次通过率、重试率、降级率、校验错误类型分布、延迟 p50/p95、每条消息 token 与费用、缓存命中占比；
 6. **兼容性脚本顺手修复**：token 统计加入 cache_read_input_tokens；两个结构化探针记录每次校验失败的 loc+type（上限 50 条）。
 
+### 第 3b 步（下半·收尾）（2026-10-13，分支 `feat/intent-router`）：最后一轮修正，之后冻结提示词
+
+第二轮在线评测（prompt `ef5a12682a05`）：dev 行为 96.1%（98/102）、对话 10/10、意图 macro-F1 93.59%。本轮收尾后**提示词冻结**，冻结版本 **`c9850dec6655`**：
+
+1. **test 集口径（用户 2026-10-13 批准）**：test_multi_task_002 删除 pay_sdk hypothetical 条目、test_multi_task_003 删除 merchant_admin negative 条目（均按 R12 顺带提及不输出条目，行为期望不变）；test_request_sync_003 保持 request_sync；冻结 sha256 `b023ded8…` → `1da96ed7…`（BASELINE.md 与冻结测试同步）；
+2. **dev 修正**：dev_answer_pending_002 health on_track → at_risk（R1：根因找到 ≠ 已解决）；dev_hypothetical_004 增加 context.recent_messages（成员前句提到 pay_sdk 报错），期望不变——为此 layered SUT 把 `context.recent_messages` 播种进消息表，使意图上下文携带真实对话历史（R7 任务归属依据；baseline 不具备该机制、行为不受影响）；
+3. **提示词措辞（最后一改，同步 LABELING R3/R11）**：已经发生的完成不填、将来的完成必须填；状态汇报中的等待依赖写入该条目 blocker，不另外输出 dependency_wait 条目；
+4. **不处理**：dev_sync_near_negative_002 在 BASELINE.md 记为已知分歧（两轮模型均未按 R8 negative 判定，产品决定不加特例规则）；
+5. **记录**：`ef5a12682a05` 录制 132 文件入库；BASELINE.md LLM 评测记录表补第二轮行。
+
 ### 第 3b 步（下半·第一轮）（2026-10-13，分支 `feat/intent-router`）：按 dev 错误分析修正——确定性护栏、提示词规则与标注口径
 
 首轮在线评测（prompt `de8ea8d71f69`）：dev 行为通过率 81.4%（83/102）、对话 8/10、错误 claim 率 1.54%、意图 macro-F1 89.12%、$0.00037/条；19 条失败逐条归因后按"可泛化原则"落地三类修正（提示词与标注同源，规则见 LABELING.md 2026-10-13 版 R1–R13 + S4–S6）：
