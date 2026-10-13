@@ -13,6 +13,7 @@ from orgpilot.intent.evaluator import (
     ExpectedBehavior,
     ExpectedIntentItem,
     ExpectedIntents,
+    compare_sample,
     compute_metrics,
     render_markdown_report,
 )
@@ -263,3 +264,59 @@ def test_report_includes_intent_metrics_section() -> None:
 def test_baseline_metrics_stay_none_without_recorder() -> None:
     metrics = compute_metrics([])
     assert metrics.intent_metrics is None
+
+
+def test_layer0_command_samples_are_excluded_and_counted() -> None:
+    """§4: explicit commands never reach the classifier — excluded from the
+    intent metrics even when annotated, and counted separately."""
+    command = _sample(
+        "cmd_sync",
+        "/同步",
+        [_expected_item("request_sync")],
+    )
+    normal = _sample("s_normal", "后端接口联调完成了", [_expected_item("report_status", "task_a")])
+    metrics = compute_intent_metrics([command, normal], _StubRecorder({}))  # type: ignore[arg-type]
+    assert metrics.layer0_samples == 1
+    assert metrics.samples_with_intents == 1  # only the non-command counts
+    # the command's annotation must NOT appear as a miss
+    assert {row.intent for row in metrics.per_intent} == {"report_status"}
+
+
+def test_category_sync_column_counts_only_unexpected_triggers() -> None:
+    """§4: the per-category column matches the overall口径 — a sample that
+    EXPECTS a confirmation card does not count as a false trigger when the
+    card is actually sent."""
+    from orgpilot.intent.evaluator import ObservedBehavior
+
+    card_sample = _sample("s_card", "来一次全员同步", [_expected_item("request_sync")])
+    card_sample = card_sample.model_copy(
+        update={
+            "expected": card_sample.expected.model_copy(
+                update={
+                    "behavior": ExpectedBehavior(
+                        starts_sync=False,
+                        sends_confirmation_card=True,
+                        reply_category="sync_confirm",
+                    )
+                }
+            )
+        }
+    )
+    card_observed = ObservedBehavior(
+        starts_sync=False,
+        sends_confirmation_card=True,
+        reply_category="sync_confirm",
+    )
+    plain_observed = ObservedBehavior(starts_sync=True, reply_category="sync_started")
+    comparisons = [
+        compare_sample(card_sample, card_observed),
+        compare_sample(
+            _sample("s_plain", "大家汇报一下进度", [_expected_item("request_sync")]),
+            plain_observed,
+        ),
+    ]
+    metrics = compute_metrics(comparisons)
+    stats = metrics.per_category[0]
+    assert stats.samples == 2
+    assert stats.sync_false_triggers == 1  # only the plain sample misfired
+    assert comparisons[0].passed

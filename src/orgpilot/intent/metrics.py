@@ -95,6 +95,9 @@ class IntentLayerMetrics(StrictModel):
     polarity_accuracy: float | None
     certainty_accuracy: float | None
     task_id_accuracy: float | None
+    # layer-0 handled samples (explicit commands, card callbacks) — never
+    # scored against the classifier, reported separately (3b 下半 §4)
+    layer0_samples: int = 0
     per_intent: list[PerIntentMetrics] = Field(default_factory=list)
     confusion: list[ConfusionPair] = Field(default_factory=list)
 
@@ -163,6 +166,14 @@ def _confusion_rows(
     return rows
 
 
+def _is_layer0(sample: Any) -> bool:
+    """Layer 0 handles a sample before the classifier ever sees it: explicit
+    commands ("/同步", "/帮助") and card callbacks. Their intent annotations
+    describe the command mapping, not classifier output, so they are excluded
+    from the intent metrics and counted separately (3b 下半 §4)."""
+    return sample.message.strip().startswith("/")
+
+
 def compute_intent_metrics(
     samples: "list[EvalSample]", recorder: RecordingIntentClient
 ) -> IntentLayerMetrics:
@@ -170,11 +181,14 @@ def compute_intent_metrics(
 
     Only samples WITH intent annotations participate (command turns carry
     none): an item annotation or an answers_pending annotation qualifies.
+    Layer-0 samples (commands) are excluded even when annotated.
     """
+    layer0_count = sum(1 for sample in samples if _is_layer0(sample))
     annotated = [
         sample
         for sample in samples
-        if sample.expected.intents.items or sample.expected.intents.answers_pending is not None
+        if not _is_layer0(sample)
+        and (sample.expected.intents.items or sample.expected.intents.answers_pending is not None)
     ]
     tallies: dict[str, dict[str, int]] = {}
     set_matches = 0
@@ -262,6 +276,7 @@ def compute_intent_metrics(
         polarity_accuracy=_ratio(attr_hits["polarity"], matched_items),
         certainty_accuracy=_ratio(attr_hits["certainty"], matched_items),
         task_id_accuracy=_ratio(attr_hits["task_id"], matched_items),
+        layer0_samples=layer0_count,
         per_intent=per_intent,
         confusion=[
             ConfusionPair(expected=expected_intent, actual=actual_intent, count=count)
@@ -292,6 +307,11 @@ def _ratio_or_dash(value: float | None, denominator: int) -> str:
 def render_intent_metrics_section(metrics: IntentLayerMetrics) -> list[str]:
     """Markdown section for the intent-layer block of the evaluation report."""
     lines = ["## 意图层指标", ""]
+    if metrics.layer0_samples:
+        lines.append(
+            f"- 第 0 层处理（显式命令/卡片回调）：{metrics.layer0_samples} 条"
+            "（不经过分类器，不计入意图层指标）"
+        )
     lines.append(
         "- 样本级意图集合完全匹配率："
         f"{metrics.intent_set_exact_match_rate:.2%} "

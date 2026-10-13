@@ -809,8 +809,11 @@ def compute_metrics(comparisons: list[SampleComparison]) -> IntentEvalMetrics:
         )
         stats.samples += 1
         stats.false_claims += int(is_false_claim)
+        # 与总体口径一致（§4）：只统计"不该触发却触发"——期望既不发起也不发卡片的
+        # 样本上出现了任何同步副作用；期望发卡片的样本发出卡片是正确行为。
         stats.sync_false_triggers += int(
             not expected.starts_sync
+            and not expected.sends_confirmation_card
             and (observed.starts_sync or observed.sends_confirmation_card)
         )
         stats.reply_correct += int(reply_ok)
