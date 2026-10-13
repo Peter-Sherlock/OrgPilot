@@ -374,9 +374,11 @@ async def test_coordination_sandbox_endpoints(
     clarified = await chat("ou_alice", "支付SDK报错卡住了")
     assert clarified["type"] == "clarification_needed"
 
-    # A probed member's off-topic reply is handled (smalltalk) and re-asks (R9)
-    keyword_reply = await chat("ou_bob", "我这边当前进度正常")
-    assert keyword_reply["type"] == "clarification_needed"
+    # A probed member's risk report without a time counts as an answer attempt
+    # but still lacks the completion time → autonomous clarification (R6).
+    # ("进度正常" would now be a complete on_track answer and collect at once.)
+    risk_reply = await chat("ou_bob", "收银台那边还有点问题")
+    assert risk_reply["type"] == "clarification_needed"
 
     collected = await chat("ou_alice", "预计排查需要到明天下午5点")
     assert collected["type"] == "member_collected"

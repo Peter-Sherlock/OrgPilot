@@ -986,3 +986,120 @@ async def test_probe_declares_incomplete_after_max_rounds() -> None:
         assert probe.incomplete is True
     finally:
         await db.close()
+
+
+async def test_completion_past_deadline_upgrades_health_to_delayed() -> None:
+    """Deterministic deadline judgment (LABELING.md S4): the code, not the
+    model, decides lateness — a completion after the deadline is at least
+    delayed, and an earlier completion never downgrades the model's judgment."""
+    message = "联调排期有冲突，预计要到11月5号才能收尾"
+    scripted = _result(
+        _item(
+            message,
+            health_status="at_risk",
+            expected_completion=datetime(2026, 11, 5, 18, 0, tzinfo=BJ),  # > 10-30 deadline
+            blocker="联调排期",
+        )
+    )
+    router, service, _adapter, db = await _make_router(
+        ScriptedIntentClient(responses={message: scripted})
+    )
+    try:
+        outcome = await _send(router, message)
+        assert outcome.reply_category == ReplyKind.CLAIM_RECORDED
+        events = await service.event_store.get_events(PROJECT)
+        claims = [
+            e for e in events[len(_setup_events()) :] if e.event_type == "task.health_reported"
+        ]
+        assert len(claims) == 1
+        assert claims[0].payload.health_status.value == "delayed"
+
+        # control: the same health BEFORE the deadline is not downgraded
+        early = "联调排期没冲突，预计10月20号就能收尾"
+        scripted_early = _result(
+            _item(
+                early,
+                health_status="at_risk",
+                expected_completion=datetime(2026, 10, 20, 18, 0, tzinfo=BJ),
+            )
+        )
+        router.intent_client.responses[early] = scripted_early
+        await _send(router, early)
+        events = await service.event_store.get_events(PROJECT)
+        claims = [
+            e for e in events[len(_setup_events()) :] if e.event_type == "task.health_reported"
+        ]
+        assert claims[-1].payload.health_status.value == "at_risk"
+    finally:
+        await db.close()
+
+
+async def test_unknown_health_asserts_nothing_and_asks_for_status() -> None:
+    """LABELING.md S5: a report with no usable health produces NO claim."""
+    message = "那个任务我没管，说不上来什么状态"
+    scripted = _result(_item(message, health_status="unknown"))
+    router, service, _adapter, db = await _make_router(
+        ScriptedIntentClient(responses={message: scripted})
+    )
+    try:
+        outcome = await _send(router, message)
+        assert outcome.reply_category == ReplyKind.CLARIFY
+        assert outcome.asks_clarification is True
+        events = await service.event_store.get_events(PROJECT)
+        assert not any(
+            e.event_type == "task.health_reported" for e in events[len(_setup_events()) :]
+        )
+    finally:
+        await db.close()
+
+
+async def test_probe_unknown_answers_never_converge_until_cap_marks_incomplete() -> None:
+    """LABELING.md S5 in a probe session: unknown answers do not count as
+    answered; the regular re-ask rules drive until the 3a.2 total cap, then
+    the probe is declared incomplete — no claim is ever fabricated."""
+    message = "这个我真说不上来"
+    scripted = _result(
+        _item(message, health_status="unknown", intent=IntentType.ANSWER_PENDING),
+        answers_pending=True,
+    )
+    router, service, adapter, db = await _make_router(
+        ScriptedIntentClient(responses={message: scripted})
+    )
+    try:
+        await service.start_progress_sync(PROJECT, initiated_by="ou_carol")
+        router.register_pending_clarification(
+            PROJECT,
+            "ou_alice",
+            "请汇报您负责任务的最新进展。",
+            task_ids=["backend_api"],
+            source="probe",
+            occurred_at=NOW,
+        )
+        outcomes = []
+        for round_number in range(1, 6):
+            outcomes.append(
+                await router.handle_message(
+                    project_id=PROJECT,
+                    sender_id="ou_alice",
+                    message_id=f"om_unknown_{round_number}",
+                    text=message,
+                    occurred_at=NOW,
+                )
+            )
+        # rounds 1-4: re-ask (asked_rounds 1..4 within the cap of 3+1)
+        for outcome in outcomes[:4]:
+            assert outcome.asks_clarification is True
+            assert outcome.msg == "clarification_sent"
+        # round 5: the total cap is reached -> 信息不全, pending cleared
+        assert "信息不全" in outcomes[4].reply_text
+        assert router.dialogue.get_pending_clarification(PROJECT, "ou_alice", now=NOW) is None
+        events = await service.event_store.get_events(PROJECT)
+        assert not any(
+            e.event_type == "task.health_reported" for e in events[len(_setup_events()) :]
+        )
+        coordinator = await service.get_sync_coordinator(PROJECT)
+        session = next(iter(coordinator._sessions.values()))
+        probe = session.member_probes["ou_alice"]
+        assert probe.incomplete is True
+    finally:
+        await db.close()

@@ -72,6 +72,10 @@ _CHITCHAT_MARKERS = (
     "红包",
 )
 
+# Explicitly healthy wording in a probe answer; everything else is an open
+# problem ("恢复"/"修好" imply it was broken → at_risk, not on_track).
+_HEALTHY_MARKERS = ("正常", "没问题", "搞定", "已完成", "顺利", "弄完")
+
 
 class TaskSnapshot(StrictModel):
     """Read-only view of one known task handed to the intent client."""
@@ -290,12 +294,17 @@ class HeuristicIntentClient:
 
     @classmethod
     def _answer_pending_item(cls, message: str, context: IntentContext) -> IntentItem:
+        # Same principle as the LLM health rules (LABELING.md S1): an answer to
+        # "how is it going" that is NOT explicitly healthy is an open problem —
+        # at_risk, never unknown (unknown answers cannot complete a probe).
+        healthy = any(marker in message for marker in _HEALTHY_MARKERS)
         return IntentItem(
             intent=IntentType.ANSWER_PENDING,
             task_id=cls._select_pending_task(message, context),
             speech_act=SpeechAct.STATEMENT,
             polarity=Polarity.AFFIRMATIVE,
             certainty=Certainty.CERTAIN,
+            health_status="on_track" if healthy else "at_risk",
             expected_completion=TemporalResolver.resolve_relative_time(
                 message, context.occurred_at
             ),

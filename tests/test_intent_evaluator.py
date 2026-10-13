@@ -115,7 +115,8 @@ MINI_SAMPLES = [
         },
     },
     # Deliberately empty expectation while the message yields a claim, to pin the
-    # false-claim-rate arithmetic.
+    # false-claim-rate arithmetic. (The item carries a usable health on purpose:
+    # since 3b 下半 §1, unknown-health items no longer fabricate claims.)
     {
         "id": "mini_trap_001",
         "category": "substring_trap",
@@ -132,6 +133,7 @@ MINI_SAMPLES = [
                         "speech_act": "statement",
                         "polarity": "affirmative",
                         "certainty": "certain",
+                        "health_status": "at_risk",
                     }
                 ]
             },

@@ -20,6 +20,7 @@ Design decisions recorded in ADR-0008's implementation log:
 from dataclasses import dataclass
 from datetime import datetime
 
+from orgpilot.domain.enums import HealthStatus
 from orgpilot.extraction.verifier import GroundingVerifier, TemporalResolver
 from orgpilot.intent.client import IntentContext
 from orgpilot.intent.models import Certainty, IntentItem, IntentType, Polarity, SpeechAct
@@ -222,3 +223,59 @@ def _check_negative_without_health(item: IntentItem) -> GuardOutcome:
             reason="negative statement without a health status asserts nothing",
         )
     return GuardOutcome(verdict="KEEP", reason="health ok")
+
+
+# ---------------------------------------------------------------------------
+# Deterministic claim policies (3b 下半 round 1) — applied by the HANDLER layer
+# before dispatch; they adjust or suppress claims without model involvement.
+# ---------------------------------------------------------------------------
+
+
+def has_usable_health(item: IntentItem) -> bool:
+    """False when a health-bearing item asserts no usable status (unknown/None).
+
+    Such items never produce claims; in a probe session they do not count as
+    an answer, so the regular re-ask rules drive until the total cap.
+    """
+    return item.health_status is not None and item.health_status != HealthStatus.UNKNOWN
+
+
+def deadline_adjusted_health(
+    health_status: str | None,
+    expected_completion: datetime | None,
+    deadline: datetime | None,
+) -> str | None:
+    """The code-side deadline judgment (LABELING.md S4): a claim completing
+    AFTER the task deadline is at least ``delayed`` — max(model judgment,
+    delayed); an earlier completion never downgrades the model's judgment."""
+    if (
+        health_status is None
+        or expected_completion is None
+        or deadline is None
+        or health_status == HealthStatus.UNKNOWN.value
+    ):
+        return health_status
+    if expected_completion > deadline and health_status in (
+        HealthStatus.ON_TRACK.value,
+        HealthStatus.AT_RISK.value,
+    ):
+        return HealthStatus.DELAYED.value
+    return health_status
+
+
+def apply_deadline_policy(item: IntentItem, context: IntentContext) -> bool:
+    """Applies :func:`deadline_adjusted_health` to one item in place.
+
+    Returns True when the health was upgraded to delayed, so the reply summary
+    and the recorded claim both reflect the deterministic judgment.
+    """
+    deadline = next(
+        (task.deadline for task in context.known_tasks if task.task_id == item.task_id),
+        None,
+    )
+    current = item.health_status.value if item.health_status else None
+    adjusted = deadline_adjusted_health(current, item.expected_completion, deadline)
+    if adjusted is not None and adjusted != current:
+        item.health_status = HealthStatus(adjusted)
+        return True
+    return False

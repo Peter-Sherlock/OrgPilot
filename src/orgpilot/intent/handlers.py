@@ -29,7 +29,12 @@ from orgpilot.intent.dialogue import (
     DialogueStateStore,
     PendingClaimDraft,
 )
-from orgpilot.intent.guards import evaluate_item_guards
+from orgpilot.intent.guards import (
+    apply_deadline_policy,
+    deadline_adjusted_health,
+    evaluate_item_guards,
+    has_usable_health,
+)
 from orgpilot.intent.models import (
     Certainty,
     IntentItem,
@@ -123,6 +128,10 @@ class IntentHandlers:
         answer_items: list[IntentItem] = []
 
         for item in result.items:
+            # Deterministic deadline judgment BEFORE the guards: a completion
+            # later than the task deadline upgrades the health to at least
+            # delayed (LABELING.md S4); it never downgrades (3b 下半 §1).
+            apply_deadline_policy(item, context)
             guard = evaluate_item_guards(item, message, context, self.confidence_threshold)
             if guard.verdict == "DROP":
                 logger.info("Dropped intent item %s: %s", item.intent, guard.reason)
@@ -171,7 +180,7 @@ class IntentHandlers:
                 IntentType.ANSWER_PENDING,
             ):
                 counter[0] += 1
-                await self._record_claim(
+                asked_for_status = await self._record_claim(
                     project_id=project_id,
                     member=member,
                     occurred_at=occurred_at,
@@ -183,6 +192,7 @@ class IntentHandlers:
                     kinds=kinds,
                     data=data,
                 )
+                asks = asks or asked_for_status
             elif item.intent == IntentType.QUERY_STATUS:
                 parts.append(self._query_answer(agent.projector.state, item.task_id, occurred_at))
                 kinds.append(ReplyKind.QUERY_ANSWER)
@@ -233,6 +243,7 @@ class IntentHandlers:
                 kinds=kinds,
                 data=data,
                 asks=asks,
+                context=context,
             )
 
         # R9 topic switch: a pending question exists but this message did not
@@ -303,7 +314,18 @@ class IntentHandlers:
         parts: list[str],
         kinds: list[ReplyKind],
         data: dict[str, Any],
-    ) -> None:
+    ) -> bool:
+        """Records one claim; returns True when it asked the sender for status.
+
+        A health-bearing item without a usable status (unknown/None) produces
+        NO claim (LABELING.md S5): the turn asks for the actual status instead
+        of writing an empty assertion (3b 下半 §1).
+        """
+        if item.intent != IntentType.MAKE_COMMITMENT and not has_usable_health(item):
+            title = item.task_id or "该任务"
+            parts.append(f"【{title}】的状态我暂时没有记下来：方便说一下目前进展吗？")
+            kinds.append(ReplyKind.CLARIFY)
+            return True
         if item.intent == IntentType.MAKE_COMMITMENT:
             event = build_commitment_made_event(
                 project_id=project_id,
@@ -340,12 +362,13 @@ class IntentHandlers:
             data["rejected"] = error
             parts.append(f"消息处理失败：{error}")
             kinds.append(ReplyKind.NOTED)
-            return
+            return False
         data["is_actionable"] = True
         data["turn_termination_reason"] = reason
         data["turn_round_number"] = round_num
         parts.append(self._summarize_item(item, agent.projector.state, occurred_at))
         kinds.append(ReplyKind.CLAIM_RECORDED)
+        return False
 
     def _summarize_item(
         self, item: IntentItem, state: OrgState, occurred_at: datetime
@@ -394,6 +417,7 @@ class IntentHandlers:
         kinds: list[ReplyKind],
         data: dict[str, Any],
         asks: bool,
+        context: IntentContext,
     ) -> bool:
         """Merges one message's answers into the pending clarification (3a.1).
 
@@ -402,6 +426,11 @@ class IntentHandlers:
         task (e.g. "都正常") applies to every target task. Completion requires
         each target task to carry a complete claim: on_track needs nothing,
         at_risk needs a completion time, delayed needs time AND blocker.
+
+        Two deterministic policies (3b 下半 §1, LABELING.md S4/S5): items
+        without a usable health (unknown/None) contribute nothing and never
+        count as an answer; a merged completion later than the task deadline
+        upgrades the health to at least delayed.
         """
         entry = self.dialogue.get_pending_clarification(
             project_id, member.member_id, now=occurred_at
@@ -418,25 +447,43 @@ class IntentHandlers:
         # its health/time/blocker to every target task ("都正常")
         touched: list[str] = []
         for item in items:
+            usable = has_usable_health(item)
             touched_tasks = [item.task_id] if item.task_id else list(target_tasks)
             for task_id in touched_tasks:
                 if task_id not in touched:
                     touched.append(task_id)
+                if not usable:
+                    # unknown answers write nothing, but keep the task in scope
+                    drafts.setdefault(task_id, PendingClaimDraft(task_id=task_id))
+                    continue
                 base = drafts.get(task_id, PendingClaimDraft(task_id=task_id))
                 drafts[task_id] = PendingClaimDraft(
                     task_id=task_id,
-                    health_status=(
-                        item.health_status or base.health_status or HealthStatus.AT_RISK.value
-                    ),
+                    health_status=item.health_status or base.health_status,
                     expected_completion=item.expected_completion or base.expected_completion,
                     blocker=item.blocker or base.blocker,
                 )
 
-        # persist one health_reported event per touched task, validated in batch
+        # deadline judgment per task (LABELING.md S4) — a task-less answer can
+        # be past one task's deadline but not another's, so apply per draft
+        for task_id, draft in drafts.items():
+            deadline = next(
+                (task.deadline for task in context.known_tasks if task.task_id == task_id),
+                None,
+            )
+            draft.health_status = deadline_adjusted_health(
+                draft.health_status, draft.expected_completion, deadline
+            )
+
+        # persist one health_reported event per touched task with usable status
+        # (re-asserting an unchanged status re-records it — supersession keeps
+        # last-write-win; only unknown statuses are suppressed, LABELING.md S5)
         events = []
         for task_id in touched:
-            counter[0] += 1
             draft = drafts[task_id]
+            if not draft.health_status or draft.health_status == HealthStatus.UNKNOWN.value:
+                continue  # unknown answers never produce claims (LABELING.md S5)
+            counter[0] += 1
             events.append(
                 build_health_reported_event(
                     project_id=project_id,
@@ -445,28 +492,31 @@ class IntentHandlers:
                     source_ref=source_ref,
                     event_id=f"evt-intent-claim-{message_key}-{counter[0]}",
                     task_id=task_id,
-                    health_status=draft.health_status or HealthStatus.AT_RISK.value,
+                    health_status=draft.health_status,
                     expected_completion=draft.expected_completion,
                     blocker=draft.blocker,
                     confidence=items[0].confidence,
                 )
             )
-        agent, reason, round_num, error = await self.service.commit_extracted_events(
-            project_id,
-            events,
-            actor_id=member.member_id,
-            occurred_at=occurred_at,
-        )
-        if error is not None:
-            data["rejected"] = error
-            parts.append(f"消息处理失败：{error}")
-            kinds.append(ReplyKind.NOTED)
-            return asks
-        data["is_actionable"] = True
-        data["turn_termination_reason"] = reason
-        data["turn_round_number"] = round_num
         if probe_source:
             data["probe_reply"] = True
+        if events:
+            agent, reason, round_num, error = await self.service.commit_extracted_events(
+                project_id,
+                events,
+                actor_id=member.member_id,
+                occurred_at=occurred_at,
+            )
+            if error is not None:
+                data["rejected"] = error
+                parts.append(f"消息处理失败：{error}")
+                kinds.append(ReplyKind.NOTED)
+                return asks
+            data["is_actionable"] = True
+            data["turn_termination_reason"] = reason
+            data["turn_round_number"] = round_num
+        # else: nothing was answerable (e.g. only unknown statuses) — fall
+        # through to the completeness check so the re-ask rules keep driving
 
         # per-task completeness over the full target scope. Router-asked
         # clarifications (R6/R7) only ever asked for the missing TIME, so for
@@ -514,12 +564,20 @@ class IntentHandlers:
             if session is not None:
                 data["session_id"] = session.session_id
             self.dialogue.clear_pending_clarification(project_id, member.member_id)
-            parts.append(f"{summary}（多轮追问后仍有缺失，简报中将标注「信息不全」。）")
+            parts.append(
+                f"{summary}（多轮追问后仍有缺失，简报中将标注「信息不全」。）"
+                if summary
+                else "多轮沟通仍未获得可记录的状态，简报中将标注「信息不全」。"
+            )
             kinds.append(ReplyKind.CLAIM_RECORDED)
             return asks
         if not probe_source and exhausted:
             self.dialogue.clear_pending_clarification(project_id, member.member_id)
-            parts.append(f"{summary}（已达追问上限，先按当前信息记录。）")
+            parts.append(
+                f"{summary}（已达追问上限，先按当前信息记录。）"
+                if summary
+                else "暂时没有可记录的状态（已达追问上限）。"
+            )
             kinds.append(ReplyKind.CLAIM_RECORDED)
             return asks
 
@@ -541,14 +599,19 @@ class IntentHandlers:
             entry.missing = missing
             entry.task_ids = [task_id for task_id in scope if task_id]
             entry.asked_rounds = asked + 1
-        parts.append(f"{summary}。{question}")
+        parts.append(f"{summary}。{question}" if summary else question)
         kinds.append(ReplyKind.CLAIM_RECORDED)
         return True
 
     def _task_missing_slots(self, draft: PendingClaimDraft | None) -> list[str]:
         """Per-task completeness slots (3a.1): on_track none, at_risk time,
-        delayed time + blocker — the same rules as SlotCompletenessEvaluator."""
-        if draft is None or draft.health_status is None:
+        delayed time + blocker — the same rules as SlotCompletenessEvaluator.
+        An unknown or missing health counts as "no answer yet" (3b 下半 §1)."""
+        if (
+            draft is None
+            or not draft.health_status
+            or draft.health_status == HealthStatus.UNKNOWN.value
+        ):
             return ["当前具体进展与预计完成时间"]
         view = ExtractionResult(
             is_actionable=True,
@@ -578,6 +641,8 @@ class IntentHandlers:
             if task_id not in drafts:
                 continue
             draft = drafts[task_id]
+            if not draft.health_status or draft.health_status == HealthStatus.UNKNOWN.value:
+                continue  # nothing usable recorded for this task yet
             item_view = IntentItem(
                 intent=IntentType.REPORT_STATUS,
                 task_id=task_id,
