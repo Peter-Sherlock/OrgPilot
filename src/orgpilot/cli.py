@@ -346,6 +346,7 @@ def _eval_intent(
         run_intent_eval,
     )
     from orgpilot.intent.llm_client import SpendLimitExceeded, aggregate_llm_metrics
+    from orgpilot.intent.metrics import RecordingIntentClient
     from orgpilot.intent.oracle import OracleIntentClient
 
     if mode != "mock":
@@ -365,6 +366,7 @@ def _eval_intent(
     run_mode = mode
     llm_stats_provider = None
     llm_client = None
+    intent_recorder = None
     if client == "llm":
         gate_args = SimpleNamespace(
             live=live, replay=replay, confirm_spend=confirm_spend, max_spend_usd=max_spend_usd
@@ -375,15 +377,19 @@ def _eval_intent(
             f"LLMIntentClient {llm_client.model}"
             f"（{'live 在线' if live else 'replay 离线回放'}）"
         )
+        # §8: wrap (never replace) the client so the classifier output of every
+        # sample is recorded for the intent-layer metrics.
+        intent_recorder = RecordingIntentClient(llm_client)
         eval_system = LayeredSystemUnderTest(
-            load_intent_project(dataset_dir / "project.yaml"), llm_client
+            load_intent_project(dataset_dir / "project.yaml"), intent_recorder
         )
         llm_stats_provider = lambda: aggregate_llm_metrics(llm_client.metrics)  # noqa: E731
     elif system == "layered":
         if intent == "oracle":
             project = load_intent_project(dataset_dir / "project.yaml")
             samples = load_intent_samples(dataset_dir / f"{split}.yaml")
-            eval_system = LayeredSystemUnderTest(project, OracleIntentClient(samples))
+            intent_recorder = RecordingIntentClient(OracleIntentClient(samples))
+            eval_system = LayeredSystemUnderTest(project, intent_recorder)
             title_suffix = ORACLE_TITLE_SUFFIX
         else:
             project = load_intent_project(dataset_dir / "project.yaml")
@@ -393,6 +399,8 @@ def _eval_intent(
     if eval_system is not None:
         run_kwargs["system"] = eval_system
         run_kwargs["title_suffix"] = title_suffix
+    if intent_recorder is not None:
+        run_kwargs["intent_recorder"] = intent_recorder
 
     try:
         metrics, failures = asyncio.run(
@@ -440,6 +448,18 @@ def _eval_intent(
         f"  - Reply category accuracy: {metrics.reply_category_accuracy:.2%}, "
         f"multi-turn success: {metrics.multi_turn_success_rate:.2%}"
     )
+    if metrics.intent_metrics is not None:
+        im = metrics.intent_metrics
+        macro = "—" if im.macro_f1 is None else f"{im.macro_f1:.2%}"
+        answers = "—" if im.answers_pending_accuracy is None else (
+            f"{im.answers_pending_accuracy:.2%}"
+        )
+        print(
+            f"  - Intent set exact match: {im.intent_set_exact_match_rate:.2%} "
+            f"({im.intent_set_exact_matches}/{im.samples_with_intents}), "
+            f"macro-F1: {macro}, answers_pending acc: {answers} "
+            f"(report carries the per-intent table and confusion matrix)"
+        )
     print(f"  - Failures: {len(failures)} (see report for expected-vs-observed details)")
     return 0
 

@@ -751,6 +751,54 @@ async def test_llm_client_live_then_replay_on_mini_dataset(
     assert replay_metrics.model_dump() == metrics.model_dump()
 
 
+async def test_oracle_intent_metrics_all_full_and_failures_carry_output(
+    mini_dataset_dir: Path, tmp_path: Path
+) -> None:
+    """3b.1 §8: oracle outputs ARE the annotations, so every intent metric is
+    exactly 100%; the failure list carries the model's actual output."""
+    from orgpilot.intent.metrics import RecordingIntentClient
+    from orgpilot.intent.oracle import OracleIntentClient
+
+    project = load_intent_project(mini_dataset_dir / "project.yaml")
+    samples = load_intent_samples(mini_dataset_dir / "dev.yaml")
+    recorder = RecordingIntentClient(OracleIntentClient(samples))
+    system = LayeredSystemUnderTest(project, recorder)
+
+    metrics, failures = await run_intent_eval(
+        split="dev",
+        mode="mock",
+        dataset_dir=mini_dataset_dir,
+        report_dir=tmp_path / "reports",
+        system=system,
+        intent_recorder=recorder,
+    )
+
+    assert recorder.calls == len(samples)
+    intent_metrics = metrics.intent_metrics
+    assert intent_metrics is not None
+    assert intent_metrics.samples_with_intents == 6
+    assert intent_metrics.intent_set_exact_match_rate == 1.0
+    for row in intent_metrics.per_intent:
+        assert row.precision == 1.0
+        assert row.recall == 1.0
+        assert row.f1 == 1.0
+    assert intent_metrics.macro_f1 == 1.0
+    assert intent_metrics.answers_pending_accuracy == 1.0
+    for attribute in (
+        intent_metrics.speech_act_accuracy,
+        intent_metrics.polarity_accuracy,
+        intent_metrics.certainty_accuracy,
+        intent_metrics.task_id_accuracy,
+    ):
+        assert attribute == 1.0
+
+    assert [f.sample_id for f in failures] == ["mini_trap_001"]
+    output = failures[0].intent_output
+    assert output is not None
+    assert output["items"][0]["intent"] == "report_status"
+    assert output["reasoning"].startswith("oracle")
+
+
 def test_run_intent_eval_limit_slices_samples(mini_dataset_dir: Path, tmp_path: Path) -> None:
     metrics, _ = asyncio.run(
         run_intent_eval(

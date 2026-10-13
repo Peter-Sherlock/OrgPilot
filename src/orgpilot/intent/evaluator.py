@@ -27,6 +27,12 @@ from orgpilot.extraction.models import StrictModel
 from orgpilot.feishu.client import MockFeishuClient
 from orgpilot.feishu.webhook import FeishuWebhookHandler
 from orgpilot.gateway.service import GatewayService
+from orgpilot.intent.metrics import (
+    IntentLayerMetrics,
+    compute_intent_metrics,
+    intent_output_view,
+    render_intent_metrics_section,
+)
 from orgpilot.intent.models import (
     Certainty,
     IntentType,
@@ -577,6 +583,9 @@ class SampleComparison(StrictModel):
     expected: ExpectedBehavior
     observed: ObservedBehavior
     issues: list[str] = Field(default_factory=list)
+    # What the classifier actually produced for this sample (layered runs with
+    # a recorded intent client only); None for the baseline and for passes.
+    intent_output: dict[str, Any] | None = None
 
     @property
     def passed(self) -> bool:
@@ -591,6 +600,9 @@ class CategoryStats(StrictModel):
     reply_correct: int
     claim_precision: float
     claim_recall: float
+    # denominators for the P/R cells, so the report can render “—” (§9)
+    observed_claims: int = 0
+    expected_claims: int = 0
 
 
 class IntentEvalMetrics(StrictModel):
@@ -620,9 +632,9 @@ class IntentEvalMetrics(StrictModel):
     multi_turn_samples: int
     multi_turn_success_rate: float
     per_category: list[CategoryStats]
-    intent_metrics: None = Field(
+    intent_metrics: IntentLayerMetrics | None = Field(
         default=None,
-        description="N/A for the baseline: it has no intent layer to score yet",
+        description="Classifier-level scores (oracle/llm layered runs); None for the baseline",
     )
 
 
@@ -815,6 +827,8 @@ def compute_metrics(comparisons: list[SampleComparison]) -> IntentEvalMetrics:
             )[0]
             if expected_claim.health_status == observed_claim.health_status
         )
+        stats.observed_claims = cat_observed
+        stats.expected_claims = cat_expected
         stats.claim_precision = cat_tp / cat_observed if cat_observed else 0.0
         stats.claim_recall = cat_tp / cat_expected if cat_expected else 0.0
 
@@ -939,6 +953,11 @@ def _behavior_view(behavior: ExpectedBehavior | ObservedBehavior) -> dict[str, A
     }
 
 
+def _pct_or_dash(value: float, denominator: int, precision: int = 2) -> str:
+    """§9: a zero denominator renders as “—”, never as a fake 0%."""
+    return f"{value:.{precision}%}" if denominator > 0 else "—"
+
+
 def render_markdown_report(
     split: str,
     mode: str,
@@ -946,6 +965,7 @@ def render_markdown_report(
     failures: list[SampleComparison],
     title_suffix: str | None = None,
     llm_stats: dict[str, Any] | None = None,
+    is_baseline: bool = False,
 ) -> str:
     lines: list[str] = []
     title = f"# 意图行为评测报告（split={split}, mode={mode}）"
@@ -953,36 +973,57 @@ def render_markdown_report(
         title = f"{title} — {title_suffix}"
     lines.append(title)
     lines.append("")
-    lines.append("评测以系统行为为准（ADR-0008 §8）；baseline 无意图层，意图指标记为 N/A。")
+    # §9: the “baseline 无意图层” note belongs to baseline reports only.
+    if is_baseline:
+        lines.append("评测以系统行为为准（ADR-0008 §8）；baseline 无意图层，意图指标记为 N/A。")
+    else:
+        lines.append("评测以系统行为为准（ADR-0008 §8）。")
     lines.append("")
     lines.append("## 总体指标")
     lines.append("")
     lines.append("| 指标 | 值 |")
     lines.append("|---|---|")
     lines.append(f"| 样本数 | {metrics.total_samples} |")
-    lines.append(f"| claim precision | {metrics.claim_precision:.2%} |")
-    lines.append(f"| claim recall | {metrics.claim_recall:.2%} |")
-    lines.append(f"| task_id 准确率 | {metrics.task_id_accuracy:.2%} |")
+    def _row(label: str, value: float, denominator: int) -> str:
+        return f"| {label} | {_pct_or_dash(value, denominator)} |"
+
+    lines.append(_row("claim precision", metrics.claim_precision, metrics.observed_claims_total))
+    lines.append(_row("claim recall", metrics.claim_recall, metrics.expected_claims_total))
+    lines.append(_row("task_id 准确率", metrics.task_id_accuracy, metrics.observed_claims_total))
     lines.append(f"| 健康状态准确率 | {metrics.health_status_accuracy:.2%} |")
     lines.append(f"| 时间准确率 | {metrics.time_accuracy:.2%} |")
     lines.append(
-        f"| 错误 claim 率 | {metrics.false_claim_rate:.2%} "
-        f"({metrics.false_claim_samples}/{metrics.no_claim_expected_samples}) |"
+        "| 错误 claim 率 | "
+        + _pct_or_dash(metrics.false_claim_rate, metrics.no_claim_expected_samples)
+        + f" ({metrics.false_claim_samples}/{metrics.no_claim_expected_samples}) |"
     )
     lines.append(
-        f"| 同步误触发率 | {metrics.sync_false_trigger_rate:.2%} "
-        f"(不该发起且不该发卡片的 {metrics.no_sync_expected} 条样本中出现同步副作用) |"
+        "| 同步误触发率 | "
+        + _pct_or_dash(metrics.sync_false_trigger_rate, metrics.no_sync_expected)
+        + f" (不该发起且不该发卡片的 {metrics.no_sync_expected} 条样本中出现同步副作用) |"
     )
     lines.append(
         f"| 未经确认群发次数 | {metrics.unconfirmed_sync_count} "
         f"/ 应先发确认卡片的样本 {metrics.unconfirmed_sync_expected}（目标 0） |"
     )
-    lines.append(f"| 回复类别准确率 | {metrics.reply_category_accuracy:.2%} |")
+    lines.append(_row("回复类别准确率", metrics.reply_category_accuracy, metrics.total_samples))
     lines.append(
-        f"| 多轮补全成功率 | {metrics.multi_turn_success_rate:.2%} "
-        f"({metrics.multi_turn_samples} 条多轮样本) |"
+        "| 多轮补全成功率 | "
+        + _pct_or_dash(metrics.multi_turn_success_rate, metrics.multi_turn_samples)
+        + f" ({metrics.multi_turn_samples} 条多轮样本) |"
     )
-    lines.append("| 意图层指标 | N/A（baseline 无意图层） |")
+    intent_metrics = metrics.intent_metrics
+    if is_baseline:
+        lines.append("| 意图层指标 | N/A（baseline 无意图层） |")
+    elif intent_metrics is not None:
+        macro = "—" if intent_metrics.macro_f1 is None else f"{intent_metrics.macro_f1:.2%}"
+        set_rate = _pct_or_dash(
+            intent_metrics.intent_set_exact_match_rate,
+            intent_metrics.samples_with_intents,
+        )
+        lines.append(f"| 意图层指标 | 意图集合完全匹配 {set_rate}，macro-F1 {macro} |")
+    else:
+        lines.append("| 意图层指标 | 未采集（--intent oracle 或 --client llm 时记录） |")
     lines.append("")
     lines.append("## 按类别统计")
     lines.append("")
@@ -993,9 +1034,12 @@ def render_markdown_report(
         lines.append(
             f"| {name} | {stats.samples} | {stats.false_claims} | "
             f"{stats.sync_false_triggers} | {stats.reply_correct} | "
-            f"{stats.claim_precision:.0%} | {stats.claim_recall:.0%} |"
+            f"{_pct_or_dash(stats.claim_precision, stats.observed_claims, precision=0)} | "
+            f"{_pct_or_dash(stats.claim_recall, stats.expected_claims, precision=0)} |"
         )
     lines.append("")
+    if intent_metrics is not None:
+        lines.extend(render_intent_metrics_section(intent_metrics))
     if llm_stats:
         lines.append("## LLM 调用统计")
         lines.append("")
@@ -1020,6 +1064,9 @@ def render_markdown_report(
         observed_view = json.dumps(_behavior_view(failure.observed), ensure_ascii=False)
         lines.append(f"- 期望：`{expected_view}`")
         lines.append(f"- 实际：`{observed_view}`")
+        if failure.intent_output is not None:
+            output_view = json.dumps(failure.intent_output, ensure_ascii=False)
+            lines.append(f"- 模型输出：`{output_view}`")
         lines.append("")
     if not failures:
         lines.append("（无失败样本）")
@@ -1035,6 +1082,7 @@ def write_reports(
     report_dir: Path,
     title_suffix: str | None = None,
     llm_stats: dict[str, Any] | None = None,
+    is_baseline: bool = False,
 ) -> tuple[Path, Path]:
     report_dir.mkdir(parents=True, exist_ok=True)
     json_path = report_dir / f"report-{split}-{mode}.json"
@@ -1052,6 +1100,7 @@ def write_reports(
                 "issues": failure.issues,
                 "expected": _behavior_view(failure.expected),
                 "observed": _behavior_view(failure.observed),
+                "intent_output": failure.intent_output,
             }
             for failure in failures
         ],
@@ -1061,7 +1110,8 @@ def write_reports(
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     markdown_path.write_text(
         render_markdown_report(
-            split, mode, metrics, failures, title_suffix, llm_stats=llm_stats
+            split, mode, metrics, failures, title_suffix, llm_stats=llm_stats,
+            is_baseline=is_baseline,
         ),
         encoding="utf-8",
     )
@@ -1080,8 +1130,14 @@ async def run_intent_eval(
     title_suffix: str | None = None,
     limit: int | None = None,
     llm_stats_provider: Callable[[], dict[str, Any]] | None = None,
+    intent_recorder: Any | None = None,
 ) -> tuple[IntentEvalMetrics, list[SampleComparison]]:
-    """Loads the dataset, runs the system under test, and writes both reports."""
+    """Loads the dataset, runs the system under test, and writes both reports.
+
+    ``intent_recorder`` (a :class:`~orgpilot.intent.metrics.RecordingIntentClient`
+    wrapping the SUT's intent client) additionally produces the §8 classifier
+    metrics and attaches each failing sample's actual model output.
+    """
     project = load_intent_project(dataset_dir / "project.yaml")
     samples = load_intent_samples(dataset_dir / f"{split}.yaml")
     validation_issues = validate_samples_against_project(samples, project)
@@ -1099,6 +1155,7 @@ async def run_intent_eval(
                 "当前步骤仅支持 mock（ADR-0008 实施顺序第 1 步）"
             )
         system = BaselineSystemUnderTest(project)
+    is_baseline = not isinstance(system, LayeredSystemUnderTest)
 
     comparisons: list[SampleComparison] = []
     for sample in samples:
@@ -1106,10 +1163,23 @@ async def run_intent_eval(
         comparisons.append(compare_sample(sample, observed))
 
     metrics = compute_metrics(comparisons)
+    if intent_recorder is not None:
+        metrics = metrics.model_copy(
+            update={"intent_metrics": compute_intent_metrics(samples, intent_recorder)}
+        )
     failures = [c for c in comparisons if not c.passed]
+    if intent_recorder is not None:
+        samples_by_id = {sample.id: sample for sample in samples}
+        for failure in failures:
+            sample = samples_by_id.get(failure.sample_id)
+            if sample is not None:
+                failure.intent_output = intent_output_view(
+                    intent_recorder.result_for(sample.sender, sample.message)
+                )
     llm_stats = llm_stats_provider() if llm_stats_provider is not None else None
     write_reports(
-        split, mode, metrics, failures, report_dir, title_suffix=title_suffix, llm_stats=llm_stats
+        split, mode, metrics, failures, report_dir, title_suffix=title_suffix,
+        llm_stats=llm_stats, is_baseline=is_baseline,
     )
     return metrics, failures
 
