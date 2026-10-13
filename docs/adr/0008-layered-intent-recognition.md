@@ -90,10 +90,10 @@
 
 ### 7. LLM 调用工程要求（2026-10 修订：主候选 DeepSeek V4.1 Flash）
 
-- 模型：**主候选 DeepSeek V4.1 Flash**（`deepseek-flash`），走 DeepSeek 官方 API 的 Anthropic 兼容端点 `https://api.deepseek.com/anthropic`（鉴权头 `x-api-key`）；AIHubMix 上的 `gpt-5.6-luna` 降为**可选对照**。两者共用 `AnthropicCompatibleLLMClient`，经 `LLMClient` 抽象接入，可配置切换；
-- 思考模式：DeepSeek 思考默认开启（effort=high），Anthropic 格式用 `"thinking": {"type": "enabled" | "disabled"}` 切换；运行时由 `ORGPILOT_LLM_THINKING` 控制（omit 不发送 / disabled / enabled；aihubmix 默认 omit 保持原行为，deepseek 默认 disabled）。响应中的 thinking 块只读 text 块，不入解析；
-- 结构化输出策略由兼容性测试结果决定：DeepSeek `output_config` 只支持 effort，**没有原生 JSON schema 结构化输出**——若端点可靠支持工具调用（含强制 `tool_choice`，schema 因 `$defs/$ref` 被拒时退化为展开后的 schema）则优先工具调用；否则保留"schema 写入 prompt + 解析 + 校验失败重试一次"；
-- 选型依据：`scripts/llm_compat_check.py` 兼容性测试 + **dev 集结果**；test 集只在选定模型与提示词之后运行**一次**；
+- 模型：**主候选 DeepSeek V4.1 Flash**（`deepseek-flash`），走 DeepSeek 官方 API 的 Anthropic 兼容端点 `https://api.deepseek.com/anthropic`（鉴权头 `x-api-key`）；AIHubMix 上的 `gpt-5.6-luna` 降为**可选对照**。两者共用同一个 Anthropic 兼容客户端族，可配置切换；
+- **兼容性测试结论（已定，2026-10）**：采用**非思考模式 + 强制工具调用 `record_intent`（tool_choice=tool）+ temperature=0**。不采用思考模式，理由：思考模式下强制 tool_choice 返回 400；p95 延迟 23s 超过 20s 超时预算；max_tokens=4096 仍有 4/50 截断；输出 token 约为非思考的 5 倍。降级备选：schema 写入提示词 + 解析，仅在强制工具调用未返回 tool_use 块时使用一次；
+- 思考开关保留为配置（`ORGPILOT_LLM_THINKING`：omit/disabled/enabled；aihubmix 默认 omit，deepseek 默认 disabled），但意图客户端固定 thinking=disabled，不随配置变化；
+- 选型依据：兼容性测试 + **dev 集结果**；test 集只在选定模型与提示词之后运行**一次**；
 - 数据流向：使用 DeepSeek 官方 API 时，团队消息只经过 DeepSeek 一方（AIHubMix 中转则另有一方）；无论哪条链路，正式进入企业使用前仍需完成合规评估；
 - LLM 调用不得阻塞事件循环（异步客户端或 `asyncio.to_thread`），设置超时。
 
@@ -169,6 +169,15 @@
 4. **协调器职责收缩**：新增公开方法 `notify_probe_finished(project_id, member_id, complete=…)`，收集完成/超时/信息不全都经它通知；协调器只负责会话簿记、超时、收敛与简报合成，不再抽取；`handle_member_reply`、`service.handle_sync_member_reply` 与协调器内的 SlotCompletenessEvaluator 用法一并删除（完整性规则迁移到 `IntentHandlers._task_missing_slots`，与 SlotCompletenessEvaluator 同源，不留两套逻辑）；replay 场景直接驱动 CoordinationAgent 内核、不经过协调器，无需更新期望；
 5. **多轮对话评测**：`evals/intent/conversations.yaml`（8 段 22 轮，覆盖任务书要求的 8 个场景）；`ConversationSystemUnderTest` 经真实 webhook 驱动，探针状态用公开 API（`router.start_sync` + `register_probe_clarifications`）建立真实会话；CLI `--conversations`；oracle 门槛=全部对话通过。会话时间锚定 `occurred_at`（`start_sync_session(occurred_at=…)`），保证固定时间评测下 24h 会话超时确定性；
 6. **会话时钟与协同器刷新**：每条入站消息都会刷新协调器 agent 并触发会话超时检查（此前依赖探针分支）；超时简报/收敛简报基于刷新后的投影状态。
+
+### 第 3b 步（上半）（2026-10-12，分支 `feat/intent-router`）：LLMIntentClient 接入 DeepSeek
+
+1. **LLM 侧 schema 加固**：`health_status` 改为 `HealthStatus` StrEnum（JSON schema 出现 enum，合法集合与原校验器完全一致，评测行为不变——oracle dev/test 复跑 0 失败）；IntentItem/IntentResult 每个字段补充中文 description（含 expected_completion 必须带时区偏移的 ISO 8601、source_quote 必须原文子串、R11 只填完成时间等取值规则），随工具 schema 直接展示给模型；`reasoning` 移为 IntentResult 首字段并限定"不超过两句话"；LLM 边界归一化（每类计数）：丢弃幻觉字段、无时区的 expected_completion 按业务时区补齐，其余错误不修补、交给 Pydantic 驱动重试；
+2. **LLMIntentClient**（`intent/llm_client.py`）：实现 IntentClient 协议，DeepSeek（官方端点）与 AIHubMix 皆可；异步 httpx、thinking=disabled、强制工具调用、temperature=0；提示词固定前缀在前（角色、意图分类表、正交属性、R1–R11 改写判定规则、输出要求；示例全部新写，与 dev/test/conversations 零重复），动态内容在后（当前时间与时区、发送者身份与任务、全部任务含截止日、待回答上下文、最近 N 轮、本条消息），以命中 DeepSeek 自动缓存，固定前缀哈希即 prompt 版本；校验失败把 Pydantic 错误摘要（loc+type）附在重试消息后再试一次，仍失败抛 `LLMIntentError` 走既有降级；强制调用未返回 tool_use 时执行一次降级（schema 写入提示词 + 解析文本块）；每次调用结构化日志（prompt 版本、延迟、input/output/cache_read tokens、stop_reason、是否重试/降级、校验错误、归一化计数、费用估算），不含 key；
+3. **录制与回放**：在线调用把（请求哈希 → 响应）写入 `evals/intent/recordings/<prompt 版本>/`；replay 只读、缺失抛 `ReplayMissError`（FileNotFoundError 子类），router 对它**不再降级而是直接抛出**（缺失是基础设施错误，静默回放 fallback 会掩盖问题）；pytest/CI 只用 replay/mock；
+4. **配置**：`ORGPILOT_INTENT_CLIENT=heuristic|llm`（默认 heuristic，mock 演示行为不变）；llm 要求 provider 为 deepseek/aihubmix；
+5. **评测运行器**：eval-intent（单条与对话）新增 `--client llm`，在线需 `--live --confirm-spend` + 对应 key，否则必须 `--replay`；`--limit N`、`--max-spend-usd`（官方高峰价常数表估算，超出立即中止）；报告新增 llm_stats：schema 一次通过率、重试率、降级率、校验错误类型分布、延迟 p50/p95、每条消息 token 与费用、缓存命中占比；
+6. **兼容性脚本顺手修复**：token 统计加入 cache_read_input_tokens；两个结构化探针记录每次校验失败的 loc+type（上限 50 条）。
 
 ### 第 3a.2 步（2026-10-12，分支 `feat/intent-router`）：追问次数封顶，mock 模式下探针能收敛
 

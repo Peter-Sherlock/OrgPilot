@@ -1,5 +1,32 @@
 # 开发记录
 
+## 2026-10-12：第 3b 步（上半）——LLMIntentClient 接入 DeepSeek，跑第一次 dev 评测（分支 `feat/intent-router`）
+
+### 已实现（按部分提交）
+
+- **commit A：LLM 侧 schema 加固**
+  - `IntentItem.health_status` 改为 `HealthStatus` StrEnum：JSON schema 出现 enum；原 field_validator 允许的恰是这 4 个值，**校验语义不变**（复跑 layered+oracle dev/test 均 0 失败确认）；handlers 中两处把枚举当裸字符串用的地方改为显式 `.value`；
+  - IntentItem/IntentResult 全字段中文 description（expected_completion=带时区偏移 ISO 8601、source_quote=原文逐字子串、R11 只填完成/解除时间等），随 `model_json_schema()` 直接成为给模型的工具说明；`reasoning` 移到首字段并限定两句话；
+  - 新增 `llm_client.normalize_intent_payload`：LLM 边界只修两类良性问题并分类计数——丢弃幻觉字段、naive expected_completion 按业务时区补齐；其余错误不修补，交给 Pydantic 报错驱动重试。
+- **commit B：LLMIntentClient + 配置**
+  - 强制工具调用 `record_intent`（schema 即 IntentResult）、tool_choice=tool、temperature=0、thinking=disabled（按兼容性结论，不采用思考模式）；异步 httpx；
+  - 提示词：固定前缀（角色/意图表/正交属性/R1–R11 判定规则/输出要求）进 system，动态内容（时间、发送者、任务含截止日、待回答、最近 N 轮、消息）进 user——固定前缀哈希 = prompt 版本，顺序设计为命中 DeepSeek 自动缓存；示例全部新写，与三个评测数据集零重句；
+  - 校验失败 → 错误摘要（loc+type）附在重试消息中再试一次 → 仍失败抛 LLMIntentError（router 走既有 fallback）；无 tool_use → 降级一次（schema 写入提示词解析文本块）；
+  - 录制/回放：`evals/intent/recordings/<prompt版本>/<请求哈希>.json`；replay 只读，缺失抛 ReplayMissError，router 对它直接上抛（不静默降级）；结构化日志每次调用一条（token/延迟/缓存/stop_reason/重试/降级/校验错误/归一化/费用），无 key；
+  - `ORGPILOT_INTENT_CLIENT=heuristic|llm`（默认 heuristic，mock 演示不变；llm 需 provider=deepseek/aihubmix）。
+- **commit C：评测运行器**
+  - `--client llm` + `--live --confirm-spend`（需 key）或 `--replay`（只读）；`--limit N`；`--max-spend-usd`（官方高峰价常数表估算，超限立即中止 SpendLimitExceeded）；
+  - 报告新增 llm_stats：一次通过率/重试率/降级率、校验错误类型分布、延迟 p50/p95、每消息 token（含 cache read）与费用、缓存命中占比；JSON+markdown 双输出；mini 数据集上验证 live 录制 → replay 离线复现相同指标。
+- **commit D：兼容性脚本顺手修复**：token 统计加入 cache_read_input_tokens；两个结构化探针记录校验失败 loc+type（上限 50）。
+
+### 在线运行停止点（本步约定）
+
+- 在线调用只在用户授权后执行（用户自己运行命令，或在 agent 环境设置 key 并给出预算）；
+- 先 `--limit 10` 冒烟：schema 一次通过率 < 90% 即停，汇报校验错误分布；通过后跑完整 dev 集与全部对话评测，然后停下——**本步不迭代提示词、不运行 test 集**。
+- 本次开发环境无 key，上述在线步骤由用户执行（命令见汇报）；离线验收全部通过。
+
+---
+
 ## 2026-10-12：第 3b-0 步——接入 DeepSeek V4.1 Flash，修正兼容性脚本（分支 `feat/intent-router`）
 
 本步**不接入意图层、不发起任何真实调用**：只补齐 provider 配置面与探针脚本，为 3b（真实 LLM 意图客户端）铺路。
