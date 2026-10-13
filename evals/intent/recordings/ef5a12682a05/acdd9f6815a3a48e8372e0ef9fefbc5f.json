@@ -1,0 +1,55 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "acdd9f6815a3a48e8372e0ef9fefbc5f",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 516,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 209,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:13:23.648615+00:00",
+  "response": {
+    "id": "5701d717-5a7d-4547-bc65-91085e0066a2",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_HWCpxGv8ZAmWe8u1TlV50820",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息正面回答了机器人关于支付SDK报错何时解决的追问，给出根因（证书过期）和完成时间（今天下班前）。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "task_id": "pay_sdk",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "health_status": "at_risk",
+              "time_expression": "今天下班前",
+              "expected_completion": "2026-10-13T18:00:00+08:00",
+              "source_quote": "根因找到了，是证书过期，今天下班前能搞定",
+              "confidence": 0.95
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 516,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 209,
+      "service_tier": "standard"
+    }
+  }
+}

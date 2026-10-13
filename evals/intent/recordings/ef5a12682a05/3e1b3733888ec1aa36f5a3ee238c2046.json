@@ -1,0 +1,55 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "3e1b3733888ec1aa36f5a3ee238c2046",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 522,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 217,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:27:50.685505+00:00",
+  "response": {
+    "id": "0292f4f5-1040-44c8-a8df-32e4187d91a8",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_APyGuAR9ZVNdkIpeuCld2610",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟回答负责人的进度追问，汇报支付SDK修复时间，属于 answer_pending；存在未解决问题（修好）故为 at_risk，完成时间明天下午5点。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "task_id": "pay_sdk",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "health_status": "at_risk",
+              "time_expression": "明天下午5点",
+              "expected_completion": "2026-10-16T17:00:00+08:00",
+              "source_quote": "支付SDK明天下午5点能修好",
+              "confidence": 0.9
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 522,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 217,
+      "service_tier": "standard"
+    }
+  }
+}

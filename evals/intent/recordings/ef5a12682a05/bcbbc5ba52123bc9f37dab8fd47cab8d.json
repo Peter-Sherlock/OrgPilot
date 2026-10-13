@@ -1,0 +1,62 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "bcbbc5ba52123bc9f37dab8fd47cab8d",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 364,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 242,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:14:28.115037+00:00",
+  "response": {
+    "id": "82ce01f4-0979-4954-871f-5367dd2a7d9b",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_cWabczdH1cN08FtMYQCP9596",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊汇报自己负责的支付全链路压测环境已就绪，属正常推进；同时说明在等支付SDK稳定，属依赖等待。",
+          "items": [
+            {
+              "intent": "report_status",
+              "task_id": "pay_e2e_test",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "health_status": "on_track",
+              "source_quote": "支付全链路压测的环境搭好了",
+              "confidence": 0.9
+            },
+            {
+              "intent": "dependency_wait",
+              "task_id": "pay_e2e_test",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "就等支付SDK那边稳定",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 364,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 242,
+      "service_tier": "standard"
+    }
+  }
+}

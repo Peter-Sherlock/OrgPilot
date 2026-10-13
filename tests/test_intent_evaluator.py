@@ -944,3 +944,39 @@ def test_cli_conversation_budget_abort_sends_one_request(
     assert main() == 1
     assert "超出预算中止" in capsys.readouterr().out
     assert http_calls == 1
+
+
+async def test_layered_sut_seeds_recent_messages_into_context(
+    mini_dataset_dir: Path,
+) -> None:
+    """3b 收尾: context.recent_messages reaches the intent client as
+    conversation history, so R7 task attribution can use prior turns."""
+    from orgpilot.intent.client import IntentContext
+    from orgpilot.intent.evaluator import RecentMessage, SampleContext
+    from orgpilot.intent.models import IntentResult
+
+    class CapturingClient:
+        def __init__(self) -> None:
+            self.contexts: list[IntentContext] = []
+
+        async def classify(self, message: str, context: IntentContext) -> IntentResult:
+            self.contexts.append(context)
+            return IntentResult(items=[], answers_pending=False, reasoning="capture")
+
+    project = load_intent_project(mini_dataset_dir / "project.yaml")
+    samples = load_intent_samples(mini_dataset_dir / "dev.yaml")
+    sample = samples[0].model_copy(
+        update={
+            "context": SampleContext(
+                recent_messages=[
+                    RecentMessage(role="member", text="后端接口的报错还在排查")
+                ]
+            )
+        }
+    )
+    client = CapturingClient()
+    system = LayeredSystemUnderTest(project, client)
+    await system.observe(sample)
+    assert client.contexts, "the classifier must have been called"
+    history = "\n".join(client.contexts[0].conversation_history)
+    assert "后端接口的报错还在排查" in history

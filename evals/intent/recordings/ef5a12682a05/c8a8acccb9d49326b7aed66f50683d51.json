@@ -1,0 +1,51 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "c8a8acccb9d49326b7aed66f50683d51",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 491,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 142,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:14:51.971647+00:00",
+  "response": {
+    "id": "1cbec113-04ff-48bc-839a-e5aab1bfccb5",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_UaBj274KQGpMG4UIqDRh8984",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟说明下周三请假一天，属于不可用性声明，识别但不执行。",
+          "items": [
+            {
+              "intent": "unavailability",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "我下周三请一天假，家里有点事",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 491,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 142,
+      "service_tier": "standard"
+    }
+  }
+}

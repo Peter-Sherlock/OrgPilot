@@ -1,0 +1,51 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "664d313ccc3ee8248c89fd4aaa3173fa",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 577,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 137,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:28:19.545948+00:00",
+  "response": {
+    "id": "96b91d56-6df1-4def-831d-16423a9c4540",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_CgCnMvy8u86mGZYErv5p9484",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息只是闲聊吃饭话题，与工作进度无关，也未回答待汇报的进展问题。",
+          "items": [
+            {
+              "intent": "chitchat",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "晚上想吃火锅",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 577,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 137,
+      "service_tier": "standard"
+    }
+  }
+}

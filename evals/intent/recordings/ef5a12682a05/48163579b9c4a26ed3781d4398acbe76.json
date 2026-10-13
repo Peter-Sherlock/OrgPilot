@@ -1,0 +1,65 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "48163579b9c4a26ed3781d4398acbe76",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 499,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 289,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:14:25.177809+00:00",
+  "response": {
+    "id": "04497d04-c678-4e79-b106-bdfa8a734629",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_UPnBuYZdLzz3HIKQJEbg1329",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息包含两件事：商户后台管理端今天提测（完成类事件，已完成/即将完成不填时间），以及承诺支付SDK明天下午5点前修完。",
+          "answers_pending": false,
+          "items": [
+            {
+              "intent": "report_status",
+              "task_id": "merchant_admin",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "health_status": "on_track",
+              "source_quote": "商户后台今天能提测",
+              "confidence": 0.9
+            },
+            {
+              "intent": "make_commitment",
+              "task_id": "pay_sdk",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "health_status": "at_risk",
+              "time_expression": "明天下午5点",
+              "expected_completion": "2026-10-14T17:00:00+08:00",
+              "source_quote": "支付SDK明天下午5点前我一定修完",
+              "confidence": 0.9
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 499,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 289,
+      "service_tier": "standard"
+    }
+  }
+}

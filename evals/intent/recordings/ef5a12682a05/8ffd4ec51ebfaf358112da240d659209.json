@@ -1,0 +1,54 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "8ffd4ec51ebfaf358112da240d659209",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 495,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 233,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:14:15.088830+00:00",
+  "response": {
+    "id": "aa4f9f07-8cc7-4248-bd60-21e88ce44581",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_AyFy5fOxBJodznCx2T5p1604",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟负责 pay_sdk 与 merchant_admin，消息说“修好”但未点名任务，无法唯一确定是哪个任务，故 task_id 留空。含“理论上”“说不准”等不确定词，属 hedged；正在修复中的问题本身即风险，判 at_risk。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "health_status": "at_risk",
+              "time_expression": "明天",
+              "expected_completion": "2026-10-14T18:00:00+08:00",
+              "source_quote": "理论上明天能修好，但如果有隐藏问题就说不准了",
+              "confidence": 0.6
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 495,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 233,
+      "service_tier": "standard"
+    }
+  }
+}

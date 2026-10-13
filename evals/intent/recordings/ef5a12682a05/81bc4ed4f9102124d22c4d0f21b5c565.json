@@ -1,0 +1,53 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "81bc4ed4f9102124d22c4d0f21b5c565",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 501,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 183,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:13:13.350893+00:00",
+  "response": {
+    "id": "2be99094-da95-476d-9f32-650e67f63649",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_Nr5M84U5ro80PioyYnox9694",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳汇报自己负责的对账模块联调遇到金额对不平的问题，仍在排查中，属于未解决问题，健康度至少 at_risk；未给出完成时间。",
+          "items": [
+            {
+              "intent": "report_status",
+              "task_id": "ledger_check",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "health_status": "at_risk",
+              "source_quote": "对账模块碰到点问题，金额老是对不平，还在查原因",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 501,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 183,
+      "service_tier": "standard"
+    }
+  }
+}

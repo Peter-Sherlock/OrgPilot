@@ -1,0 +1,52 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "0a8d2b659cb02cbb3c712b6c7ffb2f3b",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 476,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 175,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:14:53.523406+00:00",
+  "response": {
+    "id": "823ee999-c695-45df-ba1e-d898ff19985f",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_xmy8j1Egvx6RQd6ELZWa1219",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "赵敏同意改期并给出新的上线日期，属于对计划变更的确认/批准，识别为 text_approval（P1 识别类，不执行）。",
+          "items": [
+            {
+              "intent": "text_approval",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "merchant_admin",
+              "source_quote": "同意改期，商户后台的上线日期就按下周五来吧",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 476,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 175,
+      "service_tier": "standard"
+    }
+  }
+}

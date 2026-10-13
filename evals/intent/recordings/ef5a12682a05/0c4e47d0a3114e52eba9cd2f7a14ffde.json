@@ -1,0 +1,61 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "0c4e47d0a3114e52eba9cd2f7a14ffde",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 490,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 223,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:14:56.678180+00:00",
+  "response": {
+    "id": "413f7f9f-7ee0-4b65-82e2-708af7e9e710",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_QqqzlVnISoIPZgnrjjHa8016",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "明确表示不需要同步进度，属于 request_sync 且 polarity=negative；同时汇报自己负责的压测任务即将产出结果。",
+          "items": [
+            {
+              "intent": "request_sync",
+              "speech_act": "imperative",
+              "polarity": "negative",
+              "certainty": "certain",
+              "source_quote": "不用同步进度了",
+              "confidence": 0.9
+            },
+            {
+              "intent": "report_status",
+              "task_id": "pay_e2e_test",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "health_status": "on_track",
+              "source_quote": "我马上把压测结果发到群里",
+              "confidence": 0.75
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 490,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 223,
+      "service_tier": "standard"
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "aa96f64716dd0feb28c6f306a2fdec34",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 487,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 152,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:15:00.018715+00:00",
+  "response": {
+    "id": "f473effb-b98c-4985-b138-51207bfa0825",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_Dtd1k7CEhP3cmIfZmq4t5980",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟请求机器人向全员收集汇总进度，属于 request_sync；但王伟是 backend 角色，非项目负责人，权限不足。",
+          "items": [
+            {
+              "intent": "request_sync",
+              "speech_act": "imperative",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "帮我同步一下大家的进度呗",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 487,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 152,
+      "service_tier": "standard"
+    }
+  }
+}

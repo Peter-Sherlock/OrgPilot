@@ -275,7 +275,7 @@ samples:
       behavior:
         claims:
           - task_id: pay_sdk
-            health_status: on_track
+            health_status: at_risk
             expected_completion: "2026-10-13T18:00:00+08:00"
         reply_category: claim_recorded
       intents:
@@ -286,7 +286,7 @@ samples:
             speech_act: statement
             polarity: affirmative
             certainty: certain
-            health_status: on_track
+            health_status: at_risk
             time_expression: "今天下班前"
             source_quote: "今天下班前能搞定"
 
@@ -1053,6 +1053,12 @@ samples:
     message: "理论上明天能修好，但如果有隐藏问题就说不准了"
     sender: ou_wei_wang
     occurred_at: "2026-10-13T16:10:00+08:00"
+    context:
+      # R7 任务归属：最近对话提到 pay_sdk 有未解决的报错，而本条消息在说"修好"，
+      # 发送者的另一个任务（merchant_admin）健康 → 任务唯一可定，期望 claim。
+      recent_messages:
+        - role: member
+          text: "支付SDK的报错还在排查"
     expected:
       behavior:
         claims:

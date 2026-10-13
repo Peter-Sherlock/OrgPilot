@@ -1,0 +1,51 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "4ff117d527c0bafb782dbbab68c1e4c9",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 474,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 146,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:13:41.610945+00:00",
+  "response": {
+    "id": "7085eb8b-a78e-4b4a-a595-aba95a8eb921",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_Sf6LxGmCR3fA5o1u4LcR0161",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "发送者为 PM，要求全员收集任务状态用于月底复盘，属于发起进度同步请求。",
+          "items": [
+            {
+              "intent": "request_sync",
+              "speech_act": "imperative",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "全员手头任务的状态收集一下，月底复盘要用",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 474,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 146,
+      "service_tier": "standard"
+    }
+  }
+}

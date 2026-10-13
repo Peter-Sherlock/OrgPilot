@@ -1,0 +1,53 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "4dd0fb587089c9d02149925180007fde",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 490,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 186,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:14:04.880587+00:00",
+  "response": {
+    "id": "7d3edd94-32f5-48f9-96f1-2618032e5c6b",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_9wGMvrEvC30Rl9Xi5jF52074",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟汇报自己负责的支付SDK接入任务状态，明确否定“卡住”，属正常推进。字面含否定词但实际含义为无问题，故 polarity=negative、health_status=on_track。",
+          "items": [
+            {
+              "intent": "report_status",
+              "task_id": "pay_sdk",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "health_status": "on_track",
+              "source_quote": "支付SDK没有卡住，大家不用担心",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 490,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 186,
+      "service_tier": "standard"
+    }
+  }
+}

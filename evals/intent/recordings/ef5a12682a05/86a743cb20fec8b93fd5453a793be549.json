@@ -1,0 +1,51 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "86a743cb20fec8b93fd5453a793be549",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 520,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 140,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:28:07.261438+00:00",
+  "response": {
+    "id": "cff460a0-9d7d-423b-8fb6-a2bcd87573dc",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_o9xyMRhkOU1VwL05gwK60975",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "存在待确认的同步卡片，用户回复“确认发送”属于对卡片的确认应答。",
+          "items": [
+            {
+              "intent": "acknowledge",
+              "speech_act": "imperative",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "好的，确认发送",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 520,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 140,
+      "service_tier": "standard"
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "af7b80ffb2eba2462d6a0504a9570fdf",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 481,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 182,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:14:17.462082+00:00",
+  "response": {
+    "id": "420ece3f-dcf8-45e3-9c28-5f7ba7407829",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_PGMCJjUUBfyYfG6KyjbX7473",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊谈自己负责的支付全链路压测，句末带“吧”的推测属陈述而非提问；含“差不多”属含糊推测，但未给出完成时间，健康度无法判断。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "task_id": "pay_e2e_test",
+              "health_status": "unknown",
+              "source_quote": "压测差不多准备好了吧",
+              "confidence": 0.6
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 481,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 182,
+      "service_tier": "standard"
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "e1d5bbdc018ab331b00ebb481d8b4366",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 488,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 130,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:13:44.780589+00:00",
+  "response": {
+    "id": "f9d74899-8b7b-42ac-b365-080de9015388",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_KnERJExHIKpFpsYRE69m6198",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息仅为单纯的确认应答，无任务状态或请求内容。",
+          "items": [
+            {
+              "intent": "acknowledge",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "收到收到",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 488,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 130,
+      "service_tier": "standard"
+    }
+  }
+}

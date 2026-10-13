@@ -11,7 +11,7 @@ has no intent layer, so intent-level metrics are reported as N/A.
 
 import json
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Protocol
@@ -491,6 +491,7 @@ class LayeredSystemUnderTest(BaselineSystemUnderTest):
             coordinator = await service.get_sync_coordinator(self._project.project_id)
             router = MessageRouter(service=service, intent_client=self._intent_client)
             await self._construct_dialogue_state(router, sample)
+            await self._seed_recent_messages(router, sample)
 
             sessions_before = len(coordinator._sessions)
             handler = FeishuWebhookHandler(
@@ -523,6 +524,31 @@ class LayeredSystemUnderTest(BaselineSystemUnderTest):
             )
         finally:
             await db.close()
+
+    async def _seed_recent_messages(self, router: Any, sample: EvalSample) -> None:
+        """Seeds sample-provided recent turns into the message store (3b 收尾).
+
+        ``context.recent_messages`` carries prior conversation the annotator
+        relies on (e.g. which task has the open problem — LABELING.md R7);
+        member-side lines become the router's conversation-history context so
+        the intent client sees them. Bot-side lines are not seeded: in real
+        traffic bot replies enter history through actual sends.
+        """
+        recent = sample.context.recent_messages if sample.context else []
+        for index, message in enumerate(recent):
+            if message.role != "member":
+                continue
+            await router.messages.record_outcome(
+                project_id=self._project.project_id,
+                message_id=f"{sample.id}-recent-{index}",
+                sender_id=sample.sender,
+                message_text=message.text,
+                intent_summary={},
+                reply_category="smalltalk",
+                reply_text="",
+                response={"code": 0, "msg": "seeded_history"},
+                created_at=sample.occurred_at - timedelta(minutes=len(recent) - index),
+            )
 
     async def _construct_dialogue_state(self, router: Any, sample: EvalSample) -> None:
         """Builds pending dialogue state through the router's public API only."""

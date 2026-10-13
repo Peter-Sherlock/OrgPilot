@@ -1,0 +1,51 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "a58eb389f410c7b1038a73ce7b2fded5",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 488,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 141,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:13:58.653123+00:00",
+  "response": {
+    "id": "15bb9884-2606-4f7e-91c4-95d4dbadf4f6",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_PS4zbLadlvWTdpr6NRyz5992",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "用户请求订会议室，与项目进度协调无关，属于超出处理范围的请求。",
+          "items": [
+            {
+              "intent": "out_of_scope",
+              "speech_act": "imperative",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "帮我订一下明天下午的会议室",
+              "confidence": 0.97
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 488,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 141,
+      "service_tier": "standard"
+    }
+  }
+}

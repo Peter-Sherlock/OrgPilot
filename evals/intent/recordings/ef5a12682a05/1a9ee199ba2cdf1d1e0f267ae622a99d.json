@@ -1,0 +1,51 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "1a9ee199ba2cdf1d1e0f267ae622a99d",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 476,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 150,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:13:38.015556+00:00",
+  "response": {
+    "id": "40086385-8a6d-4837-9cda-1fe98401ed56",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_ZCvRDJnGkJOLQWj57LmH3139",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "发送者是 PM，要求汇总各任务负责人进展以查看整体情况，属于发起全员进度同步。",
+          "items": [
+            {
+              "intent": "request_sync",
+              "speech_act": "imperative",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "把各任务负责人的进展汇总一下，我要看整体情况",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 476,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 150,
+      "service_tier": "standard"
+    }
+  }
+}

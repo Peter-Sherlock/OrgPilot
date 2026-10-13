@@ -1,0 +1,51 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "42fe947eedd44c60f8d9c0eb7ce7b01c",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 492,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 140,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:13:59.769528+00:00",
+  "response": {
+    "id": "19a24639-0efa-44fb-ae87-b289f8cff9c1",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_HLXFa6Y1zc1YU75tP75I3936",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息是询问附近餐厅推荐，与项目协调无关，属于超出处理范围的请求。",
+          "items": [
+            {
+              "intent": "out_of_scope",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "附近有什么好吃的推荐吗？",
+              "confidence": 0.97
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 492,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 140,
+      "service_tier": "standard"
+    }
+  }
+}

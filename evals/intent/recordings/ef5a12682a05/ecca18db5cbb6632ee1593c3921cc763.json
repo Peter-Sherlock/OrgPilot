@@ -1,0 +1,51 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "ecca18db5cbb6632ee1593c3921cc763",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 469,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 141,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:13:36.120363+00:00",
+  "response": {
+    "id": "991b80c8-4223-4b45-9456-5068168f4e1c",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_08XaHj43gGFMh0LLU61J7618",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "发送者为 PM（项目负责人），明确要求发起全员进度同步，属于 request_sync。",
+          "items": [
+            {
+              "intent": "request_sync",
+              "speech_act": "imperative",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "来一次全员进度同步吧",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 469,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 141,
+      "service_tier": "standard"
+    }
+  }
+}

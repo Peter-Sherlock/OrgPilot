@@ -1,0 +1,51 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "8b044e655fc1d6b46abaf630ef8d8b83",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 477,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 140,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:13:40.361774+00:00",
+  "response": {
+    "id": "888681fc-8d93-4f58-b12b-2b5306279107",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_nVjYOtiWIQWOxSgsJkyF3248",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "赵敏作为 PM 要求全体成员汇报进展，属于发起进度同步请求。",
+          "items": [
+            {
+              "intent": "request_sync",
+              "speech_act": "imperative",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "叫大家各自汇报一下手上的进展",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 477,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 140,
+      "service_tier": "standard"
+    }
+  }
+}

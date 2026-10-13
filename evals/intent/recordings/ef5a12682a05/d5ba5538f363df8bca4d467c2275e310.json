@@ -1,0 +1,52 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "d5ba5538f363df8bca4d467c2275e310",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 470,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 148,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:13:31.905590+00:00",
+  "response": {
+    "id": "edfcad15-4933-4a9f-adf6-ae1faa1490d3",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_xD1MLoi2NtXZvwupbqjw8172",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "赵敏询问对账模块联调的当前进度，属于向机器人查询任务状态。",
+          "items": [
+            {
+              "intent": "query_status",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "ledger_check",
+              "source_quote": "对账模块现在进度怎么样了？",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 470,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 148,
+      "service_tier": "standard"
+    }
+  }
+}

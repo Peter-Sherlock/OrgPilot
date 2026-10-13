@@ -1,0 +1,53 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "4f6f428e13c2b2242c5be93a72ff797b",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 492,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 169,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:14:08.789738+00:00",
+  "response": {
+    "id": "4088bbca-b423-446c-b9e4-0c1277e11084",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_UMTxJ9iDx2BlQO2wbdGV7755",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳汇报自己负责的收银台页面改版，明确说明不存在兼容性问题，属正常推进。无未解决问题，健康度为 on_track。",
+          "items": [
+            {
+              "intent": "report_status",
+              "task_id": "checkout_page",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "health_status": "on_track",
+              "source_quote": "收银台不存在兼容性问题",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 492,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 169,
+      "service_tier": "standard"
+    }
+  }
+}

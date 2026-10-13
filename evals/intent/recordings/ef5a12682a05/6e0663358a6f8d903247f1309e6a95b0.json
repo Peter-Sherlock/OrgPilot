@@ -1,0 +1,51 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "6e0663358a6f8d903247f1309e6a95b0",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 488,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 139,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:13:50.242019+00:00",
+  "response": {
+    "id": "9dfc2308-cf3f-48e6-922a-bce2240977a5",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_SBs5o3PdFkZoHSF1g4uC5666",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息只是对表情包的闲聊吐槽，与工作进度无关，也无任何请求。",
+          "items": [
+            {
+              "intent": "chitchat",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "哈哈哈哈这个表情包太搞笑了",
+              "confidence": 0.97
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 488,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 139,
+      "service_tier": "standard"
+    }
+  }
+}

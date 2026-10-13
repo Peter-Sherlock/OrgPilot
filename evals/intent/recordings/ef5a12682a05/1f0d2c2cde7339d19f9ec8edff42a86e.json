@@ -1,0 +1,51 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "1f0d2c2cde7339d19f9ec8edff42a86e",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 594,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 137,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:28:20.924381+00:00",
+  "response": {
+    "id": "d2e53b77-3998-43a8-9fca-5b48ea5144c6",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_53a5gdkORIjs15WQp7y09631",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "本条消息只是与工作无关的闲聊，未回答待回答的进度汇报问题。",
+          "items": [
+            {
+              "intent": "chitchat",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "哈哈哈笑死我了",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 594,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 137,
+      "service_tier": "standard"
+    }
+  }
+}
