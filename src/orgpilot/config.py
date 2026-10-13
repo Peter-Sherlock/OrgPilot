@@ -65,6 +65,8 @@ class OrgPilotSettings:
     intent_timeout_seconds: float = DEFAULT_INTENT_TIMEOUT_SECONDS
     intent_confidence_threshold: float = DEFAULT_INTENT_CONFIDENCE_THRESHOLD
     intent_recent_turns: int = 6
+    # heuristic keeps the mock demo; llm selects the DeepSeek/AIHubMix client (3b)
+    intent_client: str = "heuristic"
     max_topic_reasks: int = DEFAULT_MAX_TOPIC_REASKS
 
     @property
@@ -115,6 +117,7 @@ class OrgPilotSettings:
                 )
             ),
             intent_recent_turns=int(os.getenv("ORGPILOT_INTENT_RECENT_TURNS", "6")),
+            intent_client=os.getenv("ORGPILOT_INTENT_CLIENT", "heuristic").strip().lower(),
             max_topic_reasks=int(
                 os.getenv("ORGPILOT_MAX_TOPIC_REASKS", str(DEFAULT_MAX_TOPIC_REASKS))
             ),
@@ -139,6 +142,12 @@ class OrgPilotSettings:
             raise ValueError("ORGPILOT_MAX_TOPIC_REASKS must be non-negative")
         if self.llm_provider not in {"mock", "aihubmix", "deepseek"}:
             raise ValueError("ORGPILOT_LLM_PROVIDER must be 'mock', 'aihubmix', or 'deepseek'")
+        if self.intent_client not in {"heuristic", "llm"}:
+            raise ValueError("ORGPILOT_INTENT_CLIENT must be 'heuristic' or 'llm'")
+        if self.intent_client == "llm" and self.llm_provider == "mock":
+            raise ValueError(
+                "ORGPILOT_INTENT_CLIENT=llm requires ORGPILOT_LLM_PROVIDER=aihubmix or deepseek"
+            )
         if self.llm_provider == "aihubmix" and not self.aihubmix_api_key:
             raise ValueError("AIHUBMIX_API_KEY is required when ORGPILOT_LLM_PROVIDER=aihubmix")
         if self.llm_provider == "deepseek" and not self.deepseek_api_key:

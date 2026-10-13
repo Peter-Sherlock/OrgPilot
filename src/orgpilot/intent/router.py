@@ -52,6 +52,15 @@ UNREGISTERED_HINT = (
 )
 
 
+def default_intent_client(settings: OrgPilotSettings) -> IntentClient:
+    """heuristic keeps the mock demo working; llm selects the 3b DeepSeek client."""
+    if settings.intent_client == "llm":
+        from orgpilot.intent.llm_client import LLMIntentClient
+
+        return LLMIntentClient.from_settings(settings)
+    return HeuristicIntentClient()
+
+
 class Messenger:
     """Thin async wrapper over a Feishu client; silently no-ops without one."""
 
@@ -92,9 +101,9 @@ class MessageRouter:
     ) -> None:
         self.service = service
         self.settings = settings or OrgPilotSettings()
-        # A real LLM intent client arrives in ADR-0008 step 3b; until then the
-        # heuristic wrapper keeps ORGPILOT_LLM_PROVIDER=mock demos working.
-        self.intent_client = intent_client or HeuristicIntentClient()
+        # A real LLM intent client arrives via ORGPILOT_INTENT_CLIENT=llm (3b);
+        # the heuristic wrapper stays the default so mock demos are unchanged.
+        self.intent_client = intent_client or default_intent_client(self.settings)
         self.dialogue = dialogue_store or DialogueStateStore(
             max_topic_reasks=self.settings.max_topic_reasks
         )
