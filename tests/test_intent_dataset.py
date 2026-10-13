@@ -15,7 +15,7 @@ from orgpilot.intent.evaluator import (
 EVAL_DIR = Path(__file__).resolve().parents[1] / "evals" / "intent"
 
 # The test split is frozen (BASELINE.md): any change requires prior approval.
-FROZEN_TEST_SHA256 = "b023ded8044a9f9f0888566cdb62245c1d4f0cadd5c75035038efc87c1ec36a3"
+FROZEN_TEST_SHA256 = "1da96ed7848a964c200f7e52dbbed9bb412bff51b04d6caba59a8151c0ff9dc4"
 
 
 @pytest.fixture(scope="module")

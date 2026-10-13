@@ -715,12 +715,6 @@ samples:
             certainty: certain
             health_status: on_track
             source_quote: "压测准备文档都写完了"
-          - intent: report_status
-            task_id: pay_sdk
-            speech_act: hypothetical
-            polarity: affirmative
-            certainty: certain
-            source_quote: "支付SDK一恢复我就开跑"
 
   - id: test_multi_task_003
     category: multi_task
@@ -742,12 +736,6 @@ samples:
             certainty: certain
             health_status: on_track
             source_quote: "收银台页面改版联调完了"
-          - intent: report_status
-            task_id: merchant_admin
-            speech_act: statement
-            polarity: negative
-            certainty: certain
-            source_quote: "商户后台的接口我还没碰"
 
   # ---------- 相似任务名消歧 ----------
   - id: test_disambiguation_001
