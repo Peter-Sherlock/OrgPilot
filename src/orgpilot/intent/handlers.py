@@ -323,7 +323,9 @@ class IntentHandlers:
                 source_ref=source_ref,
                 event_id=f"evt-intent-claim-{message_key}-{event_counter}",
                 task_id=item.task_id or "",
-                health_status=item.health_status or HealthStatus.UNKNOWN.value,
+                health_status=(
+                    item.health_status.value if item.health_status else HealthStatus.UNKNOWN.value
+                ),
                 expected_completion=item.expected_completion,
                 blocker=item.blocker,
                 confidence=item.confidence,
@@ -365,7 +367,8 @@ class IntentHandlers:
                 else ""
             )
             return f"已记录：{title} → 已收到承诺{suffix}"
-        health = HEALTH_CN.get(item.health_status or "", item.health_status or "未知")
+        status = item.health_status.value if item.health_status else None
+        health = HEALTH_CN.get(status or "", status or "未知")
         text = f"已记录：{title} → {health}"
         if item.expected_completion is not None:
             text += f"，预计 {_fmt(item.expected_completion)} 完成"
