@@ -1,0 +1,51 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "77a43e7eeccd6335b87e9b307d659d98",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 467,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 147,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:25:13.939274+00:00",
+  "response": {
+    "id": "b3c8b0d4-e8e4-433a-b8de-3b2fba0634de",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_aOUsN0fnAKzSAwfF3JgH6460",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "赵敏作为 PM 请求收集全员任务状态用于月底复盘，属于发起全员进度同步。",
+          "items": [
+            {
+              "intent": "request_sync",
+              "speech_act": "imperative",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "全员手头任务的状态收集一下，月底复盘要用",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 467,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 147,
+      "service_tier": "standard"
+    }
+  }
+}

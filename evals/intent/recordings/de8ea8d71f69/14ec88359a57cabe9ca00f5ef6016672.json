@@ -1,0 +1,51 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "14ec88359a57cabe9ca00f5ef6016672",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 470,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 145,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:25:12.742853+00:00",
+  "response": {
+    "id": "14a6db76-e14d-4844-b18f-371619c176da",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_IW0ndOcX7xUriJdb4iP44380",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "赵敏作为PM要求全员汇报进展，属于发起进度同步请求。",
+          "items": [
+            {
+              "intent": "request_sync",
+              "speech_act": "imperative",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "叫大家各自汇报一下手上的进展，我下午要跟老板对齐",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 470,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 145,
+      "service_tier": "standard"
+    }
+  }
+}

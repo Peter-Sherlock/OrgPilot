@@ -1,0 +1,51 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "7449d6ab111c653ada95d460b268b4df",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 467,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 148,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:26:31.381070+00:00",
+  "response": {
+    "id": "03a280f4-8559-42f4-a178-b98927d5d096",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_IyH7qoC3DQBzsEqeoVYZ0467",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "赵敏表示暂不需要汇总进展，属于对同步请求的回应/确认，不涉及具体任务状态。",
+          "items": [
+            {
+              "intent": "acknowledge",
+              "speech_act": "imperative",
+              "polarity": "negative",
+              "certainty": "certain",
+              "source_quote": "先不用汇总进展，我这边还没想好口径",
+              "confidence": 0.8
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 467,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 148,
+      "service_tier": "standard"
+    }
+  }
+}

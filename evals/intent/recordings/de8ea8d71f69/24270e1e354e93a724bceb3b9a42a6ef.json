@@ -1,0 +1,53 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "24270e1e354e93a724bceb3b9a42a6ef",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 483,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 184,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:25:45.025727+00:00",
+  "response": {
+    "id": "1d4732fc-613a-4c6c-b417-beb354662ee7",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_uUv8iAj8qprd6bt70KsO3498",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息为假设句（“假如……就……”），假设不产生状态变更，也不构成承诺或汇报；涉及支付SDK接入任务但只是条件性应对。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "hypothetical",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "task_id": "pay_sdk",
+              "health_status": "at_risk",
+              "source_quote": "假如SDK这边周一还出问题，我就先测别的模块",
+              "confidence": 0.6
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 483,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 184,
+      "service_tier": "standard"
+    }
+  }
+}

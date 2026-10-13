@@ -1,0 +1,61 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "53847095d0d9b92b87115b796ae622db",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 482,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 231,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:25:06.870377+00:00",
+  "response": {
+    "id": "de5c19eb-7af6-48be-9b04-d017acacdb7f",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_agkScdBfDoDvH4SJ4e359037",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊询问支付SDK接入的进展，属于查询任务状态；同时提到压测在等待，但未给出时间或明确阻塞声明，仅作为背景。",
+          "items": [
+            {
+              "intent": "query_status",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_sdk",
+              "source_quote": "支付SDK那边好了没？",
+              "confidence": 0.9
+            },
+            {
+              "intent": "dependency_wait",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_e2e_test",
+              "source_quote": "我们压测还等着呢",
+              "confidence": 0.7
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 482,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 231,
+      "service_tier": "standard"
+    }
+  }
+}

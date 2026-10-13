@@ -1,0 +1,65 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "05b9a5b58232315bd2b2709c9e5f8688",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 492,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 301,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:25:57.969227+00:00",
+  "response": {
+    "id": "39f61788-2e1e-4da2-b96b-5a7fbfa1166b",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_aNNJIEnAsn0tnd3tfp9m3948",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息包含两件事：商户后台今天提测（提测时间不是完成时间，不填 expected_completion），支付SDK承诺明天下午5点前修完。两者均为承诺/汇报，健康度按正常推进判断。",
+          "answers_pending": false,
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "merchant_admin",
+              "health_status": "on_track",
+              "source_quote": "商户后台今天能提测",
+              "confidence": 0.85
+            },
+            {
+              "intent": "make_commitment",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_sdk",
+              "health_status": "on_track",
+              "time_expression": "明天下午5点前",
+              "expected_completion": "2026-10-14T17:00:00+08:00",
+              "source_quote": "支付SDK明天下午5点前我一定修完",
+              "confidence": 0.9
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 492,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 301,
+      "service_tier": "standard"
+    }
+  }
+}

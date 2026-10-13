@@ -1,0 +1,51 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "11d02e9f865710b310cab0b3429a179f",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 472,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 128,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:25:25.036996+00:00",
+  "response": {
+    "id": "fe7b977c-8ed6-47db-9497-07c7f6c9651d",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_YSN8bK0siWzGKpFPmZ7w0267",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "用户在询问机器人具备哪些能力，属于 help 意图。",
+          "items": [
+            {
+              "intent": "help",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "你能做什么？",
+              "confidence": 0.97
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 472,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 128,
+      "service_tier": "standard"
+    }
+  }
+}

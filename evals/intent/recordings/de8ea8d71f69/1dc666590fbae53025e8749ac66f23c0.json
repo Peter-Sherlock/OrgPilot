@@ -1,0 +1,53 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "1dc666590fbae53025e8749ac66f23c0",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 483,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 186,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:26:28.950474+00:00",
+  "response": {
+    "id": "d8245645-ddef-4bc9-b4f2-0c2bd234c6a4",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_dU7wItIhPjI5qGaCJntG9007",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊表示不用同步进度，并说明马上把压测结果发到群里，属于对压测任务的进展汇报，未给出完成时间，健康度按正常推进判断。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_e2e_test",
+              "health_status": "on_track",
+              "source_quote": "不用同步进度了，我马上把压测结果发到群里",
+              "confidence": 0.7
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 483,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 186,
+      "service_tier": "standard"
+    }
+  }
+}

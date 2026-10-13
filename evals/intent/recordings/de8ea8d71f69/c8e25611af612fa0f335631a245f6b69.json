@@ -1,0 +1,53 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "c8e25611af612fa0f335631a245f6b69",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 483,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 194,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:26:38.356562+00:00",
+  "response": {
+    "id": "adf74a46-23dc-4f6a-a98a-5070a8846eef",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_ev8uT4xmV9geBN9VJRAz0896",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊请求把压测第一轮时间改到周五上午，属于计划变更提议，识别为 propose_plan_change；周五上午是开始/执行时间而非任务完成时间，故不填 expected_completion。",
+          "items": [
+            {
+              "intent": "propose_plan_change",
+              "speech_act": "imperative",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_e2e_test",
+              "time_expression": "周五上午",
+              "source_quote": "把压测第一轮的时间挪到周五上午吧",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 483,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 194,
+      "service_tier": "standard"
+    }
+  }
+}

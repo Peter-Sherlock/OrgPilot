@@ -1,0 +1,51 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "17069e61f95b87f92608bed77d87866b",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 346,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2176,
+    "output_tokens": 144,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:26:41.891209+00:00",
+  "response": {
+    "id": "1fbdd9f0-5b20-4469-a888-629441e3fddb",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_DM6yW4Fvpmw2fWRcS5Nz2107",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "赵敏撤回此前发起的全员同步请求，属于对同步动作的取消/确认性应答，无任务状态信息。",
+          "items": [
+            {
+              "intent": "acknowledge",
+              "speech_act": "imperative",
+              "polarity": "negative",
+              "certainty": "certain",
+              "source_quote": "算了，先不发",
+              "confidence": 0.75
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 346,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2176,
+      "output_tokens": 144,
+      "service_tier": "standard"
+    }
+  }
+}

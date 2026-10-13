@@ -1,0 +1,52 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "5b382a366c579cdd61a81d9259c67a56",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 487,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 173,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:25:42.412792+00:00",
+  "response": {
+    "id": "38bdee30-9b05-42f9-9e70-d6bfed00163e",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_lgAGnKXTL8AYeQU0kUcr8573",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "这是假设句（“如果……就要延期了”），假设不产生状态变更，按 report_status 识别但健康度不判定。涉及支付SDK接入任务。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "hypothetical",
+              "polarity": "negative",
+              "certainty": "hedged",
+              "task_id": "pay_sdk",
+              "source_quote": "如果明天第三方接口还不稳定，支付SDK就要延期了",
+              "confidence": 0.75
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 487,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 173,
+      "service_tier": "standard"
+    }
+  }
+}

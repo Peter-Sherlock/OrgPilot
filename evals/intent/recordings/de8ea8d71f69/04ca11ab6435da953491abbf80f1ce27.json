@@ -1,0 +1,63 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "04ca11ab6435da953491abbf80f1ce27",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 358,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2176,
+    "output_tokens": 253,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:26:15.361425+00:00",
+  "response": {
+    "id": "0164475d-f3c1-452a-b49b-4ccc61c24c4a",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_k6H6JpsTurE2sHSvQejT7879",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟汇报支付SDK接入已无问题（阻塞解除），并说明压测可随时开始。压测未给出具体完成时间，仅表示可开始，不填 expected_completion。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "支付SDK没问题了",
+              "confidence": 0.9,
+              "task_id": "pay_sdk",
+              "health_status": "on_track"
+            },
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "压测那边随时可以开始",
+              "confidence": 0.75,
+              "task_id": "pay_e2e_test",
+              "health_status": "on_track"
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 358,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2176,
+      "output_tokens": 253,
+      "service_tier": "standard"
+    }
+  }
+}

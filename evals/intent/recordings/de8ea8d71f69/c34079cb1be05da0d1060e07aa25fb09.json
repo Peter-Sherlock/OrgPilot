@@ -1,0 +1,51 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "c34079cb1be05da0d1060e07aa25fb09",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 487,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 146,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:25:33.523615+00:00",
+  "response": {
+    "id": "498288e6-e078-47ae-8a32-e7b3f53844f9",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_kvq3bKHv123ncYCFrw5i0115",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "用户请求代发节日祝福邮件，属于项目协调之外的请求，归为 out_of_scope。",
+          "items": [
+            {
+              "intent": "out_of_scope",
+              "speech_act": "imperative",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "帮我给客户发一封节日祝福邮件",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 487,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 146,
+      "service_tier": "standard"
+    }
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "0a66e584df8a14afac20a8143ffb5de8",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 492,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 226,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:26:11.288906+00:00",
+  "response": {
+    "id": "c17df102-f56c-455a-828d-f16f3e7693aa",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_wVt73yrffnCMe4YlxPFm5612",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳汇报对账模块进展：历史差异清理已完成，但整体收尾要到月底（10-31 18:00），晚于任务截止 10-22，故 delayed。未提及阻塞原因，blocker 留空。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "ledger_check",
+              "health_status": "delayed",
+              "time_expression": "月底",
+              "expected_completion": "2026-10-31T18:00:00+08:00",
+              "source_quote": "对账模块的历史差异清理完了，整体收尾要到月底",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 492,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 226,
+      "service_tier": "standard"
+    }
+  }
+}

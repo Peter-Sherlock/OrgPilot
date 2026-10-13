@@ -1,0 +1,55 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "7aa3eb8cf881423bc0675c85e2502363",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 507,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 230,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:24:54.943803+00:00",
+  "response": {
+    "id": "5efdb3da-e9c8-49fc-a175-c28cbb69b268",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_bOfXuon0jDwPSfQdHM362400",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟正面回答了机器人关于 pay_sdk 恢复时间的追问，给出「明天下午5点」，即 2026-10-14T17:00:00+08:00，早于截止 10-16，属正常推进。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "task_id": "pay_sdk",
+              "health_status": "on_track",
+              "time_expression": "明天下午5点",
+              "expected_completion": "2026-10-14T17:00:00+08:00",
+              "source_quote": "还在排查，预计明天下午5点能恢复",
+              "confidence": 0.9
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 507,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 230,
+      "service_tier": "standard"
+    }
+  }
+}

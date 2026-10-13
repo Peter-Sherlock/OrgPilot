@@ -1,0 +1,53 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "d2b19011509774535d0a8bbb3036516c",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 486,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 171,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:25:50.355604+00:00",
+  "response": {
+    "id": "e07059e3-16ec-4152-8fdd-7c1f20714c66",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_48Ir4tiptbxsB7nXZhQj4395",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳汇报收银台页面改版进展，用「感觉问题不大」属含糊推测，未给时间，判为 at_risk。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "health_status": "at_risk",
+              "task_id": "checkout_page",
+              "source_quote": "收银台那边感觉问题不大",
+              "confidence": 0.7
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 486,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 171,
+      "service_tier": "standard"
+    }
+  }
+}

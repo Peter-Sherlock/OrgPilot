@@ -1,0 +1,53 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "f193adb764f7a63b36b815a090e58de3",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 579,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 175,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:30:22.371509+00:00",
+  "response": {
+    "id": "78f3c3b9-5e0b-4502-b5ce-7860c9d09b90",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_cnYE1wwkTcNK2rj4SbNv3373",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "本条正面回答了机器人追问的商户后台管理端进展，属于 answer_pending；已全部正常，健康度 on_track，任务已完成不填预计完成时间。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "商户后台已经全部正常了",
+              "confidence": 0.92,
+              "task_id": "merchant_admin",
+              "health_status": "on_track"
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 579,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 175,
+      "service_tier": "standard"
+    }
+  }
+}

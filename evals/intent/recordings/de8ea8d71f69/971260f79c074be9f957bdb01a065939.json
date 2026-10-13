@@ -1,0 +1,63 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "971260f79c074be9f957bdb01a065939",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 355,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2176,
+    "output_tokens": 249,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:25:56.354547+00:00",
+  "response": {
+    "id": "f6349035-57cb-478d-ab00-bf4fc79216e1",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_JqXVKZHZtgygUNWDrHNe5733",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息包含两件事：压测环境恢复（阻塞解除，on_track）和支付SDK回调仍报错（有风险但未给时间，at_risk）。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "压测环境恢复了",
+              "confidence": 0.9,
+              "task_id": "pay_e2e_test",
+              "health_status": "on_track"
+            },
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "source_quote": "支付SDK的回调还在报错",
+              "confidence": 0.85,
+              "task_id": "pay_sdk",
+              "health_status": "at_risk"
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 355,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2176,
+      "output_tokens": 249,
+      "service_tier": "standard"
+    }
+  }
+}

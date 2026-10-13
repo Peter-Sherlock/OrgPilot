@@ -1,0 +1,55 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "1fb2827e14231a44d10e857cc112251f",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 488,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 219,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:26:13.877043+00:00",
+  "response": {
+    "id": "58e08c81-89dd-47f4-9250-b268b0d6351c",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_2z7lt6haHQGLtfciTEIO1644",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟汇报支付SDK接入任务存在死锁问题，承诺明早十点前解决，早于截止日10-16，属有风险但可在截止前解决。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_sdk",
+              "health_status": "at_risk",
+              "time_expression": "明早十点前",
+              "expected_completion": "2026-10-14T10:00:00+08:00",
+              "source_quote": "支付SDK的死锁还在处理，明早十点前解决",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 488,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 219,
+      "service_tier": "standard"
+    }
+  }
+}

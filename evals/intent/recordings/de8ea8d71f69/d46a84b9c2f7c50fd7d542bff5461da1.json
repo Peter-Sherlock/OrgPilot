@@ -1,0 +1,53 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "d46a84b9c2f7c50fd7d542bff5461da1",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 510,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 168,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:30:55.215715+00:00",
+  "response": {
+    "id": "b301e4da-919a-4cbd-bc6e-9b7c6722b92f",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_WU4B5wqAoyFUWFDepxX82327",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "机器人追问 pay_e2e_test 进展，用户回答「这个我真说不好」，属于对追问的回应但无法给出进展，健康度未知。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "hedged",
+              "task_id": "pay_e2e_test",
+              "health_status": "unknown",
+              "source_quote": "这个我真说不好",
+              "confidence": 0.75
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 510,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 168,
+      "service_tier": "standard"
+    }
+  }
+}

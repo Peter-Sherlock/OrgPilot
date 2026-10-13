@@ -1,0 +1,63 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "52af7d629563413dc814a6e94d0cca6d",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 369,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2176,
+    "output_tokens": 265,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:26:23.889262+00:00",
+  "response": {
+    "id": "89c6c376-818f-49ce-b489-afd9f47c369d",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_ADleZOACvOwCttDmysrN4655",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳说明收银台任务因等待支付SDK联调环境而受阻，属于依赖等待，同时隐含催促请求。未给出预计完成时间，健康度按有风险判定。",
+          "items": [
+            {
+              "intent": "dependency_wait",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "checkout_page",
+              "health_status": "at_risk",
+              "blocker": "一直等着支付SDK的联调环境",
+              "source_quote": "收银台这边一直等着支付SDK的联调环境",
+              "confidence": 0.85
+            },
+            {
+              "intent": "request_sync",
+              "speech_act": "imperative",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "task_id": "pay_sdk",
+              "source_quote": "谁来催一下啊",
+              "confidence": 0.4
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 369,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2176,
+      "output_tokens": 265,
+      "service_tier": "standard"
+    }
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "6def183a8780f13cf530f4916fada0ec",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 235,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2304,
+    "output_tokens": 222,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:26:20.892347+00:00",
+  "response": {
+    "id": "04da6f78-e118-41a0-8be9-485f4a70ba0d",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_4eXOUsGv0QYSkpbctHPi8619",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟更正此前给出的支付SDK完成时间，属于对机器人记录的纠正，识别为 correction；同时给出新的完成时间明天17:00，早于截止日10-16，健康度正常。",
+          "items": [
+            {
+              "intent": "correction",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_sdk",
+              "health_status": "on_track",
+              "time_expression": "明天下午5点",
+              "expected_completion": "2026-10-14T17:00:00+08:00",
+              "source_quote": "支付SDK是明天下午5点能好，不是三点",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 235,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2304,
+      "output_tokens": 222,
+      "service_tier": "standard"
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "7a1e7fd3a7de36662d4d7a8d4a9f88f4",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 477,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 145,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:25:32.468888+00:00",
+  "response": {
+    "id": "bff23c95-f6d3-46c6-90ce-17a0f3dc8f9e",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_HyshbyZSgXrN1wPls3EZ8468",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "查询机票价格属于与项目进度协调无关的个人事务请求，归为 out_of_scope。",
+          "items": [
+            {
+              "intent": "out_of_scope",
+              "speech_act": "imperative",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "帮我查下明天去上海的机票价格",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 477,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 145,
+      "service_tier": "standard"
+    }
+  }
+}

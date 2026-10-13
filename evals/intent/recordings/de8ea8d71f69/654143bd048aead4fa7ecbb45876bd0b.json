@@ -1,0 +1,54 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "654143bd048aead4fa7ecbb45876bd0b",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 494,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 199,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:24:58.129042+00:00",
+  "response": {
+    "id": "66e2fce8-3cf3-4b07-9229-82be9e03a776",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_hG7vqlsUnwHX1YBk05Ib7975",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息正面回答了机器人关于压测环境恢复时间的追问，给出“下周三”，即 2026-10-21 18:00（仅日期无时刻）。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "task_id": "pay_e2e_test",
+              "time_expression": "下周三",
+              "expected_completion": "2026-10-21T18:00:00+08:00",
+              "source_quote": "大概要到下周三",
+              "confidence": 0.85
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 494,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 199,
+      "service_tier": "standard"
+    }
+  }
+}
