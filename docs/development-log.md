@@ -1,5 +1,41 @@
 # 开发记录
 
+## 2026-10-13：第 3b 步（下半·第一轮）——按 dev 错误分析修正：确定性护栏 + 提示词规则 + 标注口径（分支 `feat/intent-router`）
+
+首轮在线评测（prompt `de8ea8d71f69`，录制已入库）：dev 行为 81.4%（83/102）、对话 8/10、
+错误 claim 1.54%、意图 macro-F1 89.12%、$0.00037/条；19 条失败逐条归因。
+
+### 已实现（按部分提交）
+
+- **确定性护栏（代码，LABELING S4/S5）**：截止日判定移入代码——expected_completion 晚于任务截止日 → health 取 max(模型判断, delayed)，早于不下调（直接 claim 路径 + 探针合并按目标任务逐个判定）；unknown/空 health 的 report_status/answer_pending 条目不写 claim，探针中不算"已回答"，按既有追问规则驱动到 3a.2 总上限后标记「信息不全」；启发式兜底回答同源修 principle（健康词→on_track、否则 at_risk）。连带更新：mini 陷阱样本补 health、sandbox 测试的"进度正常"消息改为"还有点问题"（on_track 现在即完整回答）、conv_06/conv_10 的 oracle 失败通过移除自加的"无变化跳过事件"去重解决（重复回答照常重写 claim，supersession 语义）。
+- **提示词规则修订（de8ea8d71f69 → ef5a12682a05，逐条同步 LABELING.md）**：健康度以"未解决问题"为主判据（正在修/排查/卡住/能修好→至少 at_risk；on_track 仅限无问题推进/完成/解除；"说不好"→at_risk）；删除提示词的截止日比较要求（系统负责）；hedged 限定不确定词表（应该/估计/可能/大概/也许/说不准/理论上/"差不多……吧"），"快完工了/还行/有点慢/预计"=certain；句末"吧"自任务陈述=statement；完成类事件清单（修好/修完/恢复/解决/完成/提测/上线/交付/合并）；任务归属先推断（发送者任务+健康度）后追问；顺带提及（可以开始=依赖解除、我没管）不输出条目；P1 不吞 P0；request_sync 仅限向全员收集、催人不是、明确拒绝→negative；out_of_scope（有请求）vs chitchat（无请求）；待确认卡片"发吧/确认/可以"→acknowledge。提示词例句与三个数据集零重句（程序化核对）。
+- **标注口径（只动 dev，登记 REVISION-2026-10.md）**：dev_request_sync_003"帮我看看现在的项目进度"→ query_status/query_answer（R8/S6）；handlers 新增 S6：PM 状态查询回答后附一句"需要我向大家发起同步吗？"（只提示不发卡）；confirmation_flow 核对已是 acknowledge（无需改）。
+- **评测口径**：第 0 层样本（显式命令/卡片回调）不计入意图层指标、单列数量——oracle dev 意图集合匹配从 97.06% 修正为 100%（99/99）、test 100%（56/56）；按类别"同步误触发"列改为只统计"不该触发却触发"，与总体一致。
+- **test 一致性检查（只读，不改 test.yaml）**：S4 无冲突（无 completion 过截止日且 health≠delayed 的标注）；S5 无行为级冲突（health=None 条目均为 hypothetical 或 negative-no-health，本就不产生 claim）；建议项 2 条——test_multi_task_002 删除 pay_sdk hypothetical 条目（"一恢复我就开跑"属 R12 顺带提及）、test_multi_task_003 删除 merchant_admin negative 条目（"还没碰"非本人任务，R12 不输出条目）——均不影响行为期望，待审批后改并更新冻结哈希；另 test_request_sync_003"我想知道每个人手上的任务都推到哪了"建议保留 request_sync（明确指向全员收集，非模糊"看看进度"）。
+- **记录**：de8ea8d71f69 录制 132 个文件入库（--replay 可离线复跑首轮）；BASELINE.md 新增"LLM 评测记录"表（prompt 版本维度，首行填首轮数据）。
+
+### 自检与验收
+
+```text
+oracle: dev 0 失败 + 意图 100%（99/99）；test 0 失败 + 意图 100%（56/56）；对话 10/10
+orgpilot replay --all: 9/9 PASS
+pytest: 327 passed, coverage ≥90%
+ruff: All checks passed
+git diff --check: PASS
+test.yaml 未修改（frozen-hash 不变）；测试全部离线；未 push
+```
+
+### 下一轮在线评测命令（新 prompt 版本 ef5a12682a05）
+
+```powershell
+$env:ORGPILOT_LLM_PROVIDER = "deepseek"
+$env:DEEPSEEK_API_KEY = "<你的 key>"
+uv run orgpilot eval-intent --split dev --client llm --live --confirm-spend --max-spend-usd 2
+uv run orgpilot eval-intent --conversations --client llm --live --confirm-spend --max-spend-usd 2
+```
+
+---
+
 ## 2026-10-13：第 3b.1 步——修复预算闸门、运行时录制、计费与重试 + §8 意图层指标（分支 `feat/intent-router`）
 
 ### 已实现（按部分提交）
