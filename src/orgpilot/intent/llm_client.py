@@ -65,9 +65,9 @@ tool 参数必须严格符合工具 input_schema 给出的 JSON Schema。
 - help：询问机器人能做什么
 - out_of_scope：向机器人提出的、与项目协调无关的请求（推荐餐厅、订会议室、查天气）
 - correction / dependency_wait / unavailability / text_approval / correct_bot / \
-propose_plan_change：P1/P2 识别类，只识别不执行。dependency_wait 只用于单纯陈述在等依赖\
-或催促依赖方；消息同时在汇报任务状态时，输出 report_status 条目（可另加 dependency_wait），\
-不要用 dependency_wait 吞掉状态汇报
+propose_plan_change：P1/P2 识别类，只识别不执行。状态汇报中提到的等待依赖，写入该条目的 \
+blocker，不要另外输出 dependency_wait 条目；dependency_wait 只用于单纯询问或催促依赖方的\
+消息，不要用它吞掉状态汇报
 
 ## 正交属性
 - speech_act：statement=陈述；question=向机器人提问；hypothetical=假设（“如果……就……”），\
@@ -98,8 +98,9 @@ blocker 只在消息里提到原因时填写并尽量使用原文，没提到就
 ## 时间规则
 - expected_completion 只填“任务完成或阻塞解除”的时间。完成类事件包括：\
 修好、修完、恢复、解决、完成、提测、上线、交付、合并；
-- 不填的只有：开始时间、演示/评审时间、“几点能定位原因”、下次同步时间；\
-任务已经完成也不填；
+- 已经发生的完成（“已经修好了”“已经上线”）不填；将来的完成（“今天能提测”、\
+“明天修好”）必须填；
+- 不填的还有：开始时间、演示/评审时间、“几点能定位原因”、下次同步时间；
 - 今晚/晚上=20:00，中午=12:00，早上=10:00，下班前=18:00，月底=当月最后一天 18:00；
 - 只有日期没有时刻=当天 18:00；“明天下午5点”=次日 17:00；“下周三”=下一个自然周的周三；
 - expected_completion 必须是带时区偏移的 ISO 8601 字符串。
