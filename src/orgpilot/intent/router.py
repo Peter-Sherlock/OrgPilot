@@ -2,10 +2,10 @@
 
 Processing order per message: message-level idempotency → group chat refusal →
 membership check → sync-probe replies → explicit commands → dialogue state +
-intent classification (layer 1, with one retry) → guardrails and handlers
-(layer 2). The router owns the single reply send per message and records every
-outcome in the persistent message log, which also feeds the "recent turns"
-conversation context.
+intent classification (layer 1; transient errors retried once) → guardrails
+and handlers (layer 2). The router owns the single reply send per message and
+records every outcome in the persistent message log, which also feeds the
+"recent turns" conversation context.
 """
 
 import asyncio
@@ -13,6 +13,8 @@ import json
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
+
+import httpx
 
 from orgpilot.config import OrgPilotSettings
 from orgpilot.intent.client import (
@@ -32,6 +34,7 @@ from orgpilot.intent.dialogue import (
     PendingSyncConfirmation,
 )
 from orgpilot.intent.handlers import IntentHandlers
+from orgpilot.intent.llm_client import TRANSIENT_HTTP_STATUSES
 from orgpilot.intent.models import IntentResult
 from orgpilot.intent.replies import (
     FALLBACK_TEXT,
@@ -85,6 +88,19 @@ class Messenger:
         # Fallback for clients without interactive-card support
         fallback_note = "📋 收到一张确认卡片（当前通道不支持卡片）"
         await self.send_text(receive_id=receive_id, text=fallback_note)
+
+
+def _is_transient_error(exc: BaseException) -> bool:
+    """Timeouts, connection failures, and HTTP 429/5xx are worth one retry.
+
+    Everything else (invalid output, protocol errors, budget/infrastructure
+    failures) is either already retried inside the LLM client or pointless to
+    repeat, so the router degrades immediately (3b.1).
+    """
+    if isinstance(exc, (TimeoutError, httpx.TransportError)):
+        return True
+    response = getattr(exc, "response", None)
+    return getattr(response, "status_code", None) in TRANSIENT_HTTP_STATUSES
 
 
 class MessageRouter:
@@ -534,11 +550,33 @@ class MessageRouter:
     async def _classify_with_retry(
         self, message: str, context: IntentContext
     ) -> IntentResult | None:
-        """One classify attempt plus exactly one retry on failure/invalid output."""
-        from orgpilot.intent.llm_client import ReplayMissError
+        """One classify attempt; exactly one retry, for transient errors only.
 
-        last_error: Exception | None = None
-        for attempt in range(2):
+        The LLM client already retries validation failures internally, so an
+        ``LLMIntentError`` reaching this router degrades immediately instead of
+        paying for another round trip. Missing replay recordings and exhausted
+        spend budgets are infrastructure failures re-raised via
+        ``IntentInfrastructureError`` — never retried, never degraded (3b.1).
+        """
+        from orgpilot.intent.llm_client import IntentInfrastructureError, LLMIntentError
+
+        try:
+            result = await classify_with_timeout(
+                self.intent_client,
+                message,
+                context,
+                self.settings.intent_timeout_seconds,
+            )
+        except IntentInfrastructureError:
+            raise
+        except LLMIntentError as exc:
+            logger.warning("Intent classify produced invalid output: %s", exc)
+            return None
+        except Exception as exc:  # includes asyncio.TimeoutError
+            if not _is_transient_error(exc):
+                logger.warning("Intent classify failed (non-transient): %s", exc)
+                return None
+            logger.warning("Intent classify transient failure, retrying once: %s", exc)
             try:
                 result = await classify_with_timeout(
                     self.intent_client,
@@ -546,21 +584,12 @@ class MessageRouter:
                     context,
                     self.settings.intent_timeout_seconds,
                 )
-            except ReplayMissError:
-                # A missing recording is an infrastructure failure, not a model
-                # failure: failing loudly beats silently replaying fallbacks.
-                raise
-            except Exception as exc:  # includes asyncio.TimeoutError
-                last_error = exc
-                logger.warning(
-                    "Intent classify attempt %d failed: %s", attempt + 1, exc
-                )
-                continue
-            if isinstance(result, IntentResult):
-                return result
-            last_error = TypeError(f"invalid intent result type {type(result)!r}")
-            logger.warning("Intent classify attempt %d returned invalid output", attempt + 1)
-        logger.error("Intent classify failed after retry: %s", last_error)
+            except Exception as retry_exc:
+                logger.error("Intent classify failed after retry: %s", retry_exc)
+                return None
+        if isinstance(result, IntentResult):
+            return result
+        logger.error("Intent classify returned invalid output %s", type(result))
         return None
 
 

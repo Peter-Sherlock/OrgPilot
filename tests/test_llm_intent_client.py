@@ -16,12 +16,16 @@ import pytest
 from orgpilot.config import OrgPilotSettings
 from orgpilot.intent.client import HeuristicIntentClient, IntentContext
 from orgpilot.intent.llm_client import (
+    DEGRADATION_INSTRUCTIONS,
+    DYNAMIC_TEMPLATE_VERSION,
     FIXED_PROMPT_PREFIX,
     FORCED_TOOL_NAME,
     PROMPT_VERSION,
     LLMIntentClient,
     LLMIntentError,
     SpendLimitExceeded,
+    compute_prompt_version,
+    estimate_cost_usd,
 )
 from orgpilot.intent.router import default_intent_client
 
@@ -95,6 +99,8 @@ def _client(tmp_path: Path, handler, **overrides) -> LLMIntentClient:
         base_url="https://api.deepseek.test",
         model="deepseek-flash",
         business_tz=BJ,
+        # default for these tests: the eval-CLI style opt-in to recording
+        record=True,
         recordings_dir=tmp_path / "recordings",
         transport=httpx.MockTransport(handler),
         **overrides,
@@ -294,7 +300,11 @@ def test_from_settings_and_config_validation(tmp_path: Path) -> None:
         deepseek_api_key="k",
         intent_client="llm",
     )
-    assert isinstance(default_intent_client(settings), LLMIntentClient)
+    runtime_client = default_intent_client(settings)
+    assert isinstance(runtime_client, LLMIntentClient)
+    # runtime paths NEVER record: recordings carry verbatim user quotes (3b.1)
+    assert runtime_client.record is False
+    assert runtime_client.recent_turns == settings.intent_recent_turns
     assert isinstance(default_intent_client(OrgPilotSettings()), HeuristicIntentClient)
 
     with pytest.raises(ValueError, match="deepseek 或 aihubmix"):
@@ -303,6 +313,164 @@ def test_from_settings_and_config_validation(tmp_path: Path) -> None:
         OrgPilotSettings(intent_client="oracle").validate()
     with pytest.raises(ValueError, match="ORGPILOT_INTENT_CLIENT=llm requires"):
         OrgPilotSettings(intent_client="llm", llm_provider="mock").validate()
+
+
+async def test_runtime_client_never_writes_recordings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The runtime path (record defaults to False) must leave no files behind."""
+    monkeypatch.chdir(tmp_path)
+    client = LLMIntentClient(
+        api_key="test-key",
+        base_url="https://api.deepseek.test",
+        model="deepseek-flash",
+        business_tz=BJ,
+        transport=httpx.MockTransport(lambda request: _tool_response(VALID_INPUT)),
+    )
+    assert client.record is False
+    await client.classify(_context().message, _context())
+    assert not (tmp_path / "evals").exists()
+
+
+async def test_budget_gate_blocks_every_request_after_the_cap(tmp_path: Path) -> None:
+    """Regression (3b.1 §1): each call costs far more than the $0.01 budget, so
+    the FIRST request goes out, the budget is blown, and every later request is
+    refused before being sent."""
+    http_calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal http_calls
+        http_calls += 1
+        return httpx.Response(
+            200,
+            json={
+                "content": [
+                    {"type": "tool_use", "id": "t", "name": FORCED_TOOL_NAME, "input": VALID_INPUT}
+                ],
+                "stop_reason": "tool_use",
+                "model": "deepseek-flash",
+                "usage": {
+                    "input_tokens": 50_000,  # ~$0.015 at official peak prices
+                    "output_tokens": 900,
+                    "cache_read_input_tokens": 0,
+                },
+            },
+        )
+
+    client = _client(tmp_path, handler, max_spend_usd=0.01)
+    with pytest.raises(SpendLimitExceeded, match="exceeded"):
+        await client.classify(_context().message, _context())
+    assert http_calls == 1
+
+    with pytest.raises(SpendLimitExceeded, match="not sent"):
+        await client.classify(_context().message, _context())
+    assert http_calls == 1  # the pre-check refused to send a second request
+
+
+async def test_official_peak_prices_and_unknown_model_refuses_budget() -> None:
+    # official DeepSeek peak prices, checked 2026-10 (USD per MTok)
+    assert estimate_cost_usd(
+        "deepseek-flash", {"input_tokens": 1_000_000, "cache_read_input_tokens": 0,
+                           "output_tokens": 0}
+    ) == pytest.approx(0.30)
+    assert estimate_cost_usd(
+        "deepseek-flash", {"input_tokens": 0, "cache_read_input_tokens": 1_000_000,
+                           "output_tokens": 0}
+    ) == pytest.approx(0.006)
+    assert estimate_cost_usd(
+        "deepseek-flash", {"input_tokens": 0, "cache_read_input_tokens": 0,
+                           "output_tokens": 1_000_000}
+    ) == pytest.approx(1.20)
+    # unknown models have NO price: never silently default to a DeepSeek price
+    assert estimate_cost_usd("gpt-5.6-luna", {"input_tokens": 10**9}) is None
+    with pytest.raises(ValueError, match="价格"):
+        LLMIntentClient(
+            api_key="k",
+            base_url="https://x.test",
+            model="gpt-5.6-luna",
+            business_tz=BJ,
+            max_spend_usd=0.5,
+        )
+
+
+def test_prompt_version_covers_every_prompt_component() -> None:
+    from orgpilot.intent.llm_client import _tool_schema
+
+    assert compute_prompt_version(
+        FIXED_PROMPT_PREFIX, _tool_schema(), DYNAMIC_TEMPLATE_VERSION, DEGRADATION_INSTRUCTIONS
+    ) == PROMPT_VERSION
+    base = {
+        "prefix": FIXED_PROMPT_PREFIX,
+        "tool_schema": _tool_schema(),
+        "dynamic_template_version": DYNAMIC_TEMPLATE_VERSION,
+        "degradation": DEGRADATION_INSTRUCTIONS,
+    }
+
+    def _version(**overrides: object) -> str:
+        return compute_prompt_version(**{**base, **overrides})  # type: ignore[arg-type]
+
+    # any wording, schema, template, or degradation change rolls the version
+    assert _version() == PROMPT_VERSION
+    assert _version(prefix=FIXED_PROMPT_PREFIX + "微调。") != PROMPT_VERSION
+    assert _version(dynamic_template_version=DYNAMIC_TEMPLATE_VERSION + 1) != PROMPT_VERSION
+    assert _version(degradation=DEGRADATION_INSTRUCTIONS + " extra") != PROMPT_VERSION
+    tweaked_schema = {
+        "name": _tool_schema()["name"],
+        "description": _tool_schema()["description"],
+        "input_schema": {"type": "object", "properties": {"confidence": {
+            "type": "number", "description": "changed description"}}},
+    }
+    assert _version(tool_schema=tweaked_schema) != PROMPT_VERSION
+
+
+async def test_recent_turns_setting_controls_conversation_window(tmp_path: Path) -> None:
+    captured: list[dict] = []
+    client = _client(
+        tmp_path,
+        lambda request: _tool_response(
+            (captured.append(json.loads(request.read().decode("utf-8"))), VALID_INPUT)[1]
+        ),
+        recent_turns=2,
+    )
+    context = IntentContext(
+        project_id="proj",
+        message=_context().message,
+        occurred_at=NOW,
+        sender_id="ou_alice",
+        sender_role="backend",
+        sender_display_name="Alice",
+        conversation_history=("t1", "t2", "t3", "t4"),
+    )
+    await client.classify(context.message, context)
+    content = captured[0]["messages"][0]["content"]
+    recent = content.split("最近对话：\n", 1)[1].split("\n本条消息", 1)[0]
+    assert recent.splitlines() == ["t3", "t4"]
+
+    silent = _client(tmp_path, lambda request: _tool_response(VALID_INPUT), recent_turns=0)
+    body = silent._build_body(context.message, context)
+    assert "最近对话" not in body["messages"][0]["content"]
+
+
+def test_aggregate_llm_metrics_without_known_prices() -> None:
+    from orgpilot.intent.llm_client import aggregate_llm_metrics
+
+    base = {
+        "prompt_version": "v1",
+        "model": "gpt-5.6-luna",
+        "mode": "live",
+        "stop_reason": "tool_use",
+        "latency_ms": 100,
+        "input_tokens": 100,
+        "cache_read_input_tokens": 0,
+        "output_tokens": 50,
+        "retried": False,
+        "degraded": False,
+        "validation_errors": [],
+        "cost_usd_estimate": None,
+    }
+    stats = aggregate_llm_metrics([dict(base)])
+    assert stats["total_cost_usd_estimate"] is None
+    assert stats["cost_per_message_usd_estimate"] is None
 
 
 def test_aggregate_llm_metrics_rates_costs_and_errors() -> None:

@@ -17,11 +17,15 @@ degradation path runs once (schema embedded in the prompt, JSON parsed from
 the text block). The LLM-boundary normalization (drop unknown fields, attach
 the business timezone to naive completion times) runs before validation.
 
-Every call is recorded for offline replay under
-``evals/intent/recordings/<prompt version>/<request hash>.json``; replay mode
-only READS recordings and fails on a miss. One structured log line (no key
-material) is emitted per ``classify`` with tokens, latency, cache reads,
-retry/degradation flags, validation errors, and normalization counts.
+Recordings for offline replay (``evals/intent/recordings/<prompt version>/
+<request hash>.json``) are written ONLY when ``record=True`` — the evaluation
+CLI opts in explicitly; runtime paths (``from_settings`` /
+``default_intent_client``) never record, so real user quotes never land in the
+repository. Replay mode only READS recordings and fails on a miss. The spend
+gate is checked BEFORE each request: once the accumulated estimate reaches
+``--max-spend-usd``, no further HTTP call is made. One structured log line
+(no key material) is emitted per ``classify`` with tokens, latency, cache
+reads, retry/degradation flags, validation errors, and normalization counts.
 """
 
 import hashlib
@@ -49,7 +53,7 @@ tool 参数必须严格符合工具 input_schema 给出的 JSON Schema。
 
 ## 意图分类
 - report_status：汇报任务状态或进展。例：「搜索服务最近老是超时」「审批流第一版已经上线了」
-- make_commitment：明确承诺某个时间前完成。例：「我保证周五下班前把灰度发布做完」
+- make_commitment：明确承诺某个时间前完成。例：「支付对账脚本我这周内一定补完」
 - answer_pending：直接回答机器人上一条追问（补时间、补任务名等），此时 answers_pending=true
 - query_status：询问任务当前状态。例：「数据迁移那批跑完了吗？」
 - request_sync：请求发起全员进度同步（只有项目负责人有权发起）
@@ -68,7 +72,8 @@ propose_plan_change：P1/P2 识别类，只识别不执行
 - certainty：certain=明确断言；hedged=含糊推测（应该、估计、可能、说不好）
 
 ## health_status 判定规则
-1. 预计完成时间晚于任务截止日，或明确说延期/推迟 → delayed，必须给出 blocker；
+1. 预计完成时间晚于任务截止日，或明确说延期/推迟 → delayed；blocker 只在消息里\
+提到原因时填写并尽量使用原文，没提到就留空，不要推测；
 2. 有风险但预计能在截止日前解决，或没有给出时间 → at_risk；
 3. 正常推进、已完成、阻塞已解除 → on_track；
 4. 完全说不清 → unknown 或留空。
@@ -90,39 +95,108 @@ answers_pending=true；只是闲聊或问别的 → 按消息本身分类且 ans
 - 只调用 record_intent 工具；source_quote 必须是本条消息的逐字子串，不得改写；
 - reasoning 不超过两句话。"""
 
-PROMPT_VERSION = hashlib.sha256(FIXED_PROMPT_PREFIX.encode("utf-8")).hexdigest()[:12]
+# Bumped whenever the dynamic-content template below changes shape (which
+# fields are rendered, ordering, wording). The fixed prefix lives in git and is
+# hashed directly; this constant covers the parts that are not literal text.
+DYNAMIC_TEMPLATE_VERSION = 1
+
+DEGRADATION_INSTRUCTIONS = (
+    "## 降级输出\n无法调用工具时，直接输出一个严格符合以下 JSON Schema 的"
+    "JSON 对象，不要输出任何其他文字：\n{schema}"
+)
 
 FORCED_TOOL_NAME = "record_intent"
 DEFAULT_MAX_TOKENS = 1024
 DEFAULT_TIMEOUT_SECONDS = 30.0
 ERROR_BODY_CHARS = 300
+TRANSIENT_HTTP_STATUSES = frozenset({429, 500, 502, 503, 504})
 
-# 官方高峰价估算（USD / 百万 token），仅用于 --max-spend-usd 预算闸门与费用
-# 报告；价格调整时更新此表。cache_read 为缓存命中价，未列出的模型用 DEFAULT。
+
+def _tool_schema() -> dict[str, Any]:
+    return {
+        "name": FORCED_TOOL_NAME,
+        "description": "记录这条消息的意图识别结果",
+        "input_schema": IntentResult.model_json_schema(),
+    }
+
+
+def compute_prompt_version(
+    prefix: str,
+    tool_schema: dict[str, Any],
+    dynamic_template_version: int,
+    degradation: str,
+) -> str:
+    """Hashes EVERYTHING that shapes a request body.
+
+    The fixed prefix, the tool schema (field descriptions and enums included),
+    the dynamic-template version, and the degradation instructions all feed one
+    canonical JSON hash, so any wording or schema change rolls the prompt
+    version — and with it the recordings directory.
+    """
+    canonical = json.dumps(
+        {
+            "prefix": prefix,
+            "tool_schema": tool_schema,
+            "dynamic_template_version": dynamic_template_version,
+            "degradation": degradation,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:12]
+
+
+PROMPT_VERSION = compute_prompt_version(
+    FIXED_PROMPT_PREFIX,
+    _tool_schema(),
+    DYNAMIC_TEMPLATE_VERSION,
+    DEGRADATION_INSTRUCTIONS,
+)
+
+# 官方高峰价（USD / 百万 token），仅用于 --max-spend-usd 预算闸门与费用报告。
+# 来源：https://api-docs.deepseek.com/quick_start/pricing（2026-10 核对）。
+# 未列出的模型按“价格未知”处理：不套用任何默认价，设置了 --max-spend-usd 时
+# 直接拒绝运行，费用报告标注“价格未知”。
 PEAK_PRICE_PER_MTOK: dict[str, dict[str, float]] = {
-    "deepseek-flash": {"input": 0.28, "cache_read": 0.028, "output": 0.42},
+    "deepseek-flash": {"input": 0.30, "cache_read": 0.006, "output": 1.20},
 }
-DEFAULT_PRICE_PER_MTOK = {"input": 0.28, "cache_read": 0.028, "output": 0.42}
+
+
+def price_for_model(model: str) -> dict[str, float] | None:
+    return PEAK_PRICE_PER_MTOK.get(model)
 
 
 class LLMIntentError(RuntimeError):
     """The LLM could not produce a schema-valid IntentResult after the retry."""
 
 
-class ReplayMissError(FileNotFoundError):
-    """Replay mode had no recording for a request — an infrastructure failure.
+class IntentInfrastructureError(RuntimeError):
+    """Eval-infrastructure failure: never retried, never degraded, always raised.
 
-    Subclasses FileNotFoundError so CLI handlers can catch either; the router
-    deliberately re-raises it instead of degrading to the fallback reply.
+    The router re-raises this base class as-is (ADR-0008 §7): a missing replay
+    recording or a blown spend budget means the evaluation harness is broken or
+    the budget is exhausted — falling back to heuristic replies would silently
+    produce a meaningless 0/N report instead of a loud failure.
     """
 
 
-class SpendLimitExceeded(RuntimeError):
-    """The estimated live-call cost exceeded --max-spend-usd."""
+class ReplayMissError(IntentInfrastructureError, FileNotFoundError):
+    """Replay mode had no recording for a request.
+
+    Subclasses FileNotFoundError so CLI handlers can catch either; the router
+    re-raises it via IntentInfrastructureError.
+    """
 
 
-def estimate_cost_usd(model: str, usage: dict[str, Any]) -> float:
-    price = PEAK_PRICE_PER_MTOK.get(model, DEFAULT_PRICE_PER_MTOK)
+class SpendLimitExceeded(IntentInfrastructureError):
+    """The estimated live-call cost reached --max-spend-usd."""
+
+
+def estimate_cost_usd(model: str, usage: dict[str, Any]) -> float | None:
+    """Peak-price estimate for one call; ``None`` when the model has no price."""
+    price = price_for_model(model)
+    if price is None:
+        return None
     return (
         usage.get("input_tokens", 0) / 1e6 * price["input"]
         + usage.get("cache_read_input_tokens", 0) / 1e6 * price["cache_read"]
@@ -144,7 +218,13 @@ def aggregate_llm_metrics(metrics: list[dict[str, Any]]) -> dict[str, Any]:
     input_total = sum(int(metric["input_tokens"]) for metric in metrics)
     cache_total = sum(int(metric["cache_read_input_tokens"]) for metric in metrics)
     output_total = sum(int(metric["output_tokens"]) for metric in metrics)
-    cost = sum(float(metric["cost_usd_estimate"]) for metric in metrics)
+    # Calls without a known price contribute no cost; when NO call has one the
+    # totals stay None and the report renders “价格未知” instead of a fake 0.
+    costs = [
+        float(metric["cost_usd_estimate"])
+        for metric in metrics
+        if metric.get("cost_usd_estimate") is not None
+    ]
     error_types: dict[str, int] = {}
     for metric in metrics:
         for error in metric["validation_errors"]:
@@ -169,8 +249,8 @@ def aggregate_llm_metrics(metrics: list[dict[str, Any]]) -> dict[str, Any]:
         "cache_hit_ratio": round(cache_total / (cache_total + input_total), 4)
         if (cache_total + input_total)
         else 0.0,
-        "total_cost_usd_estimate": round(cost, 4),
-        "cost_per_message_usd_estimate": round(cost / total, 6),
+        "total_cost_usd_estimate": round(sum(costs), 4) if costs else None,
+        "cost_per_message_usd_estimate": round(sum(costs) / total, 6) if costs else None,
         "normalization_totals": normalization_totals,
     }
 
@@ -268,14 +348,6 @@ def request_hash(payload: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:32]
 
 
-def _tool_schema() -> dict[str, Any]:
-    return {
-        "name": FORCED_TOOL_NAME,
-        "description": "记录这条消息的意图识别结果",
-        "input_schema": IntentResult.model_json_schema(),
-    }
-
-
 class LLMIntentClient:
     """IntentClient over an Anthropic-format endpoint with forced tool calling."""
 
@@ -287,21 +359,33 @@ class LLMIntentClient:
         model: str,
         business_tz: ZoneInfo,
         mode: str = "live",
+        record: bool = False,
         recordings_dir: Path | None = None,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         max_tokens: int = DEFAULT_MAX_TOKENS,
         max_spend_usd: float | None = None,
+        recent_turns: int = 6,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         if not api_key:
             raise ValueError("api_key must not be empty")
         if mode not in {"live", "replay"}:
             raise ValueError("mode must be 'live' or 'replay'")
+        if max_spend_usd is not None and price_for_model(model) is None:
+            raise ValueError(
+                f"--max-spend-usd 需要已知价格，模型 {model!r} 不在计价表中；"
+                "请在 PEAK_PRICE_PER_MTOK 补充官方价或去掉预算上限"
+            )
+        if recent_turns < 0:
+            raise ValueError("recent_turns must be non-negative")
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.business_tz = business_tz
         self.mode = mode
+        # Recordings carry verbatim user quotes: only the evaluation CLI opts in.
+        self.record = record
+        self.recent_turns = recent_turns
         self.recordings_dir = (
             recordings_dir or Path("evals/intent/recordings") / PROMPT_VERSION
         )
@@ -327,6 +411,7 @@ class LLMIntentClient:
         settings: OrgPilotSettings,
         *,
         mode: str = "live",
+        record: bool = False,
         recordings_dir: Path | None = None,
         max_spend_usd: float | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
@@ -353,8 +438,10 @@ class LLMIntentClient:
             model=model,
             business_tz=settings.business_timezone,
             mode=mode,
+            record=record,
             recordings_dir=recordings_dir,
             max_spend_usd=max_spend_usd,
+            recent_turns=settings.intent_recent_turns,
             transport=transport,
         )
 
@@ -422,6 +509,7 @@ class LLMIntentClient:
                     + _error_summary(retry_errors)
                 )
 
+        cost = self._cost_of(usage) if self.mode == "live" else 0.0
         metric = {
             "prompt_version": PROMPT_VERSION,
             "model": self.model,
@@ -435,9 +523,7 @@ class LLMIntentClient:
             "degraded": degraded,
             "validation_errors": validation_errors,
             "normalization": normalization,
-            "cost_usd_estimate": round(
-                self._cost_of(usage) if self.mode == "live" else 0.0, 6
-            ),
+            "cost_usd_estimate": round(cost, 6) if cost is not None else None,
         }
         self.metrics.append(metric)
         logger.info("intent_llm_call %s", json.dumps(metric, ensure_ascii=False))
@@ -469,9 +555,10 @@ class LLMIntentClient:
         if degraded:
             body["system"] = (
                 FIXED_PROMPT_PREFIX
-                + "\n\n## 降级输出\n无法调用工具时，直接输出一个严格符合以下 JSON Schema 的"
-                "JSON 对象，不要输出任何其他文字：\n"
-                + json.dumps(IntentResult.model_json_schema(), ensure_ascii=False)
+                + "\n\n"
+                + DEGRADATION_INSTRUCTIONS.format(
+                    schema=json.dumps(IntentResult.model_json_schema(), ensure_ascii=False)
+                )
             )
         else:
             body["system"] = FIXED_PROMPT_PREFIX
@@ -511,9 +598,10 @@ class LLMIntentClient:
         confirmation = context.pending_confirmation
         if confirmation is not None:
             lines.append(f"待确认的同步卡片：发起人 {confirmation.initiated_by}")
-        if context.conversation_history:
+        if context.conversation_history and self.recent_turns > 0:
             lines.append(
-                "最近对话：\n" + "\n".join(context.conversation_history[-6:]),
+                "最近对话：\n"
+                + "\n".join(context.conversation_history[-self.recent_turns :]),
             )
         lines.append(f"本条消息：\n{message}")
         return "\n".join(lines)
@@ -554,17 +642,27 @@ class LLMIntentClient:
                 raise ReplayMissError(f"missing replay recording: {path}")
             record = json.loads(path.read_text(encoding="utf-8"))
             return record["response"], key
+        # Budget gate BEFORE sending: once the accumulated estimate has reached
+        # the cap, no further request leaves the process.
+        if self.max_spend_usd is not None and self.spent_usd >= self.max_spend_usd:
+            raise SpendLimitExceeded(
+                f"estimated live spend {self.spent_usd:.4f} USD has reached "
+                f"--max-spend-usd {self.max_spend_usd}; request not sent"
+            )
         response = await self._http.post("/v1/messages", json=body)
         response.raise_for_status()
         data = response.json()
-        self._save_recording(key, data)
+        if self.record:
+            self._save_recording(key, data)
         usage = data.get("usage", {}) or {}
-        self.spent_usd += self._cost_of(usage)
-        if self.max_spend_usd is not None and self.spent_usd > self.max_spend_usd:
-            raise SpendLimitExceeded(
-                f"estimated live spend {self.spent_usd:.4f} USD exceeded "
-                f"--max-spend-usd {self.max_spend_usd}"
-            )
+        cost = self._cost_of(usage)
+        if cost is not None:
+            self.spent_usd += cost
+            if self.max_spend_usd is not None and self.spent_usd > self.max_spend_usd:
+                raise SpendLimitExceeded(
+                    f"estimated live spend {self.spent_usd:.4f} USD exceeded "
+                    f"--max-spend-usd {self.max_spend_usd}; stopping"
+                )
         return data, key
 
     def _save_recording(self, key: str, data: dict[str, Any]) -> None:

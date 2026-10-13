@@ -705,6 +705,7 @@ async def test_llm_client_live_then_replay_on_mini_dataset(
             model="deepseek-flash",
             business_tz=ZoneInfo("Asia/Shanghai"),
             mode=mode,
+            record=(mode == "live"),  # the eval CLI records live runs only (3b.1)
             recordings_dir=tmp_path / "recordings",
             transport=transport,
         )
@@ -761,3 +762,135 @@ def test_run_intent_eval_limit_slices_samples(mini_dataset_dir: Path, tmp_path: 
         )
     )
     assert metrics.total_samples == 2
+
+
+def _write_three_conversations(mini_dataset_dir: Path) -> None:
+    scripts = [
+        {
+            "id": f"conv_budget_{index}",
+            "occurred_at_base": "2026-11-18T10:00:00+08:00",
+            "turns": [
+                {
+                    "sender": "ou_alice",
+                    "message": f"第{index}条：后端接口我这边还在推进",
+                    "expected": {"behavior": {"reply_category": "smalltalk"}},
+                }
+            ],
+        }
+        for index in range(1, 4)
+    ]
+    (mini_dataset_dir / "conversations.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": 1,
+                "dataset_id": "mini_conversations",
+                "conversations": scripts,
+            },
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_cli_conversation_budget_abort_sends_one_request(
+    mini_dataset_dir: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """3b.1 §1 regression: with a $0.01 budget and per-call costs far above it,
+    running 3 conversations sends exactly ONE request and then aborts with
+    超出预算中止 — it must NOT "finish" the run on fallback replies (the old
+    behavior burned 12 calls / $5.04 and reported 0/3 as if nothing happened)."""
+    import sys
+
+    import httpx as httpx_module
+
+    from orgpilot.intent import llm_client as llm_client_module
+
+    _write_three_conversations(mini_dataset_dir)
+    http_calls = 0
+
+    def handler(_request: httpx_module.Request) -> httpx_module.Response:
+        nonlocal http_calls
+        http_calls += 1
+        return httpx_module.Response(
+            200,
+            json={
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "t1",
+                        "name": "record_intent",
+                        "input": {
+                            "reasoning": "状态汇报",
+                            "items": [
+                                {
+                                    "intent": "report_status",
+                                    "task_id": "backend_api",
+                                    "speech_act": "statement",
+                                    "polarity": "affirmative",
+                                    "certainty": "certain",
+                                    "health_status": "on_track",
+                                    "source_quote": "后端接口我这边还在推进",
+                                    "confidence": 0.9,
+                                }
+                            ],
+                            "answers_pending": False,
+                        },
+                    }
+                ],
+                "stop_reason": "tool_use",
+                "model": "deepseek-flash",
+                # ~$0.016 per call at official peak prices: one call alone
+                # blows the $0.01 budget
+                "usage": {
+                    "input_tokens": 50_000,
+                    "output_tokens": 900,
+                    "cache_read_input_tokens": 0,
+                },
+            },
+        )
+
+    def fake_from_settings(cls, settings, **kwargs):
+        kwargs.pop("transport", None)
+        return llm_client_module.LLMIntentClient(
+            api_key="test-key",
+            base_url="https://api.deepseek.test",
+            model=settings.deepseek_model,
+            business_tz=settings.business_timezone,
+            recent_turns=settings.intent_recent_turns,
+            transport=httpx_module.MockTransport(handler),
+            **kwargs,
+        )
+
+    monkeypatch.setenv("ORGPILOT_LLM_PROVIDER", "deepseek")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    monkeypatch.chdir(tmp_path)  # keep recording files out of the repository
+    monkeypatch.setattr(
+        llm_client_module.LLMIntentClient,
+        "from_settings",
+        classmethod(fake_from_settings),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "orgpilot",
+            "eval-intent",
+            "--conversations",
+            "--client",
+            "llm",
+            "--live",
+            "--confirm-spend",
+            "--max-spend-usd",
+            "0.01",
+            "--dataset-dir",
+            str(mini_dataset_dir),
+            "--report-dir",
+            str(tmp_path / "reports"),
+        ],
+    )
+    assert main() == 1
+    assert "超出预算中止" in capsys.readouterr().out
+    assert http_calls == 1

@@ -4,6 +4,8 @@ import uuid
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from orgpilot.adapter.mock import MockCollaborationAdapter
 from orgpilot.domain.enums import ProbeMemberStatus
 from orgpilot.feishu.client import MockFeishuClient
@@ -213,7 +215,9 @@ async def test_help_and_unknown_commands_return_help_text() -> None:
         await db.close()
 
 
-async def test_classify_failure_retries_then_falls_back_without_state_change() -> None:
+async def test_classify_failure_falls_back_without_retry() -> None:
+    """Non-transient failures get NO router retry: the LLM client already
+    retried validation internally; repeating a protocol error is waste (3b.1)."""
     router, service, _adapter, db = await _make_router(
         ScriptedIntentClient(responses={"报错": RuntimeError("boom")})
     )
@@ -224,11 +228,51 @@ async def test_classify_failure_retries_then_falls_back_without_state_change() -
         assert outcome.reply_text == "没理解，可以换个说法吗？也可以发送 /帮助 查看用法"
         scripted = router.intent_client
         assert isinstance(scripted, ScriptedIntentClient)
-        assert len(scripted.calls) == 2  # exactly one retry
+        assert len(scripted.calls) == 1  # transient errors only are retried
         events = await service.event_store.get_events(PROJECT)
         assert len(events) == len(_setup_events())
     finally:
         await db.close()
+
+
+async def test_transient_failure_is_retried_once() -> None:
+    router, _service, _adapter, db = await _make_router(
+        ScriptedIntentClient(responses={"报错": TimeoutError("slow provider")})
+    )
+    try:
+        outcome = await _send(router, "报错")
+        assert outcome.msg == "fallback"
+        scripted = router.intent_client
+        assert isinstance(scripted, ScriptedIntentClient)
+        assert len(scripted.calls) == 2  # exactly one retry for a transient error
+    finally:
+        await db.close()
+
+
+async def test_infrastructure_error_is_neither_retried_nor_degraded() -> None:
+    from orgpilot.intent.llm_client import (
+        IntentInfrastructureError,
+        ReplayMissError,
+        SpendLimitExceeded,
+    )
+
+    assert issubclass(ReplayMissError, IntentInfrastructureError)
+    assert issubclass(SpendLimitExceeded, IntentInfrastructureError)
+    for infrastructure_failure in (
+        ReplayMissError("missing replay recording: x"),
+        SpendLimitExceeded("budget gone"),
+    ):
+        router, _service, _adapter, db = await _make_router(
+            ScriptedIntentClient(responses={"报错": infrastructure_failure})
+        )
+        try:
+            with pytest.raises(IntentInfrastructureError):
+                await _send(router, "报错")
+            scripted = router.intent_client
+            assert isinstance(scripted, ScriptedIntentClient)
+            assert len(scripted.calls) == 1  # loud failure: no retry, no fallback
+        finally:
+            await db.close()
 
 
 async def test_invalid_intent_output_type_falls_back() -> None:

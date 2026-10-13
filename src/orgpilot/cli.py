@@ -161,11 +161,18 @@ def _prepare_llm_client(gate_args: Any) -> Any:
         raise SystemExit(str(exc)) from exc
     if gate_args.live and not gate_args.confirm_spend:
         raise SystemExit("在线运行必须显式传入 --confirm-spend（会产生费用）")
-    return LLMIntentClient.from_settings(
-        settings,
-        mode="live" if gate_args.live else "replay",
-        max_spend_usd=gate_args.max_spend_usd,
-    )
+    try:
+        return LLMIntentClient.from_settings(
+            settings,
+            mode="live" if gate_args.live else "replay",
+            # Only evaluation runs record; live runs capture responses for
+            # free --replay reruns of the same prompt version.
+            record=gate_args.live,
+            max_spend_usd=gate_args.max_spend_usd,
+        )
+    except ValueError as exc:
+        # includes the unknown-model-price rejection for --max-spend-usd
+        raise SystemExit(str(exc)) from exc
 
 
 def _print_llm_stats(stats: dict[str, Any]) -> None:
@@ -182,10 +189,15 @@ def _print_llm_stats(stats: dict[str, Any]) -> None:
     )
     print(
         f"      tokens/message in {stats['avg_input_tokens']} "
-        f"(cache {stats['avg_cache_read_tokens']}) out {stats['avg_output_tokens']}, "
-        f"cost ~${stats['total_cost_usd_estimate']:.4f} "
-        f"(${stats['cost_per_message_usd_estimate']:.6f}/msg)"
+        f"(cache {stats['avg_cache_read_tokens']}) out {stats['avg_output_tokens']}"
     )
+    if stats.get("total_cost_usd_estimate") is None:
+        print("      cost 价格未知（模型不在计价表，费用未估算）")
+    else:
+        print(
+            f"      cost ~${stats['total_cost_usd_estimate']:.4f} "
+            f"(${stats['cost_per_message_usd_estimate']:.6f}/msg)"
+        )
     if stats["validation_error_types"]:
         print(f"      validation errors: {stats['validation_error_types']}")
     if stats["normalization_totals"]:
