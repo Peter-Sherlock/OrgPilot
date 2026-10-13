@@ -179,6 +179,18 @@
 5. **评测运行器**：eval-intent（单条与对话）新增 `--client llm`，在线需 `--live --confirm-spend` + 对应 key，否则必须 `--replay`；`--limit N`、`--max-spend-usd`（官方高峰价常数表估算，超出立即中止）；报告新增 llm_stats：schema 一次通过率、重试率、降级率、校验错误类型分布、延迟 p50/p95、每条消息 token 与费用、缓存命中占比；
 6. **兼容性脚本顺手修复**：token 统计加入 cache_read_input_tokens；两个结构化探针记录每次校验失败的 loc+type（上限 50 条）。
 
+### 第 3b.1 步（2026-10-13，分支 `feat/intent-router`）：预算闸门、录制边界、计费与重试修正 + §8 意图层指标
+
+1. **预算闸门真正生效**：`_exchange` 在发出请求前检查累计估算——已花费 ≥ `--max-spend-usd` 直接抛 `SpendLimitExceeded`，请求不再发出；单次调用把累计推过上限也立即中止。回归测试复现旧缺陷（预算 $0.01、单次调用约 $0.016，跑 3 段对话：旧实现发出 12 次调用、估算 $5.04、评测"正常结束"0/3；现在只发 1 次调用，CLI 返回非 0 并打印「超出预算中止」）。
+2. **基础设施错误基类**：新增 `IntentInfrastructureError`，`ReplayMissError`（兼作 FileNotFoundError）与 `SpendLimitExceeded` 继承它；router 对该基类一律上抛——不重试、不降级。评测基础设施损坏或预算耗尽时必须响亮失败，而不是静默产出一份无意义的 0/N 报告。
+3. **router 重试语义收紧**：`LLMIntentError`（客户端内部已带错误摘要重试过一次校验）到达 router 后直接降级；router 只对瞬时错误重试一次——超时、连接错误（httpx.TransportError）、HTTP 429/5xx。校验连续失败时每条消息最多 3 次 HTTP 调用（首次 + 校验重试 + 无 tool_use 时的降级调用），全部来自客户端内部，router 不再叠加。
+4. **运行时不写录制**：`LLMIntentClient` 新增 `record` 开关（默认关闭），仅评测 CLI 在 `--live` 时显式开启（`--replay` 永远只读）；`from_settings` / `default_intent_client`（运行时路径）永不写录制——录制里的 `source_quote` 是用户原话，运行时写入未被 gitignore 的 `evals/intent/recordings/` 会把团队真实消息带进仓库。
+5. **计费表更新为官方价**：deepseek-flash 高峰价（USD / 百万 token）input 0.30、cache_read 0.006、output 1.20（来源 https://api-docs.deepseek.com/quick_start/pricing ，2026-10 核对）；未知模型不再默认套用 DeepSeek 价——聚合与报告标注"价格未知"，设置 `--max-spend-usd` 且价格未知时拒绝运行。
+6. **PROMPT_VERSION 覆盖完整提示词**：改为对（固定前缀 + 工具 schema JSON + 动态内容模板版本常量 + 降级说明）整体哈希；修改任何字段 description、模板或降级文案必然换版本，录制目录随之隔离。
+7. **提示词小修**：health 规则第 1 条由"delayed 必须给出 blocker"改为"消息里提到原因时填写 blocker，尽量使用原文；没提到就留空，不要推测"；最近对话轮数改用 `ORGPILOT_INTENT_RECENT_TURNS`（不再写死 6）；承诺示例换句式（「支付对账脚本我这周内一定补完」），避免与 dev 集样本句式接近。旧 prompt 版本遗留的冒烟录制目录已删除，不入库；入库规则：只提交报告所引用 prompt 版本的录制。
+8. **§8 意图层指标落地**（此前 `intent_metrics` 恒为 None）：`RecordingIntentClient` 透明包装 oracle / llm 客户端记录每条样本的 `IntentResult`（预护栏，不改路由逻辑）；新增 `intent/metrics.py` 计算——样本级意图集合完全匹配率、各意图 precision / recall / F1 与 macro-F1（只统计该 split 中出现的意图）、answers_pending 准确率、匹配条目的 speech_act / polarity / certainty / task_id 准确率、期望→实际混淆表（按 task_id 对齐、位置兜底，刻意独立于意图匹配，跨意图混淆保持可见）；失败样本列表附模型实际输出（条目、正交属性、health、时间、answers_pending、reasoning）。自检：oracle 模式下 mini 集全部意图指标必须且实测 100%。
+9. **§9 报告显示**：分母为 0 的指标显示"—"而非 0%（claim P/R、task_id 准确率、错误 claim 率、同步误触发率、回复类别准确率、多轮补全成功率、按类别 claim P/R——CategoryStats 增加 observed/expected claims 分母字段）；"baseline 无意图层"的说明只在 baseline 系统的报告中出现，layered 报告未采集时标注"未采集（--intent oracle 或 --client llm 时记录）"。
+
 ### 第 3a.2 步（2026-10-12，分支 `feat/intent-router`）：追问次数封顶，mock 模式下探针能收敛
 
 1. **追问总上限**：`PendingClarification` 新增 `reask_count`（因换话题而重新追问的计数），与 `asked_rounds`（追问后收到回答的轮数）分开计数。换话题重新追问最多 `ORGPILOT_MAX_TOPIC_REASKS`（默认 1）次，超过后回复不再附带追问（按新话题正常回复），待回答状态保留；`asked_rounds + reask_count` 达到 `max_clarification_rounds + max_topic_reasks`（默认 3+1=4）时**停止追问**——probe 来源经 `notify_probe_finished(complete=False, note="信息不全")` 通知协调器（与"多轮追问后仍不完整"同一处理），clarify 来源直接清除；

@@ -1,5 +1,46 @@
 # 开发记录
 
+## 2026-10-13：第 3b.1 步——修复预算闸门、运行时录制、计费与重试 + §8 意图层指标（分支 `feat/intent-router`）
+
+### 已实现（按部分提交）
+
+- **commit A（bdc4218）预算闸门 / 录制边界 / 计费 / 提示词**：
+  - 预算闸门前置：发请求前累计估算 ≥ `--max-spend-usd` 直接抛 `SpendLimitExceeded` 不再发出请求；调用后超限立即中止。回归：预算 $0.01 + 单次 $0.016 跑 3 段对话 → 旧实现 12 次调用 / $5.04 / "正常结束" 0/3，现在 1 次调用 + CLI 返回非 0 打印「超出预算中止」；
+  - 新增 `IntentInfrastructureError` 基类，`ReplayMissError`（兼作 FileNotFoundError）与 `SpendLimitExceeded` 继承；router 对该基类一律上抛（不重试、不降级）；
+  - router 只对瞬时错误（超时 / 连接错误 / HTTP 429 与 5xx）重试一次；`LLMIntentError`（客户端已重试过校验）直接降级——连续失败时每条消息最多 3 次 HTTP 调用，全部来自客户端内部；
+  - `LLMIntentClient` 新增 `record` 开关（默认关闭）：仅评测 CLI `--live` 显式开启录制；运行时路径（`from_settings` / `default_intent_client`）永不写录制，用户原话不进仓库；冒烟遗留的旧版本录制目录已删除；
+  - 计费表更新为官方高峰价（deepseek-flash：input 0.30 / cache_read 0.006 / output 1.20 USD 每百万 token，2026-10 核对）；未知模型按"价格未知"处理，设 `--max-spend-usd` 且价格未知时拒绝运行；
+  - `PROMPT_VERSION` 改为哈希（固定前缀 + 工具 schema + 动态模板版本常量 + 降级说明），改任何字段 description 都会换版本；提示词小修：blocker 不推测（提到原因才填、尽量原文）、最近对话轮数用 `ORGPILOT_INTENT_RECENT_TURNS`、承诺示例换句式避免与 dev 集雷同。
+- **commit B（本次）§8 意图层指标 + §9 报告显示**：
+  - `RecordingIntentClient` 透明包装 oracle / llm 客户端，记录每条样本的 `IntentResult`（预护栏，不改路由逻辑）；新增 `intent/metrics.py`：意图集合完全匹配率、各意图 P/R/F1 + macro-F1（仅出现的意图）、answers_pending 准确率、匹配条目四项属性准确率、期望→实际混淆表（task_id 对齐、位置兜底）；失败样本附模型实际输出；
+  - oracle 自检：mini 集（6 条）全部意图指标 100%（测试固化）；单条与 CLI `--intent oracle` / `--client llm` 均已接线，报告新增「意图层指标」章节与混淆表；
+  - §9：分母为 0 显示"—"不显示 0%；「baseline 无意图层」说明只在 baseline 报告出现。
+
+### 自检与验收
+
+```text
+orgpilot replay --all: 9/9 PASS
+pytest: 321 passed, coverage 90.76% (fail_under=90)
+ruff: All checks passed
+git diff --check: PASS
+test.yaml 未修改（frozen-hash 测试通过）；测试全部离线（MockTransport / replay / mock）；未 push
+```
+
+### 在线评测运行命令（留给用户；价格按新计费表估算）
+
+```powershell
+$env:ORGPILOT_LLM_PROVIDER = "deepseek"
+$env:DEEPSEEK_API_KEY = "<你的 key>"
+# ① 冒烟（10 条，schema 一次通过率 < 90% 停下汇报）
+uv run orgpilot eval-intent --split dev --client llm --live --confirm-spend --limit 10 --max-spend-usd 0.5
+# ② 完整 dev 集（报告含意图层指标 + 混淆表 + 失败样本模型输出）
+uv run orgpilot eval-intent --split dev --client llm --live --confirm-spend --max-spend-usd 2
+# ③ 全部对话评测
+uv run orgpilot eval-intent --conversations --client llm --live --confirm-spend --max-spend-usd 2
+```
+
+---
+
 ## 2026-10-12：第 3b 步（上半）——LLMIntentClient 接入 DeepSeek，跑第一次 dev 评测（分支 `feat/intent-router`）
 
 ### 已实现（按部分提交）
