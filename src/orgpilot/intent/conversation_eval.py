@@ -8,6 +8,7 @@ conversation passes.
 """
 
 import json
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -444,12 +445,14 @@ def write_conversation_reports(
     results: list[ConversationRunResult],
     report_dir: Path,
     title_suffix: str | None = None,
+    llm_stats: dict[str, Any] | None = None,
 ) -> tuple[Path, Path]:
     report_dir.mkdir(parents=True, exist_ok=True)
     json_path = report_dir / "report-conversations-mock.json"
     markdown_path = report_dir / "report-conversations-mock.md"
     payload = {
         "title_suffix": title_suffix,
+        "llm_stats": llm_stats,
         "conversations": [
             {
                 "script_id": result.script_id,
@@ -483,13 +486,20 @@ async def run_conversation_eval(
     project: IntentProjectFixture,
     intent_client: IntentClient,
     title_suffix: str | None = None,
+    limit: int | None = None,
+    llm_stats_provider: Callable[[], dict[str, Any]] | None = None,
 ) -> tuple[int, int, list[ConversationRunResult]]:
     """Runs every conversation; returns (passed, total, results)."""
     conversations = load_conversations(conversations_path)
+    if limit is not None:
+        conversations = conversations[:limit]
     system = ConversationSystemUnderTest(project, intent_client)
     results: list[ConversationRunResult] = []
     for script in conversations:
         results.append(await system.run(script))
-    write_conversation_reports(results, report_dir, title_suffix=title_suffix)
+    llm_stats = llm_stats_provider() if llm_stats_provider is not None else None
+    write_conversation_reports(
+        results, report_dir, title_suffix=title_suffix, llm_stats=llm_stats
+    )
     passed = sum(1 for result in results if result.passed)
     return passed, len(results), results

@@ -10,6 +10,7 @@ has no intent layer, so intent-level metrics are reported as N/A.
 """
 
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -944,6 +945,7 @@ def render_markdown_report(
     metrics: IntentEvalMetrics,
     failures: list[SampleComparison],
     title_suffix: str | None = None,
+    llm_stats: dict[str, Any] | None = None,
 ) -> str:
     lines: list[str] = []
     title = f"# 意图行为评测报告（split={split}, mode={mode}）"
@@ -994,6 +996,19 @@ def render_markdown_report(
             f"{stats.claim_precision:.0%} | {stats.claim_recall:.0%} |"
         )
     lines.append("")
+    if llm_stats:
+        lines.append("## LLM 调用统计")
+        lines.append("")
+        lines.append("| 指标 | 值 |")
+        lines.append("|---|---|")
+        for key, value in llm_stats.items():
+            if isinstance(value, float):
+                lines.append(f"| {key} | {value:.4f} |")
+            elif isinstance(value, dict):
+                lines.append(f"| {key} | {json.dumps(value, ensure_ascii=False)} |")
+            else:
+                lines.append(f"| {key} | {value} |")
+        lines.append("")
     lines.append(f"## 失败样本（{len(failures)} 条）")
     lines.append("")
     for failure in failures:
@@ -1019,6 +1034,7 @@ def write_reports(
     failures: list[SampleComparison],
     report_dir: Path,
     title_suffix: str | None = None,
+    llm_stats: dict[str, Any] | None = None,
 ) -> tuple[Path, Path]:
     report_dir.mkdir(parents=True, exist_ok=True)
     json_path = report_dir / f"report-{split}-{mode}.json"
@@ -1040,9 +1056,14 @@ def write_reports(
             for failure in failures
         ],
     }
+    if llm_stats is not None:
+        payload["llm_stats"] = llm_stats
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     markdown_path.write_text(
-        render_markdown_report(split, mode, metrics, failures, title_suffix), encoding="utf-8"
+        render_markdown_report(
+            split, mode, metrics, failures, title_suffix, llm_stats=llm_stats
+        ),
+        encoding="utf-8",
     )
     return json_path, markdown_path
 
@@ -1057,6 +1078,8 @@ async def run_intent_eval(
     report_dir: Path,
     system: IntentSystemUnderTest | None = None,
     title_suffix: str | None = None,
+    limit: int | None = None,
+    llm_stats_provider: Callable[[], dict[str, Any]] | None = None,
 ) -> tuple[IntentEvalMetrics, list[SampleComparison]]:
     """Loads the dataset, runs the system under test, and writes both reports."""
     project = load_intent_project(dataset_dir / "project.yaml")
@@ -1066,6 +1089,8 @@ async def run_intent_eval(
         raise ValueError(
             "dataset inconsistent with project fixture: " + "; ".join(validation_issues)
         )
+    if limit is not None:
+        samples = samples[:limit]
 
     if system is None:
         if mode != "mock":
@@ -1082,7 +1107,10 @@ async def run_intent_eval(
 
     metrics = compute_metrics(comparisons)
     failures = [c for c in comparisons if not c.passed]
-    write_reports(split, mode, metrics, failures, report_dir, title_suffix=title_suffix)
+    llm_stats = llm_stats_provider() if llm_stats_provider is not None else None
+    write_reports(
+        split, mode, metrics, failures, report_dir, title_suffix=title_suffix, llm_stats=llm_stats
+    )
     return metrics, failures
 
 

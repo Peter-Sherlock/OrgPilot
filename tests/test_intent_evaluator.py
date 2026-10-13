@@ -1,5 +1,6 @@
 """Evaluator logic tests on a mini dataset run through the real baseline SUT."""
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -550,3 +551,213 @@ def test_cli_eval_conversations_heuristic_gate_fails_when_conv_01_fails(
         ],
     )
     assert main() == 1
+
+
+def _llm_cli_args(extra: list[str]) -> list[str]:
+    return [
+        "orgpilot",
+        "eval-intent",
+        "--split",
+        "dev",
+        "--client",
+        "llm",
+        "--dataset-dir",
+        "evals/intent",
+        "--report-dir",
+        "reports-unused",
+        *extra,
+    ]
+
+
+def test_cli_llm_client_gates(
+    mini_dataset_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+
+    monkeypatch.setenv("ORGPILOT_LLM_PROVIDER", "deepseek")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    base = ["--dataset-dir", str(mini_dataset_dir), "--report-dir", "reports-unused"]
+
+    with pytest.raises(SystemExit, match="--live"):
+        monkeypatch.setattr(sys, "argv", ["orgpilot", "eval-intent", "--client", "llm", *base])
+        main()
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["orgpilot", "eval-intent", "--client", "llm", "--live", *base],
+    )
+    with pytest.raises(SystemExit, match="--confirm-spend"):
+        main()
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "orgpilot",
+            "eval-intent",
+            "--client",
+            "llm",
+            "--replay",
+            "--intent",
+            "oracle",
+            "--system",
+            "layered",
+            *base,
+        ],
+    )
+    with pytest.raises(SystemExit, match="oracle"):
+        main()
+
+    monkeypatch.delenv("DEEPSEEK_API_KEY")
+    monkeypatch.setattr(
+        sys, "argv", ["orgpilot", "eval-intent", "--client", "llm", "--replay", *base]
+    )
+    with pytest.raises(SystemExit, match="DEEPSEEK_API_KEY"):
+        main()
+
+
+def test_cli_llm_replay_without_recordings_fails_cleanly(
+    mini_dataset_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import sys
+
+    monkeypatch.setenv("ORGPILOT_LLM_PROVIDER", "deepseek")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "orgpilot",
+            "eval-intent",
+            "--split",
+            "dev",
+            "--client",
+            "llm",
+            "--replay",
+            "--dataset-dir",
+            str(mini_dataset_dir),
+            "--report-dir",
+            "reports-unused",
+        ],
+    )
+    assert main() == 1
+    assert "missing replay recording" in capsys.readouterr().out
+
+
+async def test_llm_client_live_then_replay_on_mini_dataset(
+    mini_dataset_dir: Path, tmp_path: Path
+) -> None:
+    """Live run records; the replay run reproduces the same metrics offline."""
+    import json as json_module
+    from zoneinfo import ZoneInfo
+
+    import httpx
+
+    from orgpilot.intent.llm_client import (
+        LLMIntentClient,
+        aggregate_llm_metrics,
+    )
+    from orgpilot.intent.models import IntentResult
+
+    tool_input = {
+        "reasoning": "含糊表达，按风险处理",
+        "items": [
+            {
+                "intent": "report_status",
+                "task_id": "backend_api",
+                "speech_act": "statement",
+                "polarity": "affirmative",
+                "certainty": "hedged",
+                "health_status": "at_risk",
+                "source_quote": "支付SDK报错卡住了",
+                "confidence": 0.8,
+            }
+        ],
+        "answers_pending": False,
+    }
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "t1",
+                        "name": "record_intent",
+                        "input": tool_input,
+                    }
+                ],
+                "stop_reason": "tool_use",
+                "model": "deepseek-flash",
+                "usage": {"input_tokens": 500, "output_tokens": 80, "cache_read_input_tokens": 400},
+            },
+        )
+
+    def _system(mode: str, transport) -> tuple:
+        client = LLMIntentClient(
+            api_key="k",
+            base_url="https://x.test",
+            model="deepseek-flash",
+            business_tz=ZoneInfo("Asia/Shanghai"),
+            mode=mode,
+            recordings_dir=tmp_path / "recordings",
+            transport=transport,
+        )
+        project = load_intent_project(mini_dataset_dir / "project.yaml")
+        return LayeredSystemUnderTest(project, client), client
+
+    live_system, live_client = _system(
+        "live", httpx.MockTransport(handler)
+    )
+    metrics, _failures = await run_intent_eval(
+        split="dev",
+        mode="llm-live",
+        dataset_dir=mini_dataset_dir,
+        report_dir=tmp_path / "live-reports",
+        system=live_system,
+        title_suffix="llm live",
+        limit=3,
+        llm_stats_provider=lambda: aggregate_llm_metrics(live_client.metrics),
+    )
+    assert metrics.total_samples == 3
+    report = json_module.loads(
+        (tmp_path / "live-reports" / "report-dev-llm-live.json").read_text(encoding="utf-8")
+    )
+    assert report["llm_stats"]["call_count"] == 3
+    assert report["llm_stats"]["first_pass_rate"] == 1.0
+    assert report["llm_stats"]["cache_hit_ratio"] > 0
+    assert IntentResult.model_validate(tool_input) is not None
+
+    def _no_http(_request: httpx.Request) -> httpx.Response:
+        raise AssertionError("replay must not hit the network")
+
+    replay_system, replay_client = _system("replay", httpx.MockTransport(_no_http))
+    replay_metrics, _ = await run_intent_eval(
+        split="dev",
+        mode="llm-replay",
+        dataset_dir=mini_dataset_dir,
+        report_dir=tmp_path / "replay-reports",
+        system=replay_system,
+        title_suffix="llm replay",
+        limit=3,
+        llm_stats_provider=lambda: aggregate_llm_metrics(replay_client.metrics),
+    )
+    assert replay_metrics.model_dump() == metrics.model_dump()
+
+
+def test_run_intent_eval_limit_slices_samples(mini_dataset_dir: Path, tmp_path: Path) -> None:
+    metrics, _ = asyncio.run(
+        run_intent_eval(
+            split="dev",
+            mode="mock",
+            dataset_dir=mini_dataset_dir,
+            report_dir=tmp_path / "reports",
+            limit=2,
+        )
+    )
+    assert metrics.total_samples == 2

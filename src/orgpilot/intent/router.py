@@ -535,6 +535,8 @@ class MessageRouter:
         self, message: str, context: IntentContext
     ) -> IntentResult | None:
         """One classify attempt plus exactly one retry on failure/invalid output."""
+        from orgpilot.intent.llm_client import ReplayMissError
+
         last_error: Exception | None = None
         for attempt in range(2):
             try:
@@ -544,6 +546,10 @@ class MessageRouter:
                     context,
                     self.settings.intent_timeout_seconds,
                 )
+            except ReplayMissError:
+                # A missing recording is an infrastructure failure, not a model
+                # failure: failing loudly beats silently replaying fallbacks.
+                raise
             except Exception as exc:  # includes asyncio.TimeoutError
                 last_error = exc
                 logger.warning(

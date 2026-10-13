@@ -27,6 +27,7 @@ retry/degradation flags, validation errors, and normalization counts.
 import hashlib
 import json
 import logging
+import math
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -108,6 +109,14 @@ class LLMIntentError(RuntimeError):
     """The LLM could not produce a schema-valid IntentResult after the retry."""
 
 
+class ReplayMissError(FileNotFoundError):
+    """Replay mode had no recording for a request — an infrastructure failure.
+
+    Subclasses FileNotFoundError so CLI handlers can catch either; the router
+    deliberately re-raises it instead of degrading to the fallback reply.
+    """
+
+
 class SpendLimitExceeded(RuntimeError):
     """The estimated live-call cost exceeded --max-spend-usd."""
 
@@ -119,6 +128,51 @@ def estimate_cost_usd(model: str, usage: dict[str, Any]) -> float:
         + usage.get("cache_read_input_tokens", 0) / 1e6 * price["cache_read"]
         + usage.get("output_tokens", 0) / 1e6 * price["output"]
     )
+
+
+def aggregate_llm_metrics(metrics: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregates per-classify CallMetric dicts for the evaluation reports."""
+    total = len(metrics)
+    if not total:
+        return {"call_count": 0}
+    latencies = sorted(float(metric["latency_ms"]) for metric in metrics)
+
+    def _pct(percent: float) -> float:
+        rank = max(1, math.ceil(percent / 100 * len(latencies)))
+        return latencies[rank - 1]
+
+    input_total = sum(int(metric["input_tokens"]) for metric in metrics)
+    cache_total = sum(int(metric["cache_read_input_tokens"]) for metric in metrics)
+    output_total = sum(int(metric["output_tokens"]) for metric in metrics)
+    cost = sum(float(metric["cost_usd_estimate"]) for metric in metrics)
+    error_types: dict[str, int] = {}
+    for metric in metrics:
+        for error in metric["validation_errors"]:
+            error_types[error["type"]] = error_types.get(error["type"], 0) + 1
+    normalizers = metrics[0].get("normalization", {})
+    normalization_totals = {
+        key: sum(int(metric.get("normalization", {}).get(key, 0)) for metric in metrics)
+        for key in normalizers
+    }
+    return {
+        "call_count": total,
+        "first_pass_rate": sum(1 for m in metrics if not m["retried"] and not m["degraded"])
+        / total,
+        "retry_rate": sum(1 for m in metrics if m["retried"]) / total,
+        "degraded_rate": sum(1 for m in metrics if m["degraded"]) / total,
+        "validation_error_types": error_types,
+        "latency_p50_ms": round(_pct(50), 1),
+        "latency_p95_ms": round(_pct(95), 1),
+        "avg_input_tokens": round(input_total / total, 1),
+        "avg_output_tokens": round(output_total / total, 1),
+        "avg_cache_read_tokens": round(cache_total / total, 1),
+        "cache_hit_ratio": round(cache_total / (cache_total + input_total), 4)
+        if (cache_total + input_total)
+        else 0.0,
+        "total_cost_usd_estimate": round(cost, 4),
+        "cost_per_message_usd_estimate": round(cost / total, 6),
+        "normalization_totals": normalization_totals,
+    }
 
 
 def validate_intent_payload(payload: Any) -> tuple[IntentResult | None, list[dict[str, str]]]:
@@ -497,7 +551,7 @@ class LLMIntentClient:
         if self.mode == "replay":
             path = self.recordings_dir / f"{key}.json"
             if not path.exists():
-                raise FileNotFoundError(f"missing replay recording: {path}")
+                raise ReplayMissError(f"missing replay recording: {path}")
             record = json.loads(path.read_text(encoding="utf-8"))
             return record["response"], key
         response = await self._http.post("/v1/messages", json=body)

@@ -303,3 +303,42 @@ def test_from_settings_and_config_validation(tmp_path: Path) -> None:
         OrgPilotSettings(intent_client="oracle").validate()
     with pytest.raises(ValueError, match="ORGPILOT_INTENT_CLIENT=llm requires"):
         OrgPilotSettings(intent_client="llm", llm_provider="mock").validate()
+
+
+def test_aggregate_llm_metrics_rates_costs_and_errors() -> None:
+    from orgpilot.intent.llm_client import aggregate_llm_metrics
+
+    base = {
+        "prompt_version": "v1",
+        "model": "deepseek-flash",
+        "mode": "live",
+        "stop_reason": "tool_use",
+        "normalization": {"unknown_fields_dropped": 1, "naive_datetimes_fixed": 0},
+    }
+    metrics = [
+        {**base, "latency_ms": 100, "input_tokens": 100, "cache_read_input_tokens": 900,
+         "output_tokens": 50, "retried": False, "degraded": False,
+         "validation_errors": [], "cost_usd_estimate": 0.001},
+        {**base, "latency_ms": 300, "input_tokens": 200, "cache_read_input_tokens": 0,
+         "output_tokens": 60, "retried": True, "degraded": False,
+         "validation_errors": [{"loc": "items.0.health_status", "type": "enum"}],
+         "cost_usd_estimate": 0.002},
+        {**base, "latency_ms": 200, "input_tokens": 0, "cache_read_input_tokens": 0,
+         "output_tokens": 70, "retried": False, "degraded": True,
+         "validation_errors": [], "cost_usd_estimate": 0.0},
+    ]
+    stats = aggregate_llm_metrics(metrics)
+    assert stats["call_count"] == 3
+    assert stats["first_pass_rate"] == pytest.approx(1 / 3)
+    assert stats["retry_rate"] == pytest.approx(1 / 3)
+    assert stats["degraded_rate"] == pytest.approx(1 / 3)
+    assert stats["validation_error_types"] == {"enum": 1}
+    assert stats["cache_hit_ratio"] == pytest.approx(round(900 / 1200, 4))
+    assert stats["total_cost_usd_estimate"] == pytest.approx(0.003)
+    assert stats["latency_p50_ms"] == 200
+    assert stats["latency_p95_ms"] == 300
+    assert stats["normalization_totals"] == {
+        "unknown_fields_dropped": 3,
+        "naive_datetimes_fixed": 0,
+    }
+    assert aggregate_llm_metrics([]) == {"call_count": 0}

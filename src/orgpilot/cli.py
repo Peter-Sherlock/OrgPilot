@@ -2,6 +2,8 @@
 
 import argparse
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 from orgpilot.extraction.evaluator import evaluate_extractor, load_gold_dataset
 from orgpilot.extraction.extractor import ClaimExtractor
@@ -37,6 +39,30 @@ def _build_parser() -> argparse.ArgumentParser:
         "--system", choices=["baseline", "layered"], default="baseline"
     )
     intent_eval.add_argument("--intent", choices=["heuristic", "oracle"], default="heuristic")
+    intent_eval.add_argument(
+        "--client", choices=["heuristic", "llm"], default="heuristic",
+        help="heuristic keeps the mock pipeline; llm uses the DeepSeek/AIHubMix client (3b)",
+    )
+    intent_eval.add_argument(
+        "--live", action="store_true",
+        help="--client llm: send real requests (requires --confirm-spend and the provider key)",
+    )
+    intent_eval.add_argument(
+        "--replay", action="store_true",
+        help="--client llm: run offline from recordings (missing recording fails)",
+    )
+    intent_eval.add_argument(
+        "--confirm-spend", action="store_true",
+        help="acknowledge that live calls cost money",
+    )
+    intent_eval.add_argument(
+        "--limit", type=int, default=None,
+        help="evaluate only the first N samples/conversations",
+    )
+    intent_eval.add_argument(
+        "--max-spend-usd", type=float, default=None,
+        help="abort live runs once the estimated cost at official peak prices exceeds this",
+    )
     intent_eval.add_argument(
         "--conversations",
         action="store_true",
@@ -110,11 +136,73 @@ def _eval_extraction(dataset_path: Path) -> int:
     return 0 if metrics.passed else 1
 
 
+def _prepare_llm_client(gate_args: Any) -> Any:
+    """Gates and builds the LLM intent client for --client llm runs."""
+    from orgpilot.config import OrgPilotSettings
+    from orgpilot.intent.llm_client import LLMIntentClient
+
+    if gate_args.live and gate_args.replay:
+        raise SystemExit("--live 与 --replay 只能二选一")
+    if not gate_args.live and not gate_args.replay:
+        raise SystemExit(
+            "--client llm 需要显式选择 --live --confirm-spend（真实调用）或 --replay（离线回放）"
+        )
+    try:
+        settings = OrgPilotSettings.from_env()
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    if settings.llm_provider == "mock":
+        raise SystemExit(
+            "--client llm 需要 ORGPILOT_LLM_PROVIDER=aihubmix 或 deepseek（含对应 key）"
+        )
+    try:
+        settings.validate()
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    if gate_args.live and not gate_args.confirm_spend:
+        raise SystemExit("在线运行必须显式传入 --confirm-spend（会产生费用）")
+    return LLMIntentClient.from_settings(
+        settings,
+        mode="live" if gate_args.live else "replay",
+        max_spend_usd=gate_args.max_spend_usd,
+    )
+
+
+def _print_llm_stats(stats: dict[str, Any]) -> None:
+    if not stats.get("call_count"):
+        return
+    print("  - LLM stats:")
+    print(
+        f"      schema first-pass {stats['first_pass_rate']:.2%}, "
+        f"retry {stats['retry_rate']:.2%}, degraded {stats['degraded_rate']:.2%}"
+    )
+    print(
+        f"      latency p50 {stats['latency_p50_ms']}ms / p95 {stats['latency_p95_ms']}ms, "
+        f"cache hit {stats['cache_hit_ratio']:.2%}"
+    )
+    print(
+        f"      tokens/message in {stats['avg_input_tokens']} "
+        f"(cache {stats['avg_cache_read_tokens']}) out {stats['avg_output_tokens']}, "
+        f"cost ~${stats['total_cost_usd_estimate']:.4f} "
+        f"(${stats['cost_per_message_usd_estimate']:.6f}/msg)"
+    )
+    if stats["validation_error_types"]:
+        print(f"      validation errors: {stats['validation_error_types']}")
+    if stats["normalization_totals"]:
+        print(f"      normalization: {stats['normalization_totals']}")
+
+
 def _eval_conversations(
     mode: str,
     dataset_dir: Path,
     report_dir: Path,
     intent: str = "heuristic",
+    client: str = "heuristic",
+    live: bool = False,
+    replay: bool = False,
+    confirm_spend: bool = False,
+    limit: int | None = None,
+    max_spend_usd: float | None = None,
 ) -> int:
     import asyncio
 
@@ -125,6 +213,7 @@ def _eval_conversations(
         run_conversation_eval,
     )
     from orgpilot.intent.evaluator import ORACLE_TITLE_SUFFIX, load_intent_project
+    from orgpilot.intent.llm_client import SpendLimitExceeded, aggregate_llm_metrics
     from orgpilot.intent.oracle import OracleIntentClient
 
     if mode != "mock":
@@ -135,26 +224,46 @@ def _eval_conversations(
 
     project = load_intent_project(dataset_dir / "project.yaml")
     title_suffix = None
+    llm_stats_provider = None
+    llm_client = None
     if intent == "oracle":
         title_suffix = ORACLE_TITLE_SUFFIX
-        client = lambda script: OracleIntentClient(  # noqa: E731
+        intent_client_impl = lambda script: OracleIntentClient(  # noqa: E731
             script.turns, allow_duplicate_keys=True
         )
-        eval_system = ConversationSystemUnderTest(project, client)
+        eval_system = ConversationSystemUnderTest(project, intent_client_impl)
+    elif client == "llm":
+        gate_args = SimpleNamespace(
+            live=live, replay=replay, confirm_spend=confirm_spend, max_spend_usd=max_spend_usd
+        )
+        llm_client = _prepare_llm_client(gate_args)
+        run_mode = "live" if live else "replay"
+        title_suffix = f"LLMIntentClient {llm_client.model}（{run_mode}）"
+        eval_system = ConversationSystemUnderTest(project, llm_client)
+        llm_stats_provider = lambda: aggregate_llm_metrics(llm_client.metrics)  # noqa: E731
     else:
         eval_system = ConversationSystemUnderTest(project, HeuristicIntentClient())
 
-    passed, total, results = asyncio.run(
-        run_conversation_eval(
-            conversations_path,
-            report_dir,
-            project=project,
-            intent_client=eval_system._intent_client,  # noqa: SLF001 - CLI wiring
-            title_suffix=title_suffix,
+    try:
+        passed, total, results = asyncio.run(
+            run_conversation_eval(
+                conversations_path,
+                report_dir,
+                project=project,
+                intent_client=eval_system._intent_client,  # noqa: SLF001 - CLI wiring
+                title_suffix=title_suffix,
+                limit=limit,
+                llm_stats_provider=llm_stats_provider,
+            )
         )
-    )
+    except SpendLimitExceeded as exc:
+        print(f"超出预算中止：{exc}")
+        return 1
+    except FileNotFoundError as exc:
+        print(f"回放失败：{exc}")
+        return 1
     print(
-        f"Conversation Evaluation (mode={mode}, intent={intent}, "
+        f"Conversation Evaluation (mode={mode}, intent={intent}, client={client}, "
         "oracle gate: all conversations must pass):"
     )
     if title_suffix:
@@ -165,10 +274,12 @@ def _eval_conversations(
         print(f"  - [{status}] {result.script_id} ({len(result.turn_results)} turns)")
         for issue in result.issues:
             print(f"      · {issue}")
+    if client == "llm" and llm_client is not None:
+        _print_llm_stats(aggregate_llm_metrics(llm_client.metrics))
     if intent == "oracle" and passed != total:
         print("  - oracle gate violated: all conversations must pass")
         return 1
-    if intent == "heuristic" and HEURISTIC_GATE_CONVERSATIONS:
+    if intent == "heuristic" and client == "heuristic" and HEURISTIC_GATE_CONVERSATIONS:
         # 3a.2: heuristic quality is a non-goal except for the one demo
         # conversation — conv_01 must converge with the right completion time.
         gate = [r for r in results if r.script_id in HEURISTIC_GATE_CONVERSATIONS]
@@ -192,10 +303,25 @@ def _eval_intent(
     system: str = "baseline",
     intent: str = "heuristic",
     conversations: bool = False,
+    client: str = "heuristic",
+    live: bool = False,
+    replay: bool = False,
+    confirm_spend: bool = False,
+    limit: int | None = None,
+    max_spend_usd: float | None = None,
 ) -> int:
     if conversations:
         return _eval_conversations(
-            mode=mode, dataset_dir=dataset_dir, report_dir=report_dir, intent=intent
+            mode=mode,
+            dataset_dir=dataset_dir,
+            report_dir=report_dir,
+            intent=intent,
+            client=client,
+            live=live,
+            replay=replay,
+            confirm_spend=confirm_spend,
+            limit=limit,
+            max_spend_usd=max_spend_usd,
         )
     import asyncio
 
@@ -207,6 +333,7 @@ def _eval_intent(
         load_intent_samples,
         run_intent_eval,
     )
+    from orgpilot.intent.llm_client import SpendLimitExceeded, aggregate_llm_metrics
     from orgpilot.intent.oracle import OracleIntentClient
 
     if mode != "mock":
@@ -216,12 +343,31 @@ def _eval_intent(
         )
     if intent == "oracle" and system != "layered":
         raise SystemExit("eval-intent --intent oracle 只能与 --system layered 组合使用")
+    if intent == "oracle" and client == "llm":
+        raise SystemExit("--client llm 与 --intent oracle 不能组合（oracle 只测流水线）")
     if not (dataset_dir / f"{split}.yaml").exists():
         raise SystemExit(f"dataset file not found: {dataset_dir / f'{split}.yaml'}")
 
     eval_system = None
     title_suffix = None
-    if system == "layered":
+    run_mode = mode
+    llm_stats_provider = None
+    llm_client = None
+    if client == "llm":
+        gate_args = SimpleNamespace(
+            live=live, replay=replay, confirm_spend=confirm_spend, max_spend_usd=max_spend_usd
+        )
+        llm_client = _prepare_llm_client(gate_args)
+        run_mode = f"llm-{'live' if live else 'replay'}"
+        title_suffix = (
+            f"LLMIntentClient {llm_client.model}"
+            f"（{'live 在线' if live else 'replay 离线回放'}）"
+        )
+        eval_system = LayeredSystemUnderTest(
+            load_intent_project(dataset_dir / "project.yaml"), llm_client
+        )
+        llm_stats_provider = lambda: aggregate_llm_metrics(llm_client.metrics)  # noqa: E731
+    elif system == "layered":
         if intent == "oracle":
             project = load_intent_project(dataset_dir / "project.yaml")
             samples = load_intent_samples(dataset_dir / f"{split}.yaml")
@@ -230,25 +376,36 @@ def _eval_intent(
         else:
             project = load_intent_project(dataset_dir / "project.yaml")
             eval_system = LayeredSystemUnderTest(project, HeuristicIntentClient())
-        run_kwargs = {"system": eval_system, "title_suffix": title_suffix}
-    else:
-        run_kwargs = {}
 
-    metrics, failures = asyncio.run(
-        run_intent_eval(
-            split=split,
-            mode=mode,
-            dataset_dir=dataset_dir,
-            report_dir=report_dir,
-            **run_kwargs,
+    run_kwargs: dict[str, object] = {"limit": limit, "llm_stats_provider": llm_stats_provider}
+    if eval_system is not None:
+        run_kwargs["system"] = eval_system
+        run_kwargs["title_suffix"] = title_suffix
+
+    try:
+        metrics, failures = asyncio.run(
+            run_intent_eval(
+                split=split,
+                mode=run_mode,
+                dataset_dir=dataset_dir,
+                report_dir=report_dir,
+                **run_kwargs,
+            )
         )
-    )
+    except SpendLimitExceeded as exc:
+        print(f"超出预算中止：{exc}")
+        return 1
+    except FileNotFoundError as exc:
+        print(f"回放失败：{exc}")
+        return 1
     print(
-        f"Intent Behavior Evaluation (split={split}, mode={mode}, system={system}, "
-        f"intent={intent}, no pass gate this step)"
+        f"Intent Behavior Evaluation (split={split}, mode={run_mode}, system={system}, "
+        f"intent={intent}, client={client}, no pass gate this step)"
     )
     if title_suffix:
         print(f"  - {title_suffix}")
+    if client == "llm" and llm_client is not None:
+        _print_llm_stats(aggregate_llm_metrics(llm_client.metrics))
     print(f"  - Samples: {metrics.total_samples}")
     print(
         f"  - Claim precision: {metrics.claim_precision:.2%}, "
@@ -345,6 +502,12 @@ def main() -> int:
             system=args.system,
             intent=args.intent,
             conversations=args.conversations,
+            client=args.client,
+            live=args.live,
+            replay=args.replay,
+            confirm_spend=args.confirm_spend,
+            limit=args.limit,
+            max_spend_usd=args.max_spend_usd,
         )
     if args.command == "start-feishu-ws":
         return _start_feishu_ws(args.project_id)
