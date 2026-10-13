@@ -147,6 +147,7 @@ class IntentHandlers:
             if guard.verdict == "QUERY":
                 parts.append(self._query_answer(agent.projector.state, item.task_id, occurred_at))
                 kinds.append(ReplyKind.QUERY_ANSWER)
+                self._maybe_append_sync_hint(parts, member)
                 continue
             if guard.verdict == "NOTED":
                 parts.append("了解，如果确认需要调整请告诉我")
@@ -196,6 +197,7 @@ class IntentHandlers:
             elif item.intent == IntentType.QUERY_STATUS:
                 parts.append(self._query_answer(agent.projector.state, item.task_id, occurred_at))
                 kinds.append(ReplyKind.QUERY_ANSWER)
+                self._maybe_append_sync_hint(parts, member)
             elif item.intent == IntentType.REQUEST_SYNC:
                 started = await self._handle_request_sync(
                     project_id=project_id,
@@ -714,6 +716,14 @@ class IntentHandlers:
         )
 
     # ------------------------------------------------------- queries
+
+    @staticmethod
+    def _maybe_append_sync_hint(parts: list[str], member: MemberState) -> None:
+        """LABELING.md S6: after answering a status query, a PM gets ONE hint
+        sentence offering a full sync (no card, no sync started) — only an
+        explicit collect-from-everyone request is a request_sync (R8)."""
+        if member.role == "pm":
+            parts.append("需要我向大家发起同步吗？")
 
     def _query_answer(
         self, state: OrgState, task_id: str | None, occurred_at: datetime

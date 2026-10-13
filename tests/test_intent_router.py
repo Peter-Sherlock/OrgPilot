@@ -1103,3 +1103,25 @@ async def test_probe_unknown_answers_never_converge_until_cap_marks_incomplete()
         assert probe.incomplete is True
     finally:
         await db.close()
+
+
+async def test_pm_status_query_appends_sync_hint_engineer_does_not() -> None:
+    """LABELING.md S6: a vague status query from the PM answers with the current
+    status plus ONE sync hint (no card, no sync); engineers get no hint."""
+    message = "现在的整体进度怎么样了？"
+    scripted = _result(_item(message, intent=IntentType.QUERY_STATUS, task_id="backend_api"))
+    router, service, _adapter, db = await _make_router(
+        ScriptedIntentClient(responses={message: scripted})
+    )
+    try:
+        outcome = await _send(router, message, sender="ou_carol")  # PM
+        assert outcome.reply_category == ReplyKind.QUERY_ANSWER
+        assert "需要我向大家发起同步吗？" in outcome.reply_text
+        coordinator = await service.get_sync_coordinator(PROJECT)
+        assert len(coordinator._sessions) == 0  # hint only, no sync started
+
+        outcome = await _send(router, message, sender="ou_alice")  # engineer
+        assert outcome.reply_category == ReplyKind.QUERY_ANSWER
+        assert "发起同步" not in outcome.reply_text
+    finally:
+        await db.close()

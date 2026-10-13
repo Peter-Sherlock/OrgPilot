@@ -165,3 +165,30 @@ request_sync 8 条（自然语言、只发卡片）维持 `sync_confirm` 不变�
 | test_multi_turn_topic_shift_001 | answers_pending=true | false | R9 |
 
 test.yaml 因此变更，属本指示审批通过的范围：BASELINE.md 中冻结 sha256 已同步更新。
+
+---
+
+## 2026-10-13（3b 下半·第一轮）：按 dev 在线评测错误分析修订
+
+依据规则见 LABELING.md 2026-10-13 修订版（R1–R13、S4–S6；提示词与标注同源更新）。
+
+### R8/S6：模糊"看看进度"改标 query_status
+
+| 样本 | 旧标注 | 新标注 | 规则 |
+|---|---|---|---|
+| dev_request_sync_003 | intent=request_sync，期望发确认卡片（sync_confirm） | intent=query_status，期望 query_answer、不发卡片 | R8（"看看进度"≠向全员收集）+ S6（PM 回答后附同步提示句） |
+
+### confirmation_flow 期望意图核对（无修改）
+
+dev_confirmation_flow_001–004 与 conv_07 t2 的期望意图**已经是 acknowledge**
+（与 ADR-0008 §2、R8 一致），本轮逐条核对无需修改。首轮在线评测在这些样本上的意图偏差
+属模型错误而非标注问题，由提示词新规则覆盖（存在待确认卡片时"发吧/确认/可以"→
+acknowledge）。
+
+### S4/S5 带来的系统行为口径变化（dev / conversations 标注均不变）
+
+- dev_answer_pending_003 期望 delayed（预计 10-21 18:00 > 截止日 10-20 18:00）：旧口径靠
+  模型按截止日推断，新口径由系统 S4 判定，标注数值不变、判定主体改变；
+- conv_06 t04–t07、conv_10 t03–t07：S5 下重复回答照常重写 claim（supersession 语义），
+  标注不变；unknown 回答不再产生 claim——模型输出 unknown 本就应判失败，失败形态从
+  "写出 unknown claim"变为"不写 claim 并继续追问"。

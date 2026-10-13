@@ -519,11 +519,11 @@ samples:
     expected:
       behavior:
         starts_sync: false
-        sends_confirmation_card: true
-        reply_category: sync_confirm
+        sends_confirmation_card: false
+        reply_category: query_answer
       intents:
         items:
-          - intent: request_sync
+          - intent: query_status
             speech_act: imperative
             polarity: affirmative
             certainty: certain
