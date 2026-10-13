@@ -1,6 +1,6 @@
 # ADR-0008：分层意图识别与评测先行
 
-- 状态：Proposed（草案，未实现）
+- 状态：**Accepted**（2026-10-13 结项：P0 意图层已实现，冻结提示词 `c9850dec6655` 通过冻结门槛——oracle 模式 dev / test / 对话评测 100%，正式结果见 `BASELINE.md` LLM 评测记录表）
 - 日期：2026-10-11
 
 ## 背景
@@ -120,6 +120,27 @@
 1. 置信度门槛的取值，需在评测集上标定；
 2. 最近对话轮数（上下文窗口）取多少，兼顾成本与指代消解；
 3. 群聊支持的范围与隐私策略（后续单独 ADR）。
+
+### 已知问题（3b 结项登记，2026-10-13；本步不修，按优先级排入后续迭代）
+
+1. **等待上游依赖时的健康度**：目前"自身在等上游"易被判 at_risk。建议规则：自身工作正常、
+   仅在等上游 → `on_track`，blocker 记依赖本身；依赖的风险由依赖图推导，不重复计入健康度
+   （dev_disambiguation_001、test_multi_task_002）。
+2. **汇报与承诺的边界不稳定**："今天能提测"类句子在 report_status 与 make_commitment 之间
+   摇摆。候选方案：合并为 report_status + "是否明确承诺"属性，由合并规则决定是否生成
+   commitment（dev_make_commitment_002、test_time_chinese_003 / 004）。
+3. **非负责人的否定陈述**："我还没碰"不应构成对该任务的状态汇报（当前会生成 unknown 类
+   条目或被误合并）。候选为确定性护栏：非负责人 + 否定 + 无健康度 → 不输出条目
+   （dev_disambiguation_004 同类、test_multi_task_003）。
+4. **询问式等待的规则冲突**：第一轮规则"dependency_wait 用于询问依赖方"与更早的标注决定
+   "询问式等待 → query_status"冲突，需在 LABELING.md 统一口径
+   （dev_p1_p2_003）。
+5. **假设句的空条目**：假设从句输出空 items 时，回复类别落到 smalltalk 而非 noted；
+   需要为"识别为假设"固定一个 noted 回复（dev_hypothetical_003）。
+6. **能力询问的归类**："你能帮我改截止时间吗"属于 help 还是 out_of_scope，需产品定夺
+   （test_help_003）。
+7. **指标口径**："错误 claim 率"只统计不该有 claim 的样本；带 claim 样本中的多余或错误
+   claim 只体现在 claim 精确率里。报告需补充说明，后续增加"错误 claim 条数"指标。
 
 ## 后果
 
