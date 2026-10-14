@@ -1,6 +1,6 @@
 # ADR-0009：团队接入与成员 / 任务名单导入（P-1）
 
-- 状态：**Proposed**
+- 状态：**Accepted**（2026-10-13 实现于 `feat/team-onboarding`；真实租户 smoke test 待执行）
 - 日期：2026-10-13
 
 ## 背景
@@ -71,7 +71,9 @@ tasks:
 - `depends_on` 可以引用本文件中的任务，也可以引用项目里已有的任务；
 - `deadline` 必须写到分钟（`YYYY-MM-DD HH:MM`）或带时区偏移的 ISO 时间。不带时区时按业务时区（`ORGPILOT_TIMEZONE`）解释。**只写日期会被拒绝**，避免“当天几点算截止”的歧义；
 - `role` 是任意非空字符串，`pm` 有特权（见第 7 节）。值为 `manager` / `lead` 时给出警告；
-- 导入后项目里必须至少有一个 `pm`，否则审批没有接收人、也没人能发起同步，直接报错。
+- 导入后项目里必须至少有一个 `pm`，否则审批没有接收人、也没人能发起同步，直接报错；
+- YAML 中重复的键（例如两个同名成员别名）直接报错，而不是像 PyYAML 默认那样静默保留后一个；
+- 真实的 `team.yaml` 含同事邮箱，已加入 `.gitignore`；仓库只跟踪 `team.example.yaml`。
 
 ### 3. 邮箱 → open_id 解析
 
@@ -90,17 +92,28 @@ tasks:
 
 导入分两步：先**计划**（`plan_import(spec, state, open_ids, now)`，纯函数），再**应用**。`--dry-run` 只输出计划。
 
-成员按 open_id、任务按 ID 与当前投影状态比对：
+成员按 open_id、任务按 ID 与当前投影状态比对。任务字段做**三方比对**（见下文），其余规则如下：
 
 | 变化 | 动作 |
 |---|---|
 | 新成员 | `member.registered` |
 | 新任务 | `task.created`（新任务之间按依赖拓扑序生成） |
-| 任务标题 / 负责人 / 截止时间变化 | `task.updated`（只带变化的字段） |
-| 任务状态变化 | `task.workflow_changed`（带 `from_status`） |
+| 任务标题 / 负责人 / 截止时间变化 | `task.updated`（只带变化的字段），受三方比对约束 |
+| 任务状态变化 | `task.workflow_changed`（带 `from_status`），受三方比对约束 |
+| 截止时间从有变为无 | 跳过并报告（`task.updated` 无法清除截止时间） |
 | 成员改名、改角色 | 跳过并报告（没有对应事件类型） |
 | 任务依赖变化 | 跳过并报告（`task.updated` 不含依赖） |
 | 项目里有、yaml 里没有的成员或任务 | 只报告，不删除 |
+
+**三方比对**（实现时补充）。截止时间和状态在运行时也会变：PM 批准改期、成员在聊天里汇报状态。如果只和当前状态比对，PM 拿旧的 `team.yaml` 重新导入（比如只是想加一个新成员），会把已批准的改期悄悄改回去。因此每个任务字段以“上次导入写入的值”为基准（从事件历史中 `source_ref` 以 `team-import@` 开头的事件求得）：
+
+| yaml 值 vs 基准 | 当前值 vs 基准 | 动作 |
+|---|---|---|
+| 等于当前值 | — | 无变化 |
+| 等于基准（yaml 没改） | 不等（运行时改过） | 保留运行时的值，报告 `=` |
+| 不等（yaml 改了） | 等于基准（运行时没改） | 写入 yaml 的值 |
+| 不等 | 不等，且 yaml ≠ 当前值 | 冲突：不修改，报告 `!` |
+| 没有基准（任务不是导入创建的，如演示任务） | — | 写入 yaml 的值 |
 
 计划输出示例：
 
@@ -111,16 +124,18 @@ $ orgpilot team import team.yaml --project pay-v2 --dry-run
   ~ task    task-payment  deadline 10-20 18:00 → 10-24 18:00
   ! member  bob     角色 engineer → lead：不支持修改，已跳过
   ! task    task-old      不在 team.yaml 中：不删除
+  = task    task-qa       截止运行时已改为 10-30 18:00，team.yaml 仍是 10-28 18:00：保留运行时的值
 将写入 3 个事件，跳过 2 项（dry-run，未写入）
 ```
 
 ### 5. 事件生成、校验与幂等
 
-- `source=human`，`source_ref=team.yaml@<文件 sha256 前 12 位>`，便于追溯是哪一版名单产生的；`actor_id` 为空（导入不是某个成员的动作，投影要求非空 actor 必须是已注册成员）；
+- 成员事件 `source=human`，任务事件 `source=task`（与沙箱、演示初始化的惯例一致；`source` 不参与任何业务判断）；`source_ref=team-import@<文件 sha256 前 12 位>`，与文件名无关，便于追溯是哪一版名单产生的，也是三方比对识别“导入写入的值”的依据；`actor_id` 为空（导入不是某个成员的动作，投影要求非空 actor 必须是已注册成员）；
 - `occurred_at` / `received_at` 由调用方传入的 `now` 决定，规划函数本身不读墙钟；
 - **创建类事件 ID 确定**：`team-import:<project>:member:<open_id>`、`team-import:<project>:task:<task_id>`。并发重复导入时由事件表唯一约束去重；
-- **更新类事件 ID 含本次导入批次**：`team-import:<project>:<run_id>:...`。**不用内容哈希**，原因是：如果截止时间经历 A→B（导入）→A（聊天改回）后再导入 B，内容哈希会和第一次的事件 ID 相同，被当作重复而静默丢弃。更新的幂等由“差异为空就不生成事件”保证；
-- **整批先校验后写入**：计划出的事件先在投影副本上依次 `apply`，再用 `DependencyAnalyzer.validate` 检查环，任何一步失败则零写入。为此从 `GatewayService.commit_extracted_events` 中抽出共用的批量校验方法，导入和消息抽取走同一条路径；
+- **更新类事件 ID 含本次导入批次**：`team-import:<project>:<run_id>:task:<id>:updated|workflow`，`run_id` 由文件摘要和导入时刻组成。**不用内容哈希**，原因是：截止时间经导入 A→B→A→B 往返时，第四次导入的内容哈希与第二次相同，会被事件表当作重复而静默丢弃。更新的幂等由“差异为空就不生成事件”保证；
+- **整批先校验后写入**：计划出的事件经 `GatewayService.commit_extracted_events` 在投影副本上依次 `apply`，任何一条失败则零写入。导入、消息抽取和演示初始化走同一条路径；
+- **依赖成环**在计划阶段检测：新任务按拓扑序创建，无法排序即报错。由于依赖只能在创建时声明、且必须指向已存在的任务，逐条创建的依赖图天然无环，不需要额外的写入后检查；
 - 写入是逐条追加，不是单个事务。中途崩溃时已写入的是一个**已校验序列的前缀**，前缀本身投影合法；重新执行导入会按差异补齐剩余部分。
 
 ### 6. CLI
@@ -132,7 +147,8 @@ orgpilot team show [--project ID]
 
 - `--project` 默认取 `ORGPILOT_FEISHU_PROJECT_ID`，必须与文件里的 `project` 一致；
 - 直接写 `ORGPILOT_DATABASE_URL` 指向的数据库。网关每次请求都会从事件库重放，所以导入后无需重启网关；
-- `team show` 列出当前成员（别名不持久化，显示名字、角色和 open_id 前缀）与任务，用来核对导入结果。
+- `team show` 列出当前成员（别名不持久化，显示名字、角色和 open_id 前缀）与任务，用来核对导入结果；
+- 导入时刻在 CLI 边界读取一次墙钟，作为 `now` 传入；计划函数本身不读墙钟。
 
 ### 7. 角色口径
 
@@ -167,6 +183,7 @@ orgpilot team show [--project ID]
 - 导入依赖真实飞书接口和新权限，离线环境只能用 Mock 目录；
 - 成员角色写错后无法通过重新导入修正，只能等后续的成员更新事件；
 - 关闭 demo 模式后，原来“一个人私聊就能体验”的流程需要显式设置 `ORGPILOT_DEMO_MODE=true`；
+- 三方比对依赖事件历史中的 `source_ref` 前缀；手工写入事件时若伪造这个前缀，会被当作“导入写入的值”；
 - 未匹配邮箱在接口响应中的具体形态、权限范围配置的实际效果，需要在真实租户 smoke test 中确认。
 
 ## 测试计划
@@ -174,7 +191,8 @@ orgpilot team show [--project ID]
 - `team.yaml` 格式：重复别名 / 邮箱 / 任务 ID、未知负责人、未知依赖、只写日期的截止时间、没有 `pm`、未知字段；
 - 邮箱解析：超过 50 个时分批、部分未解析时整体中止并列出原因、两个别名指向同一 open_id、大小写归一；
 - 差异计划：新增、更新、状态变化、不支持的变化被跳过、缺失项只报告；
-- 幂等：同一文件导入两次，第二次零事件；A→B→A 后再导入 B 能正确生成更新；
+- 三方比对：运行时改过而 yaml 未改时保留运行时的值；两边都改时报告冲突且不写入；非导入创建的任务按 yaml 写入；
+- 幂等：同一文件导入两次，第二次零事件；导入 A→B→A→B 往返时每次更新的事件 ID 都不重复；
 - 原子性：计划中任一事件校验失败（如依赖成环）时零写入；
 - 端到端：导入后成员私聊被正常处理；PM 发起同步会给导入的任务负责人发探针；
 - demo 模式：关闭时未注册者零事件；打开且项目为空时初始化；**打开且已有成员但没有任务时不初始化、不产生毒事件**（回归测试）；
@@ -182,9 +200,9 @@ orgpilot team show [--project ID]
 
 ## 实施拆分
 
-1. `fix(feishu)`：自动初始化收进 demo 模式，按“没有成员”触发并走批量校验，附毒事件回归测试；
-2. `fix(coordination)`：审批升级对象统一为 `pm`；
+1. `fix(feishu)`：自动初始化收进 demo 模式，按“没有成员”触发并走批量校验，附毒事件回归测试（已确认该测试在旧代码上复现 `member ... already exists`）；
+2. `fix(coordination)`：审批升级对象统一为 `pm`（已确认新测试在旧代码上失败）；
 3. `feat(feishu)`：`batch_get_open_ids` 与 Mock 目录；
-4. `feat(team)`：`team.yaml` 模型、解析与差异计划；
-5. `feat(cli)`：`orgpilot team import / show`，端到端测试；
-6. `docs`：本 ADR 转为 Accepted，更新飞书配置指南（新权限、通讯录权限范围、个人邮箱）、开发记录、README，提供 `team.example.yaml`。
+4. `feat(team)`：`team.yaml` 模型、解析、差异计划（含三方比对）与导入；
+5. `fix(cli)` + `feat(cli)`：独立长连接监听器传入 demo 模式；`orgpilot team import / show`，端到端测试，`team.example.yaml`；
+6. `docs`：本 ADR 转为 Accepted，更新飞书配置指南（权限说明、通讯录权限范围、个人邮箱、导入步骤）、开发记录、README、架构文档。

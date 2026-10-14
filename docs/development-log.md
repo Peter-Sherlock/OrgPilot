@@ -1,5 +1,38 @@
 # 开发记录
 
+## 2026-10-13：P-1 团队接入——team.yaml 名单导入（分支 `feat/team-onboarding`，ADR-0009）
+
+### 已实现
+
+- **team.yaml 与 CLI**（`src/orgpilot/team/`、`cli.py`）：成员写邮箱、名字、角色，任务的负责人和依赖用成员别名引用；`orgpilot team import <file> [--dry-run]` 输出变更计划后整批写入，`orgpilot team show` 核对结果。截止时间必须写到分钟，YAML 重复键、未知字段、重复邮箱 / 任务 ID、未知负责人 / 依赖、依赖成环、没有 pm 均在写入前报错；
+- **邮箱 → open_id**（`feishu/client.py`）：`batch_get_open_ids` 调用 `contact/v3/users/batch_get_id`，每批 50 个、排除离职；任一邮箱未解析则整体中止并提示常见原因（权限、通讯录范围、离职、误填飞书企业邮箱）。邮箱不写入事件；
+- **差异导入与三方比对**（`team/planner.py`）：新增成员 / 任务生成创建事件，任务标题 / 负责人 / 截止时间 / 状态变化生成 `task.updated` / `task.workflow_changed`；成员改名改角色、改依赖、清除截止时间、删除只报告不执行。任务字段以“上次导入写入的值”为基准做三方比对：`team.yaml` 未改而运行时改过（如已批准的改期）时保留运行时的值，两边都改时报告冲突且不写入。这是实现时对 ADR 初稿“只与当前状态比对”的修正——初稿会让旧名单的重新导入悄悄回滚已批准的改期；
+- **事件 ID**：创建类确定（`team-import:<project>:member:<open_id>` / `task:<id>`），更新类带导入批次。验证过内容哈希方案的反例：导入 A→B→A→B 往返时第四次会与第二次撞 ID 被静默丢弃；
+- **写入安全**：导入、消息抽取、演示初始化统一走 `commit_extracted_events` 的“投影副本整批校验 → 再写库”；
+- **demo 模式与毒事件修复**（`feishu/webhook.py`）：自动初始化默认关闭（`ORGPILOT_DEMO_MODE`），触发条件从“没有任务”改为“没有成员”，并走整批校验。修复前，已有成员但没有任务的项目收到第一条消息会写入重复的 `member.registered`，之后每次重放都失败；回归测试已在旧代码上复现该错误；
+- **角色口径**（`coordination/service.py`）：改期审批只发给 `pm`（原为 pm / manager / lead，而发起同步只认 pm）；导入 manager / lead 时给出警告。新测试已在旧代码上确认失败；
+- `start-feishu-ws` 独立监听器同样传入 demo 模式；`team.yaml` / `team.*.yaml` 加入 `.gitignore`（含同事邮箱，仓库是公开的），只跟踪 `team.example.yaml`；飞书配置指南新增权限说明、通讯录权限范围与导入步骤。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS
+pytest: 370 passed（合并 intent-router 后的 main 为 328；新增 42 个）
+coverage: 91.66% branch-aware total coverage (fail_under=90%)
+ruff check: All checks passed
+git diff --check origin/main...HEAD: PASS
+```
+
+### 未覆盖与已知遗留（如实标注）
+
+- **真实飞书未联调**：邮箱解析只在 Mock 目录和 httpx MockTransport 上测试。官方文档没有说明未匹配邮箱在 `user_list` 中是省略还是返回空 `user_id`，实现对两种情况都按未解析处理，需真实租户 smoke test 确认；
+- 成员改名改角色、改依赖、删除成员 / 任务仍无对应事件类型，只能报告；角色写错后无法通过重新导入修正；
+- 三方比对以 `source_ref` 的 `team-import@` 前缀识别导入写入的值，手工写入事件伪造该前缀会干扰判断；
+- `ruff format --check` 在 main 上已有 31 个文件未格式化（本分支删掉 `gateway/service.py` 末尾空行后为 30 个）；本次只保证新增和改动的代码已格式化，未处理存量；
+- pytest 的约 1200 条 Python 3.14 asyncio 弃用警告为存量问题，未处理。
+
+---
+
 ## 2026-10-13：第 3b 步结项——记录正式结果与已知问题（提示词保持冻结，分支 `feat/intent-router`）
 
 冻结提示词 `c9850dec6655` 的正式评测结果（本步零代码、零提示词改动）：

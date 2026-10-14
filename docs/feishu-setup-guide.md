@@ -25,8 +25,9 @@ OrgPilot 支持 **WebSocket 长连接（官方推荐，零公网依赖）** 与 
    - `im:message.p2p_msg:readonly`（读取单聊消息）
    - `im:message.group_at_msg:readonly`（读取群聊中 @机器人的消息）
    - `task:task:v2` / `task:task:v2:readonly`（创建与更新飞书任务）
-   - `contact:user.id:readonly`（获取用户基础信息）
-3. 开通权限后，点击右上角 **“创建版本”** 并发布。
+   - `contact:user.id:readonly`（通过手机号或邮箱获取用户 ID，`orgpilot team import` 用它把成员邮箱换成 open_id）
+3. 在 **“权限管理”→“数据权限”/“通讯录权限范围”** 中，把团队成员所在的部门或人员加入可访问范围。范围外的成员查不到 open_id，导入会中止并列出这些邮箱；
+4. 开通权限后，点击右上角 **“创建版本”** 并发布。
 
 ---
 
@@ -56,6 +57,10 @@ ORGPILOT_FEISHU_PROJECT_ID=feishu-project
 FEISHU_APP_ID=cli_xxxxxxxxxxxxxx
 FEISHU_APP_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
+# 仅演示：第一个给空项目发消息的人自动成为 PM 并获得 3 个演示任务。
+# 真实团队保持 false，用下一步的 team.yaml 导入成员和任务。
+ORGPILOT_DEMO_MODE=false
+
 # （可选）大模型语义抽取配置
 # ORGPILOT_LLM_PROVIDER=aihubmix
 # AIHUBMIX_API_KEY=your_key_here
@@ -75,10 +80,32 @@ uv run orgpilot start-feishu-ws
 
 ---
 
-### 第五步：在飞书桌面端测试验证
+### 第五步：导入团队名单（team.yaml）
+
+机器人只处理名单里成员的私聊消息，名单外的人会收到“请联系项目负责人”的提示。
+
+1. 复制示例文件并填写真实成员和任务（`team.yaml` 已被 Git 忽略，因为里面有同事的邮箱）：
+   ```powershell
+   Copy-Item team.example.yaml team.yaml
+   ```
+   - `project` 必须等于 `ORGPILOT_FEISHU_PROJECT_ID`；
+   - `email` 填飞书个人资料里的 **“邮箱”**。**飞书企业邮箱查不到 open_id**；
+   - 至少一名成员的 `role` 为 `pm`：只有 pm 能发起全员同步、接收改期审批。
+2. 先预览，确认无误后再写入：
+   ```powershell
+   uv run orgpilot team import team.yaml --dry-run
+   uv run orgpilot team import team.yaml
+   uv run orgpilot team show
+   ```
+3. 之后修改 `team.yaml` 再导入，只会写入差异：新增成员和任务、任务的标题 / 负责人 / 截止时间 / 状态变化。成员改名改角色、改依赖、删除不会执行，只在输出里列出。
+   如果某个字段在运行时被改过（例如 PM 批准了改期），而 `team.yaml` 里这一项自上次导入后没动，导入会保留运行时的值。
+
+---
+
+### 第六步：在飞书桌面端测试验证
 
 1. 打开 **飞书桌面端客户端**；
-2. 搜索您的机器人（例如 `@OrgPilot 协调助手`），发送消息：
+2. 用名单里的账号搜索您的机器人（例如 `@OrgPilot 协调助手`），发送消息：
    > *“支付 SDK 报错，排查需要到明天下午 5 点”*
 3. 机器人将通过 WebSocket 长连接即时捕获消息，识别风险并返回交互式卡片！
 4. 点击飞书开放平台“回调配置”页面的 **【验证】** 按钮，系统会显示连接成功状态！

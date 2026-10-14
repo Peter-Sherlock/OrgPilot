@@ -7,6 +7,7 @@
 - **M2 阶段**：建立结构化声明抽取边界（离线规则客户端 + 可选 AIHubMix Anthropic 兼容客户端 + GroundingVerifier + 相对时间解析）。
 - **P1 阶段**：建立 SQL 异步持久化与 FastAPI 事件网关原型（默认文件型 SQLite，可配置 PostgreSQL；尚未完成多实例生产验证）。
 - **F1 阶段**：建立飞书 OpenAPI、HTTP Webhook 与 2.0 交互式卡片适配层；真实租户 smoke test 尚待执行。
+- **P-1 团队接入**（ADR-0009）：`team.yaml` 声明成员（邮箱经飞书通讯录换成 open_id）与任务，CLI 按三方比对导入差异；自动初始化收进 demo 模式；只有 `pm` 有特权。真实租户的邮箱解析尚待 smoke test。
 
 ---
 
@@ -63,6 +64,7 @@ Case 账本对齐与消除 (`CaseLedger`)
 | 模块 | 职责 | 核心组件 / 类 |
 | --- | --- | --- |
 | `feishu` | 飞书 OpenAPI 客户端、Token 自动刷新、2.0 交互式卡片渲染与 HTTP Webhook 解析 | `AsyncFeishuClient`, `MockFeishuClient`, `FeishuCollaborationAdapter`, `FeishuWebhookHandler` |
+| `team` | `team.yaml` 解析校验、邮箱解析、导入差异计划（三方比对）与全有或全无写入 | `TeamSpec`, `plan_import`, `import_team` |
 | `gateway` | FastAPI 异步事件网关、Webhook 路由、生命周期与 REST 服务 | `create_app`, `GatewayService` |
 | `storage` | SQLAlchemy 2.0 异步数据库持久化、幂等事件表、状态与 Case 快照 | `Database`, `SqlEventStore`, `SqlStateStore`, `Base` |
 | `extraction` | 自然语言消息结构化抽取、防幻觉反查、相对时间解析、离线评测与可选在线客户端 | `ClaimExtractor`, `GroundingVerifier`, `TemporalResolver`, `MockLLMClient`, `AnthropicCompatibleLLMClient` |

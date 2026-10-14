@@ -8,6 +8,7 @@ OrgPilot is a stateful organizational coordination agent kernel.
 - **P1 prototype**: Async SQL persistence and a FastAPI event gateway. Local persistent SQLite is the default; PostgreSQL deployment still requires environment-specific integration validation.
 - **F1 integration layer**: Feishu OpenAPI client, HTTP Webhook handler, adapter, and interactive cards. A real-account smoke test is still required before calling this production-ready.
 - **W1 Web console**: Embedded Single-Page management console and real-time interactive DAG topology visualizer served directly at `http://localhost:8000/`.
+- **P-1 team onboarding**: `team.yaml` roster import (`orgpilot team import`) with Feishu email → open_id resolution and a three-way field merge on re-import; the first-contact demo bootstrap now requires `ORGPILOT_DEMO_MODE=true`. Email resolution still needs a real-tenant smoke test.
 
 ---
 
@@ -54,6 +55,14 @@ is enabled).
 
 The offline 20-sample extraction result is a deterministic regression benchmark; it is not a measured accuracy claim for the live model.
 
+To onboard a real team, copy `team.example.yaml` to `team.yaml` (git-ignored), fill in members and tasks, then:
+
+```powershell
+uv run orgpilot team import team.yaml --dry-run
+uv run orgpilot team import team.yaml
+uv run orgpilot team show
+```
+
 - Feishu HTTP Webhook setup guide lives in `docs/feishu-setup-guide.md`.
 - Ground-truth replay scenarios (4 P0 + 5 M1) live in `evals/scenarios/`.
 - 20-sample natural language extraction gold dataset lives in `evals/extraction/gold_dataset.yaml`.
@@ -75,6 +84,9 @@ The offline 20-sample extraction result is a deterministic regression benchmark;
 - `docs/adr/0004-postgresql-event-store-and-fastapi-gateway.md`: ADR-0004: SQL Persistence & FastAPI Gateway
 - `docs/adr/0005-feishu-adapter-and-interactive-cards.md`: ADR-0005: Feishu Adapter & Interactive Cards
 - `docs/adr/0006-web-dashboard-and-dag-visualization.md`: ADR-0006: Web Dashboard & DAG Visualization
+- `docs/adr/0007-github-integration-and-pr-only-permission.md`: ADR-0007: GitHub Integration & PR-only Permission
+- `docs/adr/0008-layered-intent-recognition.md`: ADR-0008: Layered Intent Recognition
+- `docs/adr/0009-team-onboarding-and-roster-import.md`: ADR-0009: Team Onboarding & Roster Import
 
 ---
 
