@@ -47,3 +47,8 @@ evals/intent/reports/
 
 # LLM compatibility probe reports are local-only (spend-gated live diagnostics)
 reports/compat/
+
+# Real team rosters hold colleagues' emails; only team.example.yaml is tracked
+/team.yaml
+/team.*.yaml
+!/team.example.yaml
