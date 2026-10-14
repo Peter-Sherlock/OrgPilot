@@ -210,10 +210,48 @@ async def test_async_feishu_client_batch_get_open_ids_raises_on_api_error() -> N
 
 
 async def test_mock_feishu_client_directory_lookup() -> None:
-    client = MockFeishuClient(email_directory={"Alice@Example.com": "ou_alice"})
+    client = MockFeishuClient(
+        email_directory={"Alice@Example.com": "ou_alice"},
+        mobile_directory={"+86 180-0000-0001": "ou_bob"},
+    )
     emails = ["alice@example.com", "ALICE@example.com"] + [f"x{i}@example.com" for i in range(50)]
 
-    resolved = await client.batch_get_open_ids(emails)
+    resolved = await client.batch_get_open_ids(emails, mobiles=["18000000001", "18000000002"])
 
-    assert resolved == {"alice@example.com": "ou_alice"}
-    assert [len(chunk) for chunk in client.directory_requests] == [50, 1]
+    assert resolved == {"alice@example.com": "ou_alice", "18000000001": "ou_bob"}
+    assert [
+        (len(batch.get("emails", [])), len(batch.get("mobiles", [])))
+        for batch in client.directory_requests
+    ] == [(50, 2), (1, 0)]
+
+
+async def test_async_feishu_client_batch_get_open_ids_by_mobile() -> None:
+    """Mobiles ride in the same request as emails and are matched after normalizing."""
+    requests: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "tenant_access_token" in str(request.url):
+            return httpx.Response(200, json={"code": 0, "tenant_access_token": "t-1"})
+        body = json.loads(request.content)
+        requests.append(body)
+        user_list = [{"email": e} for e in body.get("emails", [])]  # unmatched shape
+        user_list += [
+            {"mobile": m, "user_id": f"ou_{m[-4:]}"} for m in body.get("mobiles", [])
+        ]
+        return httpx.Response(200, json={"code": 0, "data": {"user_list": user_list}})
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="https://open.feishu.cn"
+    ) as http:
+        client = AsyncFeishuClient(app_id="cli", app_secret="secret", client=http)
+        mobiles = [f"+86 1800000{i:04d}" for i in range(51)] + ["+14155550123"]
+
+        resolved = await client.batch_get_open_ids(["work@example.com"], mobiles=mobiles)
+
+    assert requests[0]["emails"] == ["work@example.com"]
+    assert requests[0]["mobiles"][0] == "18000000000"
+    assert "emails" not in requests[1]
+    assert [len(body["mobiles"]) for body in requests] == [50, 2]
+    assert resolved["18000000000"] == "ou_0000"
+    assert resolved["+14155550123"] == "ou_0123"
+    assert "work@example.com" not in resolved

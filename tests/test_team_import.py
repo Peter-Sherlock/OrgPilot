@@ -155,6 +155,13 @@ def test_parse_keeps_explicit_offsets() -> None:
         ),
         ("project: p\nmembers:\n  a b: {email: a@x.io, name: A, role: pm}\n", "alias"),
         ("project: p\nmembers:\n  a: {email: not-an-email, name: A, role: pm}\n", "email"),
+        ("project: p\nmembers:\n  a: {name: A, role: pm}\n", "needs an email or a mobile"),
+        ("project: p\nmembers:\n  a: {mobile: '180-abc', name: A, role: pm}\n", "mobile must"),
+        (
+            "project: p\nmembers:\n  a: {mobile: 18000000001, name: A, role: pm}\n"
+            "  b: {mobile: '+86 180 0000 0001', name: B, role: pm}\n",
+            "share a mobile",
+        ),
         ("- just\n- a list\n", "must be a mapping"),
         ("project: [unclosed\n", "invalid YAML"),
     ],
@@ -369,7 +376,7 @@ async def test_import_aborts_when_any_email_is_unresolved(service: GatewayServic
     message = str(exc_info.value)
     assert "'alice' <alice@example.com>" in message
     assert "'bob' <bob@example.com>" in message
-    assert "企业邮箱" in message
+    assert "工作邮箱" in message
     assert await service.event_store.get_events(PROJECT) == []
 
 
@@ -408,3 +415,80 @@ async def test_import_writes_nothing_when_batch_validation_fails(
         await import_team(service, _spec(), directory, digest="d1", now=NOW)
 
     assert await service.event_store.get_events(PROJECT) == []
+
+
+def test_parse_normalizes_mobiles_and_masks_them_in_messages() -> None:
+    spec = _spec(
+        "project: p\nmembers:\n"
+        "  a: {mobile: 18000000001, name: A, role: pm}\n"
+        "  b: {mobile: '+86 180-0000-0002', email: b@example.com, name: B, role: qa}\n"
+        "  c: {mobile: '+1 415 555 0123', name: C, role: qa}\n"
+    )
+
+    assert spec.members["a"].mobile == "18000000001"
+    assert spec.members["b"].mobile == "18000000002"
+    assert spec.members["c"].mobile == "+14155550123"
+    assert spec.members["a"].masked_identity == "180****0001"
+    assert spec.members["b"].masked_identity == "b@example.com / 180****0002"
+
+
+MOBILE_YAML = BASE_YAML.replace(
+    "  alice: {email: alice@example.com, name: Alice, role: engineer}",
+    "  alice: {mobile: 18000000001, name: Alice, role: engineer}",
+).replace(
+    "  bob: {email: bob@example.com, name: Bob, role: lead}",
+    "  bob: {email: bob-work@example.com, mobile: 18000000002, name: Bob, role: lead}",
+)
+
+
+async def test_import_resolves_by_mobile_and_falls_back_from_email(
+    service: GatewayService,
+) -> None:
+    """2026-10-14 smoke test: phone-registered accounts often have no account email."""
+    directory = MockFeishuClient(
+        email_directory={"wang@example.com": "ou_wang"},  # bob-work@ is a work email
+        mobile_directory={"18000000001": "ou_alice", "18000000002": "ou_bob"},
+    )
+
+    result = await import_team(service, _spec(MOBILE_YAML), directory, digest="d1", now=NOW)
+
+    assert result.open_ids == OPEN_IDS
+    assert result.applied is True
+    assert directory.directory_requests == [
+        {
+            "emails": ["wang@example.com", "bob-work@example.com"],
+            "mobiles": ["18000000001", "18000000002"],
+        }
+    ]
+
+
+async def test_import_rejects_email_and_mobile_of_different_users(
+    service: GatewayService,
+) -> None:
+    directory = MockFeishuClient(
+        email_directory={"wang@example.com": "ou_wang", "bob-work@example.com": "ou_other"},
+        mobile_directory={"18000000001": "ou_alice", "18000000002": "ou_bob"},
+    )
+
+    with pytest.raises(TeamImportError) as exc_info:
+        await import_team(service, _spec(MOBILE_YAML), directory, digest="d1", now=NOW)
+
+    message = str(exc_info.value)
+    assert "'bob' <bob-work@example.com / 180****0002>" in message
+    assert "两个不同的飞书用户" in message
+    assert "常见原因" not in message
+    assert await service.event_store.get_events(PROJECT) == []
+
+
+async def test_unresolved_mobile_is_masked_in_the_error(service: GatewayService) -> None:
+    directory = MockFeishuClient(
+        email_directory={"wang@example.com": "ou_wang"},
+        mobile_directory={"18000000002": "ou_bob"},
+    )
+
+    with pytest.raises(TeamImportError) as exc_info:
+        await import_team(service, _spec(MOBILE_YAML), directory, digest="d1", now=NOW)
+
+    message = str(exc_info.value)
+    assert "'alice' <180****0001>: 飞书没有返回 open_id" in message
+    assert "18000000001" not in message

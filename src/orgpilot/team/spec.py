@@ -11,6 +11,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from orgpilot.domain.enums import WorkflowStatus
+from orgpilot.feishu.client import normalize_mobile
 
 PM_ROLE = "pm"
 # Roles that used to receive approvals before ADR-0009 §7 narrowed them to pm.
@@ -18,6 +19,8 @@ FORMER_PRIVILEGED_ROLES = frozenset({"manager", "lead"})
 
 _ALIAS_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 _EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# After normalize_mobile: bare mainland digits, or +country code and number.
+_MOBILE_PATTERN = re.compile(r"^\+?\d{6,15}$")
 
 
 class TeamImportError(ValueError):
@@ -35,17 +38,47 @@ class _SpecModel(BaseModel):
 
 
 class MemberSpec(_SpecModel):
-    email: str
+    """A member is found in Feishu by email or mobile; email wins when both match."""
+
+    email: str | None = None
+    mobile: str | None = None
     name: str = Field(min_length=1)
     role: str = Field(min_length=1)
 
     @field_validator("email")
     @classmethod
-    def _check_email(cls, value: str) -> str:
+    def _check_email(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         value = value.strip()
         if not _EMAIL_PATTERN.match(value):
             raise ValueError(f"not an email address: {value!r}")
         return value
+
+    @field_validator("mobile", mode="before")
+    @classmethod
+    def _check_mobile(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        # YAML reads an unquoted 18000000000 as an int; accept it as written.
+        mobile = normalize_mobile(str(value))
+        if not _MOBILE_PATTERN.match(mobile):
+            raise ValueError("mobile must be digits, with a +country code outside mainland China")
+        return mobile
+
+    @model_validator(mode="after")
+    def _needs_identity(self) -> "MemberSpec":
+        if self.email is None and self.mobile is None:
+            raise ValueError("member needs an email or a mobile to find its Feishu account")
+        return self
+
+    @property
+    def masked_identity(self) -> str:
+        """Email and/or mobile with the mobile's middle digits hidden, for messages."""
+        parts = [self.email] if self.email else []
+        if self.mobile:
+            parts.append(f"{self.mobile[:-8]}****{self.mobile[-4:]}")
+        return " / ".join(parts)
 
     @field_validator("name")
     @classmethod
@@ -103,13 +136,21 @@ class TeamSpec(_SpecModel):
             if not _ALIAS_PATTERN.match(alias):
                 errors.append(f"member alias {alias!r} may only use letters, digits, - and _")
         seen_emails: dict[str, str] = {}
+        seen_mobiles: dict[str, str] = {}
         for alias, member in self.members.items():
-            key = member.email.lower()
-            if key in seen_emails:
-                errors.append(
-                    f"members {seen_emails[key]!r} and {alias!r} share email {member.email!r}"
-                )
-            seen_emails.setdefault(key, alias)
+            if member.email is not None:
+                key = member.email.lower()
+                if key in seen_emails:
+                    errors.append(
+                        f"members {seen_emails[key]!r} and {alias!r} share email {member.email!r}"
+                    )
+                seen_emails.setdefault(key, alias)
+            if member.mobile is not None:
+                if member.mobile in seen_mobiles:
+                    errors.append(
+                        f"members {seen_mobiles[member.mobile]!r} and {alias!r} share a mobile"
+                    )
+                seen_mobiles.setdefault(member.mobile, alias)
         seen_tasks: set[str] = set()
         for task in self.tasks:
             if task.id in seen_tasks:

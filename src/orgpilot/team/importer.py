@@ -11,10 +11,10 @@ from orgpilot.team.spec import TeamImportError, TeamSpec
 if TYPE_CHECKING:
     from orgpilot.gateway.service import GatewayService
 
-UNRESOLVED_EMAIL_HINTS = (
-    "常见原因：应用未开通 contact:user.id:readonly 权限；",
-    "成员不在应用的通讯录权限范围内；成员已离职；",
-    "填写的是飞书企业邮箱，而接口只认用户资料里的「邮箱」字段。",
+UNRESOLVED_HINTS = (
+    "常见原因：成员不在应用的通讯录权限范围内；成员已离职；",
+    "邮箱不是飞书账号绑定的邮箱——管理后台里填的「工作邮箱」（Work email）查不到；",
+    "邮箱查不到时改填 mobile（手机号，中国大陆号码可不带 +86）。",
 )
 
 
@@ -26,18 +26,34 @@ class ImportResult:
 
 
 async def resolve_open_ids(spec: TeamSpec, directory: FeishuDirectory) -> dict[str, str]:
-    """Maps every member alias to its open_id, or raises listing every failure."""
-    resolved = await directory.batch_get_open_ids([m.email for m in spec.members.values()])
+    """Maps every member alias to its open_id, or raises listing every failure.
+
+    Email is tried first and mobile is the fallback; when both resolve they must
+    name the same Feishu user.
+    """
+    members = spec.members.values()
+    resolved = await directory.batch_get_open_ids(
+        emails=[m.email for m in members if m.email],
+        mobiles=[m.mobile for m in members if m.mobile],
+    )
     open_ids: dict[str, str] = {}
     errors: list[str] = []
+    unresolved = False
     for alias, member in spec.members.items():
-        open_id = resolved.get(member.email.lower())
-        if open_id is None:
-            errors.append(f"member {alias!r} <{member.email}>: 飞书没有返回 open_id")
+        by_email = resolved.get(member.email.lower()) if member.email else None
+        by_mobile = resolved.get(member.mobile) if member.mobile else None
+        if by_email and by_mobile and by_email != by_mobile:
+            errors.append(
+                f"member {alias!r} <{member.masked_identity}>: "
+                "邮箱和手机号对应的是两个不同的飞书用户"
+            )
+        elif by_email or by_mobile:
+            open_ids[alias] = by_email or by_mobile
         else:
-            open_ids[alias] = open_id
+            unresolved = True
+            errors.append(f"member {alias!r} <{member.masked_identity}>: 飞书没有返回 open_id")
     if errors:
-        raise TeamImportError([*errors, "".join(UNRESOLVED_EMAIL_HINTS)])
+        raise TeamImportError([*errors, "".join(UNRESOLVED_HINTS)] if unresolved else errors)
 
     aliases_by_open_id: dict[str, list[str]] = {}
     for alias, open_id in open_ids.items():

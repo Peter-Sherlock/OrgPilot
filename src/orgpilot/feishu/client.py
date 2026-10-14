@@ -1,14 +1,22 @@
 """Feishu OpenAPI client with automatic token management and mock implementation."""
 
 import json
+import re
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any, Protocol, runtime_checkable
 
 import httpx
 
-# contact/v3 users/batch_get_id accepts at most 50 emails per request.
+# contact/v3 users/batch_get_id accepts at most 50 emails and 50 mobiles per request.
 BATCH_GET_ID_LIMIT = 50
+
+
+def normalize_mobile(value: str) -> str:
+    """Drops separators and the +86 prefix: batch_get_id takes mainland numbers bare
+    and other numbers with a leading +country code."""
+    cleaned = re.sub(r"[\s\-()]", "", value)
+    return cleaned[3:] if cleaned.startswith("+86") else cleaned
 
 
 def _unique_emails(emails: Sequence[str]) -> list[str]:
@@ -18,6 +26,21 @@ def _unique_emails(emails: Sequence[str]) -> list[str]:
         cleaned = email.strip()
         seen.setdefault(cleaned.lower(), cleaned)
     return list(seen.values())
+
+
+def _lookup_batches(emails: Sequence[str], mobiles: Sequence[str]) -> list[dict[str, list[str]]]:
+    """Splits lookups into request bodies of up to 50 emails plus 50 mobiles each."""
+    unique_emails = _unique_emails(emails)
+    unique_mobiles = list(dict.fromkeys(normalize_mobile(m) for m in mobiles))
+    batches: list[dict[str, list[str]]] = []
+    for start in range(0, max(len(unique_emails), len(unique_mobiles)), BATCH_GET_ID_LIMIT):
+        batch: dict[str, list[str]] = {}
+        if chunk := unique_emails[start : start + BATCH_GET_ID_LIMIT]:
+            batch["emails"] = chunk
+        if chunk := unique_mobiles[start : start + BATCH_GET_ID_LIMIT]:
+            batch["mobiles"] = chunk
+        batches.append(batch)
+    return batches
 
 
 @runtime_checkable
@@ -54,10 +77,12 @@ class FeishuClient(Protocol):
 
 @runtime_checkable
 class FeishuDirectory(Protocol):
-    """Resolves team members' profile emails to app-scoped open_ids (ADR-0009 §3)."""
+    """Resolves team members' emails or mobiles to app-scoped open_ids (ADR-0009 §3)."""
 
-    async def batch_get_open_ids(self, emails: Sequence[str]) -> dict[str, str]:
-        """Returns lower-cased email -> open_id for every email Feishu matched."""
+    async def batch_get_open_ids(
+        self, emails: Sequence[str] = (), mobiles: Sequence[str] = ()
+    ) -> dict[str, str]:
+        """Returns lower-cased email or normalized mobile -> open_id for every match."""
         ...
 
 
@@ -166,45 +191,54 @@ class AsyncFeishuClient:
         resp = await self._request("PATCH", url, json=body, headers=headers)
         return self._response_json(resp, "update task")
 
-    async def batch_get_open_ids(self, emails: Sequence[str]) -> dict[str, str]:
-        """Resolves profile emails to open_ids via contact/v3 users/batch_get_id.
+    async def batch_get_open_ids(
+        self, emails: Sequence[str] = (), mobiles: Sequence[str] = ()
+    ) -> dict[str, str]:
+        """Resolves emails and mobiles to open_ids via contact/v3 users/batch_get_id.
 
-        Emails missing from the result, or returned without a user_id, are
-        unresolved: unknown, outside the app's contact scope, resigned, or a
-        Feishu enterprise mailbox instead of the profile email. The docs do not
-        say which shape an unmatched email takes, so both count as unresolved.
+        An unmatched lookup comes back as an entry without user_id (seen on a real
+        tenant, 2026-10-14): unknown, outside the app's contact scope, resigned, or
+        an address that is not the account's email (a "work email" set in the
+        admin console does not match). Missing entries count as unresolved too.
         """
         token = await self.get_tenant_access_token()
         url = f"{self.base_url}/open-apis/contact/v3/users/batch_get_id?user_id_type=open_id"
         headers = {"Authorization": f"Bearer {token}"}
-        unique = _unique_emails(emails)
         resolved: dict[str, str] = {}
-        for start in range(0, len(unique), BATCH_GET_ID_LIMIT):
-            body = {
-                "emails": unique[start : start + BATCH_GET_ID_LIMIT],
-                "include_resigned": False,
-            }
+        for batch in _lookup_batches(emails, mobiles):
+            body = {**batch, "include_resigned": False}
             resp = await self._request("POST", url, json=body, headers=headers)
             data = self._response_json(resp, "batch get user id")
             for entry in (data.get("data") or {}).get("user_list") or []:
-                email = (entry.get("email") or "").strip().lower()
                 user_id = entry.get("user_id")
-                if email and user_id:
-                    resolved[email] = user_id
+                if not user_id:
+                    continue
+                if entry.get("email"):
+                    resolved[entry["email"].strip().lower()] = user_id
+                if entry.get("mobile"):
+                    resolved[normalize_mobile(entry["mobile"])] = user_id
         return resolved
 
 
 class MockFeishuClient:
     """Deterministic in-memory Mock Feishu client for offline testing and CI/CD."""
 
-    def __init__(self, email_directory: dict[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        email_directory: dict[str, str] | None = None,
+        mobile_directory: dict[str, str] | None = None,
+    ) -> None:
         self.sent_messages: list[dict[str, Any]] = []
         self.sent_cards: list[dict[str, Any]] = []
         self.updated_tasks: list[dict[str, Any]] = []
         self.email_directory = {
             email.strip().lower(): open_id for email, open_id in (email_directory or {}).items()
         }
-        self.directory_requests: list[list[str]] = []
+        self.mobile_directory = {
+            normalize_mobile(mobile): open_id
+            for mobile, open_id in (mobile_directory or {}).items()
+        }
+        self.directory_requests: list[dict[str, list[str]]] = []
 
     async def send_message(
         self,
@@ -250,14 +284,16 @@ class MockFeishuClient:
         self.updated_tasks.append(record)
         return {"code": 0, "msg": "success", "data": record}
 
-    async def batch_get_open_ids(self, emails: Sequence[str]) -> dict[str, str]:
-        unique = _unique_emails(emails)
+    async def batch_get_open_ids(
+        self, emails: Sequence[str] = (), mobiles: Sequence[str] = ()
+    ) -> dict[str, str]:
         resolved: dict[str, str] = {}
-        for start in range(0, len(unique), BATCH_GET_ID_LIMIT):
-            chunk = unique[start : start + BATCH_GET_ID_LIMIT]
-            self.directory_requests.append(chunk)
-            for email in chunk:
-                open_id = self.email_directory.get(email.lower())
-                if open_id:
+        for batch in _lookup_batches(emails, mobiles):
+            self.directory_requests.append(batch)
+            for email in batch.get("emails", []):
+                if open_id := self.email_directory.get(email.lower()):
                     resolved[email.lower()] = open_id
+            for mobile in batch.get("mobiles", []):
+                if open_id := self.mobile_directory.get(mobile):
+                    resolved[mobile] = open_id
         return resolved
