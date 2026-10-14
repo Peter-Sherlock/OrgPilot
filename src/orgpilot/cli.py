@@ -88,9 +88,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     team = subparsers.add_parser("team", help="import or inspect the team roster (ADR-0009)")
     team_commands = team.add_subparsers(dest="team_command", required=True)
-    team_import = team_commands.add_parser(
-        "import", help="import members and tasks from team.yaml"
-    )
+    team_import = team_commands.add_parser("import", help="import members and tasks from team.yaml")
     team_import.add_argument("path", type=Path, help="team.yaml file")
     team_import.add_argument(
         "--project", default=None, help="defaults to env ORGPILOT_FEISHU_PROJECT_ID"
