@@ -180,3 +180,60 @@ def test_superseded_claim_is_not_evidence() -> None:
     case = CoordinationService().build_cases(state, ())[0]
     assert case.evidence_claim_ids == ()
     assert case.candidate_actions == ()
+
+
+def test_reschedule_proposal_targets_only_pm_members() -> None:
+    """ADR-0009 §7: the privileged role is "pm" alone; lead/manager are labels."""
+
+    def member(member_id: str, role: str) -> MemberState:
+        return MemberState(
+            member_id=member_id,
+            display_name=member_id,
+            role=role,
+            source_event_id=f"evt-{member_id}",
+            last_update_at=NOW,
+        )
+
+    state = OrgState(
+        project_id="test-project",
+        members={
+            "alice": member("alice", "backend"),
+            "lena": member("lena", "lead"),
+            "max": member("max", "manager"),
+            "pat": member("pat", "pm"),
+        },
+        tasks={
+            "api": TaskState(
+                task_id="api",
+                title="API",
+                owner_id="alice",
+                workflow_status=WorkflowStatus.DOING,
+                health_status=HealthStatus.DELAYED,
+                deadline=NOW,
+                source_event_ids=("evt-task", "evt-risk"),
+                health_claim_ids=("claim-risk",),
+                last_update_at=NOW,
+            )
+        },
+        health_claims={
+            "claim-risk": TaskHealthClaim(
+                claim_id="claim-risk",
+                task_id="api",
+                stated_by="alice",
+                health_status=HealthStatus.DELAYED,
+                expected_completion=NOW.replace(day=3),
+                confidence=0.9,
+                source_event_id="evt-risk",
+                source_ref="message:1",
+                occurred_at=NOW,
+            )
+        },
+    )
+
+    case = CoordinationService().build_cases(state, ())[0]
+    reschedule = [
+        action
+        for action in case.candidate_actions
+        if action.action_type is ActionType.PROPOSE_RESCHEDULE
+    ]
+    assert [action.targets for action in reschedule] == [("pat",)]

@@ -80,7 +80,7 @@ class CoordinationService:
                     and primary_claim.expected_completion is not None
                     and primary_claim.expected_completion > task.deadline
                 ):
-                    pm_targets = self._find_manager_targets(state) or (task.owner_id,)
+                    pm_targets = self._find_pm_targets(state) or (task.owner_id,)
                     exp_iso = primary_claim.expected_completion.isoformat()
                     actions = (
                         CoordinationAction(
@@ -148,7 +148,7 @@ class CoordinationService:
             and primary_claim.expected_completion is not None
             and primary_claim.expected_completion > task.deadline
         ):
-            pm_targets = self._find_manager_targets(state) or (task.owner_id,)
+            pm_targets = self._find_pm_targets(state) or (task.owner_id,)
             exp_iso = primary_claim.expected_completion.isoformat()
             return (
                 CoordinationAction(
@@ -167,13 +167,14 @@ class CoordinationService:
         return ()
 
     @staticmethod
-    def _find_manager_targets(state: OrgState) -> tuple[str, ...]:
-        managers = tuple(
+    def _find_pm_targets(state: OrgState) -> tuple[str, ...]:
+        # Only "pm" is privileged (ADR-0009 §7): the same role that may start a
+        # team-wide sync receives reschedule approvals. Other roles are labels.
+        return tuple(
             member.member_id
             for member in sorted(state.members.values(), key=lambda m: m.member_id)
-            if member.role in {"pm", "manager", "lead"}
+            if member.role == "pm"
         )
-        return managers
 
     @staticmethod
     def _is_risky(workflow_status: WorkflowStatus, health_status: HealthStatus) -> bool:
