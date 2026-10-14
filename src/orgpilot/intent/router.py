@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 
 UNREGISTERED_HINT = (
     "你好！你还未加入本项目的成员名单，暂时无法处理你的消息。"
-    "请联系项目负责人将你添加为项目成员后再试。"
+    "请联系项目负责人把你的飞书邮箱加入团队名单（team.yaml）并导入后再试。"
 )
 
 

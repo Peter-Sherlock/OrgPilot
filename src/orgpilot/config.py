@@ -61,6 +61,8 @@ class OrgPilotSettings:
     feishu_app_secret: str | None = field(default=None, repr=False)
     feishu_verification_token: str | None = field(default=None, repr=False)
     feishu_project_id: str = "feishu-project"
+    # Demo-only first-contact bootstrap (ADR-0009 §8); real teams import team.yaml.
+    demo_mode: bool = False
     timezone: str = DEFAULT_TIMEZONE
     intent_timeout_seconds: float = DEFAULT_INTENT_TIMEOUT_SECONDS
     intent_confidence_threshold: float = DEFAULT_INTENT_CONFIDENCE_THRESHOLD
@@ -103,6 +105,8 @@ class OrgPilotSettings:
             feishu_app_secret=_optional_env("FEISHU_APP_SECRET"),
             feishu_verification_token=_optional_env("FEISHU_VERIFICATION_TOKEN"),
             feishu_project_id=os.getenv("ORGPILOT_FEISHU_PROJECT_ID", "feishu-project"),
+            demo_mode=os.getenv("ORGPILOT_DEMO_MODE", "false").strip().lower()
+            in {"1", "true", "yes", "on"},
             timezone=os.getenv("ORGPILOT_TIMEZONE", DEFAULT_TIMEZONE).strip(),
             intent_timeout_seconds=float(
                 os.getenv(
