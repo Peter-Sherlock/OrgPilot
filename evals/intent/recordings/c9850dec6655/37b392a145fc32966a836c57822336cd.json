@@ -1,0 +1,51 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "37b392a145fc32966a836c57822336cd",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 367,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 140,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:00:07.351747+00:00",
+  "response": {
+    "id": "c5a44adb-deb3-4fa6-a332-f2ea296edbc6",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_5R0Tr39uvKuLWCroHIdF3566",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "发送者在询问如何发起多人进度收集，属于询问机器人用法，归为 help。",
+          "items": [
+            {
+              "intent": "help",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "我想发起多人进度收集，该怎么操作？",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 367,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 140,
+      "service_tier": "standard"
+    }
+  }
+}

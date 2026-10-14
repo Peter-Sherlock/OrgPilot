@@ -1,0 +1,51 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "120e034ea2c34445696e84e91b3206e1",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 353,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 140,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:15:09.929744+00:00",
+  "response": {
+    "id": "65e510a5-bbb7-4a59-b7ff-b9601f66afa5",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_39taQwqmyvEfiZMcxHqL7578",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "存在待确认的同步卡片，发送者表示先不发起同步，属于对同步请求的否定确认。",
+          "items": [
+            {
+              "intent": "request_sync",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "source_quote": "算了，先不发",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 353,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 140,
+      "service_tier": "standard"
+    }
+  }
+}

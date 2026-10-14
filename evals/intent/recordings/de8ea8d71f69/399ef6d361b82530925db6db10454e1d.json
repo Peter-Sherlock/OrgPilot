@@ -1,0 +1,55 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "399ef6d361b82530925db6db10454e1d",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 509,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 222,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:24:56.731784+00:00",
+  "response": {
+    "id": "bc9ef4b7-31f2-40f3-98c2-02edde1ba6d4",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_h8fi2q5YnVjcNZNLYg8E3784",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟正面回答了机器人关于支付SDK报错何时解决的追问，给出根因（证书过期）和完成时间（今天下班前=18:00），早于截止日，健康度正常。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_sdk",
+              "health_status": "on_track",
+              "time_expression": "今天下班前",
+              "expected_completion": "2026-10-13T18:00:00+08:00",
+              "source_quote": "根因找到了，是证书过期，今天下班前能搞定",
+              "confidence": 0.92
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 509,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 222,
+      "service_tier": "standard"
+    }
+  }
+}

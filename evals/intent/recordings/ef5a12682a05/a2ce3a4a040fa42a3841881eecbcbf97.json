@@ -1,0 +1,53 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "a2ce3a4a040fa42a3841881eecbcbf97",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 497,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 176,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:14:32.132167+00:00",
+  "response": {
+    "id": "5f286765-7210-4cd0-978b-1f96dd810235",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_23Mve3cxRABsZh35XCoo2320",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟汇报自己负责的支付SDK接入可以收尾（正常推进），并明确说明压测准备不归自己管，故不输出压测条目。",
+          "items": [
+            {
+              "intent": "report_status",
+              "task_id": "pay_sdk",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "health_status": "on_track",
+              "source_quote": "支付SDK接入这块可以收尾了",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 497,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 176,
+      "service_tier": "standard"
+    }
+  }
+}

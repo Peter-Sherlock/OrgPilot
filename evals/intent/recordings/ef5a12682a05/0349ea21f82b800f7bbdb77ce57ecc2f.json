@@ -1,0 +1,51 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "0349ea21f82b800f7bbdb77ce57ecc2f",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 382,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 156,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:15:02.743898+00:00",
+  "response": {
+    "id": "03f69489-71ae-4ce9-bc77-499834adabc8",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_zIbZ2IwSKWAmkxb7XcwJ9607",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息询问周报是否还需要写，属于与项目进度无关的流程性询问，未回答待回答的支付SDK恢复时间问题。",
+          "answers_pending": false,
+          "items": [
+            {
+              "intent": "out_of_scope",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "对了，周报这周还用写吗？",
+              "confidence": 0.7
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 382,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 156,
+      "service_tier": "standard"
+    }
+  }
+}

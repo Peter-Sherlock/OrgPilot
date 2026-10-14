@@ -1,0 +1,51 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "96f3ab5a4feb793fe4858e342bcbb77e",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 385,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 147,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:08:34.549213+00:00",
+  "response": {
+    "id": "008622a2-caa0-49b4-85d8-be0562ba45dd",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_KqpiWB3vQFORtZKZzIRK6263",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "用户询问机器人能否直接修改任务截止时间，属于询问机器人能力范围，超出进度协调处理能力。",
+          "items": [
+            {
+              "intent": "out_of_scope",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "你能帮我直接改任务的截止时间吗？",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 385,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 147,
+      "service_tier": "standard"
+    }
+  }
+}

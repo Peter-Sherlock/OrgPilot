@@ -1,0 +1,51 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "9043c465bebebb95762850b27717dd7c",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 372,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 130,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:08:32.349408+00:00",
+  "response": {
+    "id": "97ef9251-6570-437a-8652-f5897689921e",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_EgjnUBgKZjhMnuPGNvdz0119",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "用户询问机器人能做什么，属于 help 意图，无任务状态信息。",
+          "items": [
+            {
+              "intent": "help",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "帮助",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 372,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 130,
+      "service_tier": "standard"
+    }
+  }
+}

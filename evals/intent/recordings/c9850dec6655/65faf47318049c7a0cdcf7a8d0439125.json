@@ -1,0 +1,51 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "65faf47318049c7a0cdcf7a8d0439125",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 375,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 137,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:08:37.153465+00:00",
+  "response": {
+    "id": "a437d7e8-4848-45ed-a16c-0b35d005f1d0",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_JykPJwLm5TLfKnFyVyaZ8477",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "用户要求播放音乐，与项目协调无关，属于超出处理能力的请求。",
+          "items": [
+            {
+              "intent": "out_of_scope",
+              "speech_act": "imperative",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "放首歌听听吧",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 375,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 137,
+      "service_tier": "standard"
+    }
+  }
+}

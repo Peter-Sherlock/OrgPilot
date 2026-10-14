@@ -1,0 +1,64 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "b524314c7c2c3adaeea0177297f96912",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 2931,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 289,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:13:08.527080+00:00",
+  "response": {
+    "id": "d18f3377-4b84-49d9-94b1-c0a01be7db41",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_Hj9VvZnInSJYNOywPSNC7484",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟汇报自己负责的支付SDK接入被第三方接口卡住，属于未解决问题，至少 at_risk；给出预计完成时间明天下午5点。同时陈述在等第三方依赖。",
+          "items": [
+            {
+              "intent": "report_status",
+              "task_id": "pay_sdk",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "health_status": "at_risk",
+              "time_expression": "明天下午5点",
+              "expected_completion": "2026-10-14T17:00:00+08:00",
+              "source_quote": "支付SDK这边被第三方接口卡住了，估计要弄到明天下午5点",
+              "confidence": 0.9
+            },
+            {
+              "intent": "dependency_wait",
+              "task_id": "pay_sdk",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "被第三方接口卡住了",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 2931,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "output_tokens": 289,
+      "service_tier": "standard"
+    }
+  }
+}

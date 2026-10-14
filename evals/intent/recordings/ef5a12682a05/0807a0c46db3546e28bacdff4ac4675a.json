@@ -1,0 +1,53 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "0807a0c46db3546e28bacdff4ac4675a",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 492,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 158,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:14:07.493618+00:00",
+  "response": {
+    "id": "eac62301-ca37-43bb-93fb-049257a68da2",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_ljcD2wc3lqgqTjsC1bV93041",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳汇报自己负责的对账模块联调没有新问题，属正常推进；无待回答问题。",
+          "items": [
+            {
+              "intent": "report_status",
+              "task_id": "ledger_check",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "health_status": "on_track",
+              "source_quote": "对账模块没有新问题",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 492,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 158,
+      "service_tier": "standard"
+    }
+  }
+}

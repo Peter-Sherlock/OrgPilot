@@ -1,0 +1,53 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "3c83c889fe577655afa7b94b4abec6e8",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 493,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 170,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:13:12.119852+00:00",
+  "response": {
+    "id": "4291467f-3da5-45bc-902c-e59302fc4322",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_RkMlk5Z2eLJFOrA92GS47293",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟汇报自己负责的商户后台管理端进展顺利、接口联调通过，无未解决问题，属正常推进。",
+          "items": [
+            {
+              "intent": "report_status",
+              "task_id": "merchant_admin",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "health_status": "on_track",
+              "source_quote": "商户后台管理端进展顺利，接口联调都过了",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 493,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 170,
+      "service_tier": "standard"
+    }
+  }
+}

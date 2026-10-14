@@ -1,0 +1,54 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "e7bddee502285250bf6a75a1427edbda",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 488,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 236,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:25:46.562562+00:00",
+  "response": {
+    "id": "2c415806-3dab-4fc5-ae34-7d86b32a8ac5",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_Vd4gc8gWvB8cxjNvdBe51286",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟汇报修复进展，给出预计完成时间「明天」但用「理论上」「说不准」表达不确定，属含糊推测；未指明具体任务，无法确定 task_id。预计完成时间在 pay_sdk 截止日（10-16）之前，但存在隐藏问题风险，判为 at_risk。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "health_status": "at_risk",
+              "time_expression": "明天",
+              "expected_completion": "2026-10-14T18:00:00+08:00",
+              "source_quote": "理论上明天能修好，但如果有隐藏问题就说不准了",
+              "confidence": 0.6
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 488,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 236,
+      "service_tier": "standard"
+    }
+  }
+}

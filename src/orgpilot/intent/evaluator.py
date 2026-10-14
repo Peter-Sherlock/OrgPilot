@@ -1,0 +1,1233 @@
+"""Intent behavior evaluation runner and existing-system baseline (ADR-0008 §8).
+
+The evaluation judges the SYSTEM BEHAVIOR (claims recorded, sync started,
+clarifications asked, reply category) so the current pipeline and the future
+intent layer can be compared on the same samples. The baseline system under
+test drives the real entry point — ``FeishuWebhookHandler`` over an in-memory
+SQLite database with a mock adapter — and collects behavior from the event
+store, the sync coordinator, and the adapter's outbound messages. The baseline
+has no intent layer, so intent-level metrics are reported as N/A.
+"""
+
+import json
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
+from enum import StrEnum
+from pathlib import Path
+from typing import Any, Protocol
+
+import yaml
+from pydantic import Field
+
+from orgpilot.adapter.mock import MockCollaborationAdapter
+from orgpilot.domain.enums import ProbeMemberStatus
+from orgpilot.domain.sync_models import MemberProbeState
+from orgpilot.events.models import OrgEvent
+from orgpilot.extraction.models import StrictModel
+from orgpilot.feishu.client import MockFeishuClient
+from orgpilot.feishu.webhook import FeishuWebhookHandler
+from orgpilot.gateway.service import GatewayService
+from orgpilot.intent.metrics import (
+    IntentLayerMetrics,
+    compute_intent_metrics,
+    intent_output_view,
+    render_intent_metrics_section,
+)
+from orgpilot.intent.models import (
+    Certainty,
+    IntentType,
+    Polarity,
+    SpeechAct,
+)
+from orgpilot.intent.router import MessageRouter
+from orgpilot.storage.database import Database
+
+FIXTURE_OCCURRED_AT = "2026-10-12T09:00:00+08:00"
+FIXTURE_SOURCE_REF = "intent-eval-fixture"
+
+# Category minimums from ADR-0008 §8 sample coverage requirements.
+CATEGORY_MINIMUMS: dict[str, int] = {
+    "report_status": 8,
+    "make_commitment": 8,
+    "answer_pending": 8,
+    "query_status": 8,
+    "request_sync": 8,
+    "acknowledge": 8,
+    "chitchat": 8,
+    "help": 8,
+    "out_of_scope": 8,
+    "negation": 8,
+    "hypothetical": 6,
+    "vague": 6,
+    "multi_task": 8,
+    "disambiguation": 6,
+    "time_chinese": 10,
+    "substring_trap": 6,
+    "p1_p2": 10,
+    "sync_near_negative": 6,
+    "sync_non_pm": 3,
+    "multi_turn_topic_shift": 4,
+    "sync_command": 4,
+    "confirmation_flow": 6,
+    "probe_reply": 2,
+}
+
+
+class ReplyCategory(StrEnum):
+    """Behavior-level reply category. ``clarify`` extends the exemplified list for
+    the follow-up-question turns the ADR requires the future system to send;
+    ``noted`` covers project-related turns that change no state (LABELING.md R5)."""
+
+    CLAIM_RECORDED = "claim_recorded"
+    QUERY_ANSWER = "query_answer"
+    SYNC_CONFIRM = "sync_confirm"
+    SYNC_STARTED = "sync_started"
+    NO_PERMISSION = "no_permission"
+    UNSUPPORTED = "unsupported"
+    NOTED = "noted"
+    SMALLTALK = "smalltalk"
+    HELP = "help"
+    CLARIFY = "clarify"
+    FALLBACK = "fallback"
+
+
+# ---------------------------------------------------------------------------
+# Dataset contracts
+# ---------------------------------------------------------------------------
+
+
+class PendingQuestionContext(StrictModel):
+    """The question the bot asked last, and the task it targets."""
+
+    question: str
+    task_id: str | None = None
+
+
+class PendingConfirmationContext(StrictModel):
+    """A side-effect confirmation the bot is waiting on (LABELING.md R8)."""
+
+    kind: str = "sync"
+    initiated_by: str
+
+
+class PendingProbeContext(StrictModel):
+    """An open sync probe addressed to the sender (3a.1).
+
+    ``task_ids`` lists EVERY task the probe asks about; ``asked_rounds`` counts
+    clarification rounds already spent on this probe.
+    """
+
+    task_ids: list[str] = Field(default_factory=list)
+    asked_rounds: int = 0
+
+
+class RecentMessage(StrictModel):
+    role: str
+    text: str
+
+
+class SampleContext(StrictModel):
+    pending_question: PendingQuestionContext | None = None
+    pending_probe: PendingProbeContext | None = None
+    pending_confirmation: PendingConfirmationContext | None = None
+    recent_messages: list[RecentMessage] = Field(default_factory=list)
+
+
+class ExpectedClaim(StrictModel):
+    task_id: str
+    health_status: str
+    expected_completion: datetime | None = None
+
+
+class ExpectedCommitment(StrictModel):
+    task_id: str
+    predicate: str = "workflow_status"
+    expected_value: str = "done"
+    due_at: datetime | None = None
+
+
+class ExpectedBehavior(StrictModel):
+    claims: list[ExpectedClaim] = Field(default_factory=list)
+    commitments: list[ExpectedCommitment] = Field(default_factory=list)
+    starts_sync: bool = False
+    sends_confirmation_card: bool = False
+    asks_clarification: bool = False
+    reply_category: ReplyCategory
+
+
+class ExpectedIntentItem(StrictModel):
+    """Annotator view of one intent item; unspecified slots mean "don't check"."""
+
+    intent: IntentType
+    task_id: str | None = None
+    speech_act: SpeechAct
+    polarity: Polarity
+    certainty: Certainty
+    health_status: str | None = None
+    time_expression: str | None = None
+    expected_completion: datetime | None = None
+    blocker: str | None = None
+    source_quote: str | None = None
+
+
+class ExpectedIntents(StrictModel):
+    answers_pending: bool | None = None
+    items: list[ExpectedIntentItem] = Field(default_factory=list)
+
+
+class Expected(StrictModel):
+    behavior: ExpectedBehavior
+    # Conversation turns for pure commands (/同步, /帮助) carry no intent
+    # annotation, so intents defaults to empty (3a.1).
+    intents: ExpectedIntents = Field(default_factory=ExpectedIntents)
+
+
+class EvalSample(StrictModel):
+    id: str
+    category: str
+    message: str
+    sender: str
+    occurred_at: datetime
+    context: SampleContext | None = None
+    expected: Expected
+
+
+class IntentProjectFixture(StrictModel):
+    """Fixed project the samples run against (1 PM + engineers + tasks)."""
+
+    schema_version: int = 1
+    dataset_id: str = ""
+    title: str = ""
+    project_id: str
+    members: list[dict[str, Any]]
+    tasks: list[dict[str, Any]]
+
+    @property
+    def pm_id(self) -> str:
+        for member in self.members:
+            if member.get("role") == "pm":
+                return str(member["member_id"])
+        raise ValueError("intent evaluation project fixture must define a pm member")
+
+    @property
+    def member_ids(self) -> set[str]:
+        return {str(member["member_id"]) for member in self.members}
+
+    @property
+    def task_ids(self) -> set[str]:
+        return {str(task["task_id"]) for task in self.tasks}
+
+
+class IntentDataset(StrictModel):
+    schema_version: int
+    dataset_id: str
+    split: str
+    samples: list[EvalSample]
+
+
+# ---------------------------------------------------------------------------
+# Observed behavior and the system-under-test protocol
+# ---------------------------------------------------------------------------
+
+
+class ObservedClaim(StrictModel):
+    task_id: str
+    health_status: str
+    expected_completion: datetime | None = None
+
+
+class ObservedCommitment(StrictModel):
+    task_id: str
+    predicate: str
+    expected_value: str
+    due_at: datetime | None = None
+
+
+class ObservedBehavior(StrictModel):
+    claims: list[ObservedClaim] = Field(default_factory=list)
+    commitments: list[ObservedCommitment] = Field(default_factory=list)
+    starts_sync: bool = False
+    sends_confirmation_card: bool = False
+    asks_clarification: bool = False
+    reply_category: ReplyCategory = ReplyCategory.SMALLTALK
+
+
+class IntentSystemUnderTest(Protocol):
+    """Anything that can process one evaluation sample and report its behavior."""
+
+    async def observe(self, sample: EvalSample) -> ObservedBehavior: ...
+
+
+class _RecordingAdapter(MockCollaborationAdapter):
+    """Mock adapter that also exposes a Feishu client so the webhook's direct
+    replies (greeting, sync confirmation, membership hint) become observable."""
+
+    def __init__(self, project_id: str) -> None:
+        super().__init__(project_id=project_id)
+        self.client = MockFeishuClient()
+
+
+CONFIRMATION_CARD_MARKER = "sync_confirmation"
+
+
+def _has_sync_confirmation_marker(records: list[dict[str, Any]]) -> bool:
+    """True when any outbound message carries the explicit ``kind=sync_confirmation``
+    marker. LABELING.md R8: only a message asking for confirmation BEFORE the side
+    effect counts as a confirmation card, and the system under test must report it
+    with this marker — post-sync notifications never count."""
+    for record in records:
+        for field in ("card", "content"):
+            payload = record.get(field)
+            if isinstance(payload, dict) and payload.get("kind") == CONFIRMATION_CARD_MARKER:
+                return True
+    return False
+
+
+class BaselineSystemUnderTest:
+    """Existing pipeline driven through FeishuWebhookHandler (ADR-0008 baseline).
+
+    Each sample runs against a fresh in-memory database seeded with the fixed
+    project fixture, so samples stay independent.
+    """
+
+    def __init__(self, project: IntentProjectFixture) -> None:
+        self._project = project
+
+    async def observe(self, sample: EvalSample) -> ObservedBehavior:
+        db = Database("sqlite+aiosqlite:///:memory:")
+        await db.init_db()
+        try:
+            adapter = _RecordingAdapter(self._project.project_id)
+            service = GatewayService(db, adapter_factory=lambda _project: adapter)
+            await service.ingest_raw_events(self._project.project_id, self._fixture_events())
+            coordinator = await service.get_sync_coordinator(self._project.project_id)
+            if sample.context is not None and sample.context.pending_question is not None:
+                self._construct_pending_session(coordinator, sample)
+            # Samples with pending_confirmation construct NO extra state: the baseline
+            # has no confirmation-card mechanism, so those samples are expected to fail.
+
+            sessions_before = len(coordinator._sessions)
+            handler = FeishuWebhookHandler(service=service, project_id=self._project.project_id)
+            response = await handler.handle_event(self._message_payload(sample))
+
+            stored_events = await service.event_store.get_events(self._project.project_id)
+            outbound_records = [*adapter.client.sent_messages, *adapter.client.sent_cards]
+            claims, commitments = _collect_claim_events(stored_events)
+            msg = response.get("msg")
+            return ObservedBehavior(
+                claims=claims,
+                commitments=commitments,
+                starts_sync=(
+                    msg == "sync_session_started" or len(coordinator._sessions) > sessions_before
+                ),
+                sends_confirmation_card=_has_sync_confirmation_marker(outbound_records),
+                asks_clarification=msg == "clarification_sent",
+                reply_category=_baseline_reply_category(response, claims, commitments),
+            )
+        finally:
+            await db.close()
+
+    def _fixture_events(self) -> list[dict[str, Any]]:
+        occurred_at = FIXTURE_OCCURRED_AT
+        events: list[dict[str, Any]] = []
+        for member in self._project.members:
+            events.append(
+                {
+                    "schema_version": 1,
+                    "project_id": self._project.project_id,
+                    "event_id": f"evt-fixture-member-{member['member_id']}",
+                    "event_type": "member.registered",
+                    "source": "human",
+                    "source_ref": FIXTURE_SOURCE_REF,
+                    "occurred_at": occurred_at,
+                    "received_at": occurred_at,
+                    "payload": {
+                        "member_id": member["member_id"],
+                        "display_name": member["display_name"],
+                        "role": member["role"],
+                    },
+                }
+            )
+        for task in self._project.tasks:
+            payload: dict[str, Any] = {
+                "task_id": task["task_id"],
+                "title": task["title"],
+                "owner_id": task["owner_id"],
+                "workflow_status": task["workflow_status"],
+                "deadline": task["deadline"],
+            }
+            if task.get("dependencies"):
+                payload["dependencies"] = list(task["dependencies"])
+            events.append(
+                {
+                    "schema_version": 1,
+                    "project_id": self._project.project_id,
+                    "event_id": f"evt-fixture-task-{task['task_id']}",
+                    "event_type": "task.created",
+                    "source": "task",
+                    "source_ref": FIXTURE_SOURCE_REF,
+                    "occurred_at": occurred_at,
+                    "received_at": occurred_at,
+                    "payload": payload,
+                }
+            )
+        return events
+
+    def _construct_pending_session(self, coordinator: Any, sample: EvalSample) -> None:
+        """Builds the active clarification session a pending-question sample answers."""
+        pending = sample.context.pending_question if sample.context else None
+        if pending is None:
+            return
+        session = coordinator.start_sync_session(
+            self._project.project_id, initiated_by=self._project.pm_id
+        )
+        for member_id, probe in session.member_probes.items():
+            if member_id == sample.sender:
+                probe.status = ProbeMemberStatus.CLARIFYING
+                probe.clarification_questions.append(pending.question)
+            else:
+                probe.status = ProbeMemberStatus.COLLECTED
+        if sample.sender not in session.member_probes:
+            session.member_probes[sample.sender] = MemberProbeState(
+                member_id=sample.sender,
+                display_name=sample.sender,
+                status=ProbeMemberStatus.CLARIFYING,
+                clarification_questions=[pending.question],
+            )
+        # Anchor the idle-timeout clock to the sample time so the constructed
+        # session stays active no matter when the suite runs.
+        session.updated_at = sample.occurred_at
+
+    def _message_payload(self, sample: EvalSample) -> dict[str, Any]:
+        create_time = str(int(sample.occurred_at.timestamp() * 1000))
+        return {
+            "header": {
+                "event_id": f"evt-{sample.id}",
+                "event_type": "im.message.receive_v1",
+                "create_time": create_time,
+            },
+            "event": {
+                "sender": {"sender_id": {"open_id": sample.sender}, "sender_type": "user"},
+                "message": {
+                    "message_id": f"om-{sample.id}",
+                    "message_type": "text",
+                    "content": json.dumps({"text": sample.message}, ensure_ascii=False),
+                    "create_time": create_time,
+                    "chat_type": "p2p",
+                },
+            },
+        }
+
+
+def _collect_claim_events(
+    stored_events: list[OrgEvent],
+) -> tuple[list[ObservedClaim], list[ObservedCommitment]]:
+    claims: list[ObservedClaim] = []
+    commitments: list[ObservedCommitment] = []
+    for event in stored_events:
+        if event.event_type == "task.health_reported":
+            health = event.payload.health_status
+            claims.append(
+                ObservedClaim(
+                    task_id=event.payload.task_id,
+                    health_status=str(health.value if hasattr(health, "value") else health),
+                    expected_completion=event.payload.expected_completion,
+                )
+            )
+        elif event.event_type == "commitment.made":
+            commitments.append(
+                ObservedCommitment(
+                    task_id=event.payload.target_id,
+                    predicate=str(event.payload.predicate),
+                    expected_value=str(event.payload.expected_value),
+                    due_at=event.payload.due_at,
+                )
+            )
+    return claims, commitments
+
+
+def _baseline_reply_category(
+    response: dict[str, Any],
+    claims: list[ObservedClaim],
+    commitments: list[ObservedCommitment],
+) -> ReplyCategory:
+    """Baseline category derivation: response msg + persisted events only.
+
+    The baseline never sends a kind=sync_confirmation card, so SYNC_CONFIRM is
+    unreachable here by construction.
+    """
+    msg = response.get("msg")
+    if msg == "sync_session_started":
+        return ReplyCategory.SYNC_STARTED
+    if claims or commitments:
+        return ReplyCategory.CLAIM_RECORDED
+    if msg == "clarification_sent":
+        return ReplyCategory.CLARIFY
+    if msg in {"sender_not_registered", "message_rejected"}:
+        return ReplyCategory.NO_PERMISSION
+    return ReplyCategory.SMALLTALK
+
+
+class LayeredSystemUnderTest(BaselineSystemUnderTest):
+    """Drives the layered MessageRouter through the real webhook (ADR-0008 §3).
+
+    The intent client is injectable (heuristic for the current-pipeline number,
+    oracle for the pipeline upper bound). Test state — pending clarifications and
+    pending sync confirmations — is constructed exclusively through the router's
+    public registration API, never by touching private fields.
+    """
+
+    def __init__(self, project: IntentProjectFixture, intent_client: Any) -> None:
+        super().__init__(project)
+        self._intent_client = intent_client
+
+    async def observe(self, sample: EvalSample) -> ObservedBehavior:
+        db = Database("sqlite+aiosqlite:///:memory:")
+        await db.init_db()
+        try:
+            adapter = _RecordingAdapter(self._project.project_id)
+            service = GatewayService(db, adapter_factory=lambda _project: adapter)
+            await service.ingest_raw_events(self._project.project_id, self._fixture_events())
+            coordinator = await service.get_sync_coordinator(self._project.project_id)
+            router = MessageRouter(service=service, intent_client=self._intent_client)
+            await self._construct_dialogue_state(router, sample)
+            await self._seed_recent_messages(router, sample)
+
+            sessions_before = len(coordinator._sessions)
+            handler = FeishuWebhookHandler(
+                service=service, project_id=self._project.project_id, router=router
+            )
+            response = await handler.handle_event(self._message_payload(sample))
+
+            stored_events = await service.event_store.get_events(self._project.project_id)
+            outbound_records = [*adapter.client.sent_messages, *adapter.client.sent_cards]
+            claims, commitments = _collect_claim_events(stored_events)
+            data = response.get("data", {}) or {}
+            observed_category = str(data.get("reply_category", "smalltalk"))
+            try:
+                reply_category = ReplyCategory(observed_category)
+            except ValueError:
+                reply_category = ReplyCategory.SMALLTALK
+            return ObservedBehavior(
+                claims=claims,
+                commitments=commitments,
+                starts_sync=(
+                    response.get("msg") == "sync_session_started"
+                    or len(coordinator._sessions) > sessions_before
+                ),
+                sends_confirmation_card=_has_sync_confirmation_marker(outbound_records),
+                asks_clarification=(
+                    bool(data.get("asks_clarification"))
+                    or response.get("msg") == "clarification_sent"
+                ),
+                reply_category=reply_category,
+            )
+        finally:
+            await db.close()
+
+    async def _seed_recent_messages(self, router: Any, sample: EvalSample) -> None:
+        """Seeds sample-provided recent turns into the message store (3b 收尾).
+
+        ``context.recent_messages`` carries prior conversation the annotator
+        relies on (e.g. which task has the open problem — LABELING.md R7);
+        member-side lines become the router's conversation-history context so
+        the intent client sees them. Bot-side lines are not seeded: in real
+        traffic bot replies enter history through actual sends.
+        """
+        recent = sample.context.recent_messages if sample.context else []
+        for index, message in enumerate(recent):
+            if message.role != "member":
+                continue
+            await router.messages.record_outcome(
+                project_id=self._project.project_id,
+                message_id=f"{sample.id}-recent-{index}",
+                sender_id=sample.sender,
+                message_text=message.text,
+                intent_summary={},
+                reply_category="smalltalk",
+                reply_text="",
+                response={"code": 0, "msg": "seeded_history"},
+                created_at=sample.occurred_at - timedelta(minutes=len(recent) - index),
+            )
+
+    async def _construct_dialogue_state(self, router: Any, sample: EvalSample) -> None:
+        """Builds pending dialogue state through the router's public API only."""
+        context = sample.context
+        if context is None:
+            return
+        if context.pending_probe is not None:
+            # A REAL sync session via the public start_sync entry — probes are
+            # dispatched to every owner and probe clarifications registered (3a.1).
+            await router.start_sync(
+                self._project.project_id,
+                initiated_by=self._project.pm_id,
+                occurred_at=sample.occurred_at,
+            )
+            router.register_pending_clarification(
+                self._project.project_id,
+                sample.sender,
+                "项目负责人正在同步项目进度，请逐个汇报您负责任务的最新进展。",
+                task_ids=list(context.pending_probe.task_ids),
+                source="probe",
+                asked_rounds=context.pending_probe.asked_rounds,
+                occurred_at=sample.occurred_at,
+            )
+        if context.pending_question is not None:
+            router.register_pending_clarification(
+                self._project.project_id,
+                sample.sender,
+                context.pending_question.question,
+                task_ids=[context.pending_question.task_id]
+                if context.pending_question.task_id
+                else [],
+                source="clarify",
+                occurred_at=sample.occurred_at,
+            )
+        if context.pending_confirmation is not None:
+            # The card belongs to the INITIATOR: only their acknowledgement can
+            # confirm it; anyone else replying "好的" has no pending item (R8).
+            initiator = context.pending_confirmation.initiated_by
+            others = sorted(self._project.member_ids - {initiator})
+            router.register_pending_sync_confirmation(
+                self._project.project_id,
+                initiator,
+                initiated_by=initiator,
+                member_ids=others,
+                occurred_at=sample.occurred_at,
+            )
+
+
+# ---------------------------------------------------------------------------
+# Comparison and metrics
+# ---------------------------------------------------------------------------
+
+
+class SampleComparison(StrictModel):
+    sample_id: str
+    category: str
+    has_pending_question: bool = False
+    expected: ExpectedBehavior
+    observed: ObservedBehavior
+    issues: list[str] = Field(default_factory=list)
+    # What the classifier actually produced for this sample (layered runs with
+    # a recorded intent client only); None for the baseline and for passes.
+    intent_output: dict[str, Any] | None = None
+
+    @property
+    def passed(self) -> bool:
+        return not self.issues
+
+
+class CategoryStats(StrictModel):
+    category: str
+    samples: int
+    false_claims: int
+    sync_false_triggers: int
+    reply_correct: int
+    claim_precision: float
+    claim_recall: float
+    # denominators for the P/R cells, so the report can render “—” (§9)
+    observed_claims: int = 0
+    expected_claims: int = 0
+
+
+class IntentEvalMetrics(StrictModel):
+    total_samples: int
+    expected_claims_total: int
+    observed_claims_total: int
+    claim_true_positives: int
+    claim_precision: float
+    claim_recall: float
+    task_id_accuracy: float
+    health_status_accuracy: float
+    time_accuracy: float
+    false_claim_samples: int
+    no_claim_expected_samples: int
+    false_claim_rate: float
+    no_sync_expected: int = Field(
+        description="Samples that must neither start a sync nor send a confirmation card"
+    )
+    sync_false_trigger_rate: float
+    unconfirmed_sync_expected: int = Field(
+        description="Samples that must ask for confirmation before starting a sync (R8)"
+    )
+    unconfirmed_sync_count: int = Field(
+        description="Syncs started directly although a confirmation card was required; target 0"
+    )
+    reply_category_accuracy: float
+    multi_turn_samples: int
+    multi_turn_success_rate: float
+    per_category: list[CategoryStats]
+    intent_metrics: IntentLayerMetrics | None = Field(
+        default=None,
+        description="Classifier-level scores (oracle/llm layered runs); None for the baseline",
+    )
+
+
+def _match_claims(
+    expected_claims: list[ExpectedClaim],
+    observed_claims: list[ObservedClaim],
+) -> tuple[list[tuple[ExpectedClaim, ObservedClaim]], list[ObservedClaim]]:
+    """Greedy one-to-one match by task_id. Returns (matched pairs, unmatched observed)."""
+    remaining = list(observed_claims)
+    pairs: list[tuple[ExpectedClaim, ObservedClaim]] = []
+    for expected in expected_claims:
+        for candidate in remaining:
+            if candidate.task_id == expected.task_id:
+                pairs.append((expected, candidate))
+                remaining.remove(candidate)
+                break
+    return pairs, remaining
+
+
+def compare_sample(sample: EvalSample, observed: ObservedBehavior) -> SampleComparison:
+    expected = sample.expected.behavior
+    issues: list[str] = []
+    pairs, unmatched_observed = _match_claims(expected.claims, observed.claims)
+
+    for observed_claim in unmatched_observed:
+        issues.append(f"错误 claim：不应在 {observed_claim.task_id} 上生成状态")
+    for expected_claim, observed_claim in pairs:
+        if observed_claim.health_status != expected_claim.health_status:
+            issues.append(
+                f"健康度不符：{expected_claim.task_id} 期望 {expected_claim.health_status}，"
+                f"实际 {observed_claim.health_status}"
+            )
+        if expected_claim.expected_completion is not None:
+            if observed_claim.expected_completion is None:
+                issues.append(f"时间缺失：{expected_claim.task_id} 未解析出完成时间")
+            elif observed_claim.expected_completion != expected_claim.expected_completion:
+                issues.append(
+                    f"时间不符：{expected_claim.task_id} 期望 "
+                    f"{expected_claim.expected_completion.isoformat()}，"
+                    f"实际 {observed_claim.expected_completion.isoformat()}"
+                )
+    for expected_claim in expected.claims:
+        if all(pair[0] is not expected_claim for pair in pairs):
+            issues.append(f"遗漏 claim：{expected_claim.task_id} 未生成状态")
+
+    observed_commitments = {
+        (c.task_id, c.predicate, c.expected_value) for c in observed.commitments
+    }
+    expected_commitments = {
+        (c.task_id, c.predicate, c.expected_value) for c in expected.commitments
+    }
+    for commitment in sorted(observed_commitments - expected_commitments):
+        issues.append(f"错误 commitment：{commitment}")
+    for commitment in sorted(expected_commitments - observed_commitments):
+        issues.append(f"遗漏 commitment：{commitment}")
+
+    if observed.starts_sync != expected.starts_sync:
+        issues.append(
+            f"同步触发不符：期望 {'发起' if expected.starts_sync else '不发起'}，"
+            f"实际 {'发起了' if observed.starts_sync else '未发起'}"
+        )
+    if observed.sends_confirmation_card != expected.sends_confirmation_card:
+        issues.append(
+            f"确认卡片不符：期望 {'发送' if expected.sends_confirmation_card else '不发送'}，"
+            f"实际 {'发送了' if observed.sends_confirmation_card else '未发送'}"
+        )
+    if observed.asks_clarification != expected.asks_clarification:
+        issues.append(
+            f"追问不符：期望 {'追问' if expected.asks_clarification else '不追问'}，"
+            f"实际 {'追问了' if observed.asks_clarification else '未追问'}"
+        )
+    if observed.reply_category != expected.reply_category:
+        issues.append(
+            f"回复类别不符：期望 {expected.reply_category.value}，"
+            f"实际 {observed.reply_category.value}"
+        )
+
+    return SampleComparison(
+        sample_id=sample.id,
+        category=sample.category,
+        has_pending_question=(
+            sample.context is not None and sample.context.pending_question is not None
+        ),
+        expected=expected,
+        observed=observed,
+        issues=issues,
+    )
+
+
+def compute_metrics(comparisons: list[SampleComparison]) -> IntentEvalMetrics:
+    total_observed_claims = sum(len(c.observed.claims) for c in comparisons)
+    total_expected_claims = sum(len(c.expected.claims) for c in comparisons)
+    total_task_matches = 0
+    total_health_matches = 0
+    total_time_matches = 0
+    total_time_expected = 0
+    total_true_positives = 0
+    false_claim_samples = 0
+    no_claim_expected_samples = 0
+    sync_false_triggers = 0
+    no_sync_expected = 0
+    unconfirmed_sync_expected = 0
+    unconfirmed_sync_count = 0
+    reply_correct = 0
+    multi_turn_total = 0
+    multi_turn_success = 0
+
+    per_category: dict[str, CategoryStats] = {}
+    for comparison in comparisons:
+        expected = comparison.expected
+        observed = comparison.observed
+        pairs, unmatched_observed = _match_claims(expected.claims, observed.claims)
+        task_matches = len(pairs)
+        health_matches = sum(
+            1 for expected_claim, observed_claim in pairs
+            if expected_claim.health_status == observed_claim.health_status
+        )
+        time_pairs = [
+            (expected_claim, observed_claim)
+            for expected_claim, observed_claim in pairs
+            if expected_claim.expected_completion is not None
+        ]
+        time_matches = sum(
+            1
+            for expected_claim, observed_claim in time_pairs
+            if observed_claim.expected_completion == expected_claim.expected_completion
+        )
+        total_task_matches += task_matches
+        total_health_matches += health_matches
+        total_time_matches += time_matches
+        total_time_expected += len(time_pairs)
+        total_true_positives += health_matches
+
+        is_false_claim = not expected.claims and bool(observed.claims)
+        if not expected.claims:
+            no_claim_expected_samples += 1
+            if is_false_claim:
+                false_claim_samples += 1
+        # 同步误触发率：既不该发起、也不该发卡片的样本上出现了任何同步副作用。
+        if not expected.starts_sync and not expected.sends_confirmation_card:
+            no_sync_expected += 1
+            if observed.starts_sync or observed.sends_confirmation_card:
+                sync_false_triggers += 1
+        # 未经确认群发：应先发确认卡片的样本上直接发起了同步（计数，目标 0）。
+        if expected.sends_confirmation_card and not expected.starts_sync:
+            unconfirmed_sync_expected += 1
+            if observed.starts_sync:
+                unconfirmed_sync_count += 1
+        reply_ok = observed.reply_category == expected.reply_category
+        if reply_ok:
+            reply_correct += 1
+        if comparison.has_pending_question:
+            multi_turn_total += 1
+            if (
+                reply_ok
+                and not is_false_claim
+                and observed.asks_clarification == expected.asks_clarification
+            ):
+                multi_turn_success += 1
+
+        stats = per_category.setdefault(
+            comparison.category,
+            CategoryStats(
+                category=comparison.category,
+                samples=0,
+                false_claims=0,
+                sync_false_triggers=0,
+                reply_correct=0,
+                claim_precision=0.0,
+                claim_recall=0.0,
+            ),
+        )
+        stats.samples += 1
+        stats.false_claims += int(is_false_claim)
+        # 与总体口径一致（§4）：只统计"不该触发却触发"——期望既不发起也不发卡片的
+        # 样本上出现了任何同步副作用；期望发卡片的样本发出卡片是正确行为。
+        stats.sync_false_triggers += int(
+            not expected.starts_sync
+            and not expected.sends_confirmation_card
+            and (observed.starts_sync or observed.sends_confirmation_card)
+        )
+        stats.reply_correct += int(reply_ok)
+
+    for stats in per_category.values():
+        category_comparisons = [c for c in comparisons if c.category == stats.category]
+        cat_observed = sum(len(c.observed.claims) for c in category_comparisons)
+        cat_expected = sum(len(c.expected.claims) for c in category_comparisons)
+        cat_tp = sum(
+            1
+            for c in category_comparisons
+            for expected_claim, observed_claim in _match_claims(
+                c.expected.claims, c.observed.claims
+            )[0]
+            if expected_claim.health_status == observed_claim.health_status
+        )
+        stats.observed_claims = cat_observed
+        stats.expected_claims = cat_expected
+        stats.claim_precision = cat_tp / cat_observed if cat_observed else 0.0
+        stats.claim_recall = cat_tp / cat_expected if cat_expected else 0.0
+
+    return IntentEvalMetrics(
+        total_samples=len(comparisons),
+        expected_claims_total=total_expected_claims,
+        observed_claims_total=total_observed_claims,
+        claim_true_positives=total_true_positives,
+        claim_precision=(
+            total_true_positives / total_observed_claims if total_observed_claims else 0.0
+        ),
+        claim_recall=total_true_positives / total_expected_claims if total_expected_claims else 0.0,
+        task_id_accuracy=(
+            total_task_matches / total_observed_claims if total_observed_claims else 0.0
+        ),
+        health_status_accuracy=(
+            total_health_matches / total_task_matches if total_task_matches else 0.0
+        ),
+        time_accuracy=total_time_matches / total_time_expected if total_time_expected else 0.0,
+        false_claim_samples=false_claim_samples,
+        no_claim_expected_samples=no_claim_expected_samples,
+        false_claim_rate=(
+            false_claim_samples / no_claim_expected_samples if no_claim_expected_samples else 0.0
+        ),
+        no_sync_expected=no_sync_expected,
+        sync_false_trigger_rate=(
+            sync_false_triggers / no_sync_expected if no_sync_expected else 0.0
+        ),
+        unconfirmed_sync_expected=unconfirmed_sync_expected,
+        unconfirmed_sync_count=unconfirmed_sync_count,
+        reply_category_accuracy=reply_correct / len(comparisons) if comparisons else 0.0,
+        multi_turn_samples=multi_turn_total,
+        multi_turn_success_rate=multi_turn_success / multi_turn_total if multi_turn_total else 0.0,
+        per_category=sorted(per_category.values(), key=lambda s: s.category),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Dataset loading and validation
+# ---------------------------------------------------------------------------
+
+
+def load_intent_project(path: Path) -> IntentProjectFixture:
+    with open(path, encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    if not isinstance(data, dict):
+        raise ValueError(f"intent project fixture must be a mapping: {path}")
+    return IntentProjectFixture.model_validate(data)
+
+
+def load_intent_samples(path: Path) -> list[EvalSample]:
+    with open(path, encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    if not isinstance(data, dict):
+        raise ValueError(f"intent dataset must be a mapping: {path}")
+    dataset = IntentDataset.model_validate(data)
+    seen: set[str] = set()
+    for sample in dataset.samples:
+        if sample.id in seen:
+            raise ValueError(f"duplicate sample id: {sample.id}")
+        seen.add(sample.id)
+    return dataset.samples
+
+
+def category_minimum_violations(samples: list[EvalSample]) -> list[str]:
+    counts: dict[str, int] = {}
+    for sample in samples:
+        counts[sample.category] = counts.get(sample.category, 0) + 1
+    violations: list[str] = []
+    for category, minimum in CATEGORY_MINIMUMS.items():
+        actual = counts.get(category, 0)
+        if actual < minimum:
+            violations.append(f"{category}: {actual} < {minimum}")
+    unknown = sorted(set(counts) - set(CATEGORY_MINIMUMS))
+    if unknown:
+        violations.append(f"unknown categories: {unknown}")
+    return violations
+
+
+def validate_samples_against_project(
+    samples: list[EvalSample], project: IntentProjectFixture
+) -> list[str]:
+    issues: list[str] = []
+    for sample in samples:
+        if sample.sender not in project.member_ids:
+            issues.append(f"{sample.id}: unknown sender {sample.sender}")
+        confirmation = sample.context.pending_confirmation if sample.context else None
+        if confirmation is not None and confirmation.initiated_by not in project.member_ids:
+            issues.append(
+                f"{sample.id}: unknown pending_confirmation initiator {confirmation.initiated_by}"
+            )
+        probe = sample.context.pending_probe if sample.context else None
+        if probe is not None:
+            for task_id in probe.task_ids:
+                if task_id not in project.task_ids:
+                    issues.append(f"{sample.id}: unknown pending_probe task {task_id}")
+        for claim in sample.expected.behavior.claims:
+            if claim.task_id not in project.task_ids:
+                issues.append(f"{sample.id}: unknown task {claim.task_id}")
+        for commitment in sample.expected.behavior.commitments:
+            if commitment.task_id not in project.task_ids:
+                issues.append(f"{sample.id}: unknown task {commitment.task_id}")
+        for item in sample.expected.intents.items:
+            if item.task_id is not None and item.task_id not in project.task_ids:
+                issues.append(f"{sample.id}: unknown task {item.task_id}")
+    return issues
+
+
+# ---------------------------------------------------------------------------
+# Report writing and entry point
+# ---------------------------------------------------------------------------
+
+
+def _behavior_view(behavior: ExpectedBehavior | ObservedBehavior) -> dict[str, Any]:
+    return {
+        "claims": [claim.model_dump(mode="json") for claim in behavior.claims],
+        "commitments": [c.model_dump(mode="json") for c in behavior.commitments],
+        "starts_sync": behavior.starts_sync,
+        "sends_confirmation_card": behavior.sends_confirmation_card,
+        "asks_clarification": behavior.asks_clarification,
+        "reply_category": behavior.reply_category.value,
+    }
+
+
+def _pct_or_dash(value: float, denominator: int, precision: int = 2) -> str:
+    """§9: a zero denominator renders as “—”, never as a fake 0%."""
+    return f"{value:.{precision}%}" if denominator > 0 else "—"
+
+
+def render_markdown_report(
+    split: str,
+    mode: str,
+    metrics: IntentEvalMetrics,
+    failures: list[SampleComparison],
+    title_suffix: str | None = None,
+    llm_stats: dict[str, Any] | None = None,
+    is_baseline: bool = False,
+) -> str:
+    lines: list[str] = []
+    title = f"# 意图行为评测报告（split={split}, mode={mode}）"
+    if title_suffix:
+        title = f"{title} — {title_suffix}"
+    lines.append(title)
+    lines.append("")
+    # §9: the “baseline 无意图层” note belongs to baseline reports only.
+    if is_baseline:
+        lines.append("评测以系统行为为准（ADR-0008 §8）；baseline 无意图层，意图指标记为 N/A。")
+    else:
+        lines.append("评测以系统行为为准（ADR-0008 §8）。")
+    lines.append("")
+    lines.append("## 总体指标")
+    lines.append("")
+    lines.append("| 指标 | 值 |")
+    lines.append("|---|---|")
+    lines.append(f"| 样本数 | {metrics.total_samples} |")
+    def _row(label: str, value: float, denominator: int) -> str:
+        return f"| {label} | {_pct_or_dash(value, denominator)} |"
+
+    lines.append(_row("claim precision", metrics.claim_precision, metrics.observed_claims_total))
+    lines.append(_row("claim recall", metrics.claim_recall, metrics.expected_claims_total))
+    lines.append(_row("task_id 准确率", metrics.task_id_accuracy, metrics.observed_claims_total))
+    lines.append(f"| 健康状态准确率 | {metrics.health_status_accuracy:.2%} |")
+    lines.append(f"| 时间准确率 | {metrics.time_accuracy:.2%} |")
+    lines.append(
+        "| 错误 claim 率 | "
+        + _pct_or_dash(metrics.false_claim_rate, metrics.no_claim_expected_samples)
+        + f" ({metrics.false_claim_samples}/{metrics.no_claim_expected_samples}) |"
+    )
+    lines.append(
+        "| 同步误触发率 | "
+        + _pct_or_dash(metrics.sync_false_trigger_rate, metrics.no_sync_expected)
+        + f" (不该发起且不该发卡片的 {metrics.no_sync_expected} 条样本中出现同步副作用) |"
+    )
+    lines.append(
+        f"| 未经确认群发次数 | {metrics.unconfirmed_sync_count} "
+        f"/ 应先发确认卡片的样本 {metrics.unconfirmed_sync_expected}（目标 0） |"
+    )
+    lines.append(_row("回复类别准确率", metrics.reply_category_accuracy, metrics.total_samples))
+    lines.append(
+        "| 多轮补全成功率 | "
+        + _pct_or_dash(metrics.multi_turn_success_rate, metrics.multi_turn_samples)
+        + f" ({metrics.multi_turn_samples} 条多轮样本) |"
+    )
+    intent_metrics = metrics.intent_metrics
+    if is_baseline:
+        lines.append("| 意图层指标 | N/A（baseline 无意图层） |")
+    elif intent_metrics is not None:
+        macro = "—" if intent_metrics.macro_f1 is None else f"{intent_metrics.macro_f1:.2%}"
+        set_rate = _pct_or_dash(
+            intent_metrics.intent_set_exact_match_rate,
+            intent_metrics.samples_with_intents,
+        )
+        lines.append(f"| 意图层指标 | 意图集合完全匹配 {set_rate}，macro-F1 {macro} |")
+    else:
+        lines.append("| 意图层指标 | 未采集（--intent oracle 或 --client llm 时记录） |")
+    lines.append("")
+    lines.append("## 按类别统计")
+    lines.append("")
+    lines.append("| 类别 | 样本 | 错误 claim | 同步误触发 | 回复正确 | claim P | claim R |")
+    lines.append("|---|---|---|---|---|---|---|")
+    for stats in metrics.per_category:
+        name = stats.category if stats.samples >= 5 else f"{stats.category}（样本不足，仅供参考）"
+        lines.append(
+            f"| {name} | {stats.samples} | {stats.false_claims} | "
+            f"{stats.sync_false_triggers} | {stats.reply_correct} | "
+            f"{_pct_or_dash(stats.claim_precision, stats.observed_claims, precision=0)} | "
+            f"{_pct_or_dash(stats.claim_recall, stats.expected_claims, precision=0)} |"
+        )
+    lines.append("")
+    if intent_metrics is not None:
+        lines.extend(render_intent_metrics_section(intent_metrics))
+    if llm_stats:
+        lines.append("## LLM 调用统计")
+        lines.append("")
+        lines.append("| 指标 | 值 |")
+        lines.append("|---|---|")
+        for key, value in llm_stats.items():
+            if isinstance(value, float):
+                lines.append(f"| {key} | {value:.4f} |")
+            elif isinstance(value, dict):
+                lines.append(f"| {key} | {json.dumps(value, ensure_ascii=False)} |")
+            else:
+                lines.append(f"| {key} | {value} |")
+        lines.append("")
+    lines.append(f"## 失败样本（{len(failures)} 条）")
+    lines.append("")
+    for failure in failures:
+        lines.append(f"### {failure.sample_id}（{failure.category}）")
+        lines.append("")
+        for issue in failure.issues:
+            lines.append(f"- {issue}")
+        expected_view = json.dumps(_behavior_view(failure.expected), ensure_ascii=False)
+        observed_view = json.dumps(_behavior_view(failure.observed), ensure_ascii=False)
+        lines.append(f"- 期望：`{expected_view}`")
+        lines.append(f"- 实际：`{observed_view}`")
+        if failure.intent_output is not None:
+            output_view = json.dumps(failure.intent_output, ensure_ascii=False)
+            lines.append(f"- 模型输出：`{output_view}`")
+        lines.append("")
+    if not failures:
+        lines.append("（无失败样本）")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def write_reports(
+    split: str,
+    mode: str,
+    metrics: IntentEvalMetrics,
+    failures: list[SampleComparison],
+    report_dir: Path,
+    title_suffix: str | None = None,
+    llm_stats: dict[str, Any] | None = None,
+    is_baseline: bool = False,
+) -> tuple[Path, Path]:
+    report_dir.mkdir(parents=True, exist_ok=True)
+    json_path = report_dir / f"report-{split}-{mode}.json"
+    markdown_path = report_dir / f"report-{split}-{mode}.md"
+    payload = {
+        "split": split,
+        "mode": mode,
+        "title_suffix": title_suffix,
+        "generated_at": datetime.now(UTC).isoformat(),
+        "metrics": metrics.model_dump(mode="json"),
+        "failures": [
+            {
+                "sample_id": failure.sample_id,
+                "category": failure.category,
+                "issues": failure.issues,
+                "expected": _behavior_view(failure.expected),
+                "observed": _behavior_view(failure.observed),
+                "intent_output": failure.intent_output,
+            }
+            for failure in failures
+        ],
+    }
+    if llm_stats is not None:
+        payload["llm_stats"] = llm_stats
+    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    markdown_path.write_text(
+        render_markdown_report(
+            split, mode, metrics, failures, title_suffix, llm_stats=llm_stats,
+            is_baseline=is_baseline,
+        ),
+        encoding="utf-8",
+    )
+    return json_path, markdown_path
+
+
+ORACLE_TITLE_SUFFIX = "oracle：流水线上限，不代表模型效果"
+
+
+async def run_intent_eval(
+    split: str,
+    mode: str,
+    dataset_dir: Path,
+    report_dir: Path,
+    system: IntentSystemUnderTest | None = None,
+    title_suffix: str | None = None,
+    limit: int | None = None,
+    llm_stats_provider: Callable[[], dict[str, Any]] | None = None,
+    intent_recorder: Any | None = None,
+) -> tuple[IntentEvalMetrics, list[SampleComparison]]:
+    """Loads the dataset, runs the system under test, and writes both reports.
+
+    ``intent_recorder`` (a :class:`~orgpilot.intent.metrics.RecordingIntentClient`
+    wrapping the SUT's intent client) additionally produces the §8 classifier
+    metrics and attaches each failing sample's actual model output.
+    """
+    project = load_intent_project(dataset_dir / "project.yaml")
+    samples = load_intent_samples(dataset_dir / f"{split}.yaml")
+    validation_issues = validate_samples_against_project(samples, project)
+    if validation_issues:
+        raise ValueError(
+            "dataset inconsistent with project fixture: " + "; ".join(validation_issues)
+        )
+    if limit is not None:
+        samples = samples[:limit]
+
+    if system is None:
+        if mode != "mock":
+            raise ValueError(
+                f"mode {mode!r} 需要意图层或在线模型；"
+                "当前步骤仅支持 mock（ADR-0008 实施顺序第 1 步）"
+            )
+        system = BaselineSystemUnderTest(project)
+    is_baseline = not isinstance(system, LayeredSystemUnderTest)
+
+    comparisons: list[SampleComparison] = []
+    for sample in samples:
+        observed = await system.observe(sample)
+        comparisons.append(compare_sample(sample, observed))
+
+    metrics = compute_metrics(comparisons)
+    if intent_recorder is not None:
+        metrics = metrics.model_copy(
+            update={"intent_metrics": compute_intent_metrics(samples, intent_recorder)}
+        )
+    failures = [c for c in comparisons if not c.passed]
+    if intent_recorder is not None:
+        samples_by_id = {sample.id: sample for sample in samples}
+        for failure in failures:
+            sample = samples_by_id.get(failure.sample_id)
+            if sample is not None:
+                failure.intent_output = intent_output_view(
+                    intent_recorder.result_for(sample.sender, sample.message)
+                )
+    llm_stats = llm_stats_provider() if llm_stats_provider is not None else None
+    write_reports(
+        split, mode, metrics, failures, report_dir, title_suffix=title_suffix,
+        llm_stats=llm_stats, is_baseline=is_baseline,
+    )
+    return metrics, failures
+
+
+__all__ = [
+    "BaselineSystemUnderTest",
+    "CATEGORY_MINIMUMS",
+    "IntentEvalMetrics",
+    "IntentSystemUnderTest",
+    "LayeredSystemUnderTest",
+    "ObservedBehavior",
+    "ReplyCategory",
+    "SampleComparison",
+    "category_minimum_violations",
+    "compare_sample",
+    "compute_metrics",
+    "load_intent_project",
+    "load_intent_samples",
+    "run_intent_eval",
+    "validate_samples_against_project",
+    "write_reports",
+]

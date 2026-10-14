@@ -1,0 +1,54 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "0f9d40e81d1c518b7689d9b4a57b5ab4",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 381,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 207,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:01:06.693488+00:00",
+  "response": {
+    "id": "004638d0-8eb7-4f58-94f0-1e83d38fa364",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_h3RzxUkQHk7NuBjZjDIZ4303",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊更正此前关于压测时间的说法，属于 correction 类识别；下周四为完成时间，换算为 2026-10-22T18:00:00+08:00。",
+          "items": [
+            {
+              "intent": "correction",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "task_id": "pay_e2e_test",
+              "time_expression": "下周四",
+              "expected_completion": "2026-10-22T18:00:00+08:00",
+              "source_quote": "我之前说的压测时间不对，应该是下周四",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 381,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 207,
+      "service_tier": "standard"
+    }
+  }
+}

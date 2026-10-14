@@ -1,0 +1,54 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "fb25aebb805cd72903625679569662c7",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 389,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 189,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:59:27.302074+00:00",
+  "response": {
+    "id": "1a4a268e-e9bd-4b97-b0ab-aa2a4f32fa1c",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_6a2amFvkafCvORKcuEba7403",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟负责 merchant_admin，明确承诺今晚完成权限模块，属于 make_commitment；今晚=20:00。",
+          "items": [
+            {
+              "intent": "make_commitment",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "merchant_admin",
+              "time_expression": "今晚",
+              "expected_completion": "2026-10-13T20:00:00+08:00",
+              "source_quote": "商户后台的权限模块我今晚搞定",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 389,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 189,
+      "service_tier": "standard"
+    }
+  }
+}

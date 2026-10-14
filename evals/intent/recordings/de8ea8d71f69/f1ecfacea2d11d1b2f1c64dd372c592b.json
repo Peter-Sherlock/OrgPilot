@@ -1,0 +1,53 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "f1ecfacea2d11d1b2f1c64dd372c592b",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 519,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 167,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:30:56.537138+00:00",
+  "response": {
+    "id": "44b2ee18-d774-4089-999c-9393d545fd86",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_ukok3qpDJu1UlGWxRUWG6820",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊对支付全链路压测的进展仍无法给出明确时间，属于含糊推测的状态汇报，健康度无法判定。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "health_status": "unknown",
+              "task_id": "pay_e2e_test",
+              "source_quote": "再等等吧，我也说不准",
+              "confidence": 0.6
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 519,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 167,
+      "service_tier": "standard"
+    }
+  }
+}

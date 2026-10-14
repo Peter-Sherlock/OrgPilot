@@ -1,0 +1,52 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "8ec2b2f98d4bddd483d8fcc186de1dea",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 242,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2688,
+    "output_tokens": 189,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:14:47.869320+00:00",
+  "response": {
+    "id": "304a3dcd-37f1-4363-8e17-92413b20e3ff",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_EugCmijRIMrYOAHwJzvS5827",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟纠正此前对支付SDK完成时间的说法，属于 correction（识别不执行），同时给出新的完成时间承诺。按规则 correction 为 P1 识别类，仅识别不执行，故只输出 correction 条目。",
+          "items": [
+            {
+              "intent": "correction",
+              "task_id": "pay_sdk",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "刚才说错了，支付SDK是明天下午5点能好，不是三点",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 242,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2688,
+      "output_tokens": 189,
+      "service_tier": "standard"
+    }
+  }
+}

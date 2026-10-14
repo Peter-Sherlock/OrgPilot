@@ -1,0 +1,55 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "c21023a4880f8235f098764c46daf4ea",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 515,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 225,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:30:21.106007+00:00",
+  "response": {
+    "id": "ae3a6f25-47d7-4e96-82c6-29bd58730683",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_EnMcLgMulzVErj2zdd8L8361",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟回答机器人追问，汇报支付SDK进展并给出完成时间明天下午5点（2026-10-16T17:00），早于截止 10-16 18:00，故 on_track。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_sdk",
+              "health_status": "on_track",
+              "time_expression": "明天下午5点",
+              "expected_completion": "2026-10-16T17:00:00+08:00",
+              "source_quote": "支付SDK明天下午5点能修好",
+              "confidence": 0.9
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 515,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 225,
+      "service_tier": "standard"
+    }
+  }
+}

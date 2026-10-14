@@ -1,0 +1,53 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "9e825a665acbe2886bde9bb9b02811b0",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 362,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2176,
+    "output_tokens": 176,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:26:02.839579+00:00",
+  "response": {
+    "id": "9438bcb5-487c-4746-b771-0d12ea4d889c",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_js9czu66mQVBXeLOyyv41672",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟汇报自己负责的商户后台管理端接口已完成，属正常推进；同时说明收银台联调未参与，非其任务，不构成状态汇报。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "商户后台管理端的接口写完了",
+              "confidence": 0.9,
+              "task_id": "merchant_admin",
+              "health_status": "on_track"
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 362,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2176,
+      "output_tokens": 176,
+      "service_tier": "standard"
+    }
+  }
+}

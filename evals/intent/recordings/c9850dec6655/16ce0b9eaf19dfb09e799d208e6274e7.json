@@ -1,0 +1,51 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "16ce0b9eaf19dfb09e799d208e6274e7",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 387,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 139,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:00:00.727019+00:00",
+  "response": {
+    "id": "9f41a18d-f939-429d-b027-d292e65b70cd",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_55XgY1h3gCmJAH5ki22K9341",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息只是关于地铁拥挤的日常吐槽，与工作进度无关，也无任何请求。",
+          "items": [
+            {
+              "intent": "chitchat",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "今天地铁又挤爆了",
+              "confidence": 0.97
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 387,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 139,
+      "service_tier": "standard"
+    }
+  }
+}

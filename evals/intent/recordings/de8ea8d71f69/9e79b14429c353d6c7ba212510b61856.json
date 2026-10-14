@@ -1,0 +1,53 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "9e79b14429c353d6c7ba212510b61856",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 562,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 165,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:30:31.864631+00:00",
+  "response": {
+    "id": "ba2067d4-bbc4-4195-9038-cf5ce28fdd76",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_a5ZHi4UIU6NYK9HViIEW2672",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "用户回答机器人追问，说明压测仍处于阻塞状态，但未给出预计恢复时间，故健康度为 at_risk。",
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_e2e_test",
+              "health_status": "at_risk",
+              "source_quote": "还是卡着",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": true
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 562,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 165,
+      "service_tier": "standard"
+    }
+  }
+}

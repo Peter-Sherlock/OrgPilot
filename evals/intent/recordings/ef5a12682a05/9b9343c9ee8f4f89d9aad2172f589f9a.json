@@ -1,0 +1,52 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "9b9343c9ee8f4f89d9aad2172f589f9a",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 358,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 178,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:14:49.196118+00:00",
+  "response": {
+    "id": "dd0933b6-57e3-40e9-9a8d-5adc32ed57a4",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_NIRu3CZScYjxlyOAw4He4396",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊纠正此前关于压测时间的说法，属于 correction 类识别；压测任务为 pay_e2e_test，但“下周四”是时间更正而非完成时间承诺，不填 expected_completion。",
+          "items": [
+            {
+              "intent": "correction",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "task_id": "pay_e2e_test",
+              "source_quote": "我之前说的压测时间不对，应该是下周四",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 358,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 178,
+      "service_tier": "standard"
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "b69357615416d7269f97aac0fc79b198",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 394,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 212,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:08:11.526942+00:00",
+  "response": {
+    "id": "313a989e-c76a-4235-bf5a-ef8db81c550a",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_lb5UHUFfROjJmJr3aHaL7311",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳承诺明天上午十点前把收银台切图给对方过一遍，属于对 checkout_page 的完成时间承诺；「明天上午十点前」是完成时间。",
+          "items": [
+            {
+              "intent": "make_commitment",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "checkout_page",
+              "time_expression": "明天上午十点前",
+              "expected_completion": "2026-10-15T10:00:00+08:00",
+              "source_quote": "收银台的切图明天上午十点前给你们过一遍",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 394,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 212,
+      "service_tier": "standard"
+    }
+  }
+}

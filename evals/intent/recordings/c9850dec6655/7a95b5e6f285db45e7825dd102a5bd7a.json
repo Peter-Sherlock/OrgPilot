@@ -1,0 +1,51 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "7a95b5e6f285db45e7825dd102a5bd7a",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 375,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 136,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:59:56.306935+00:00",
+  "response": {
+    "id": "f6265c91-8a36-416a-93cc-ff552f376008",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_5l9iuScv183hqHOrI2QI9609",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息只是表达疲惫的寒暄，与工作进度无关，也无任何请求。",
+          "items": [
+            {
+              "intent": "chitchat",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "今天好累啊",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 375,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 136,
+      "service_tier": "standard"
+    }
+  }
+}

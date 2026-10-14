@@ -1,0 +1,53 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "ac2d8377f3a2ed42a3d1b18e05b729b6",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 493,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 185,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:25:08.377045+00:00",
+  "response": {
+    "id": "aa5ab515-4c31-4366-8cac-f4cfe289a588",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_Mbm1mj7asCmDHa5tMegl3633",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳询问后端接口交付时间，属于询问任务状态/依赖等待；她提到页面已干等两天，但未给出自己的完成时间，健康度按有风险处理。",
+          "items": [
+            {
+              "intent": "query_status",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "后端的接口什么时候给我？我这边页面都干等两天了",
+              "confidence": 0.8,
+              "task_id": "checkout_page",
+              "health_status": "at_risk"
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 493,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 185,
+      "service_tier": "standard"
+    }
+  }
+}

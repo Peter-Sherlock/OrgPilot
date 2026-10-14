@@ -1,0 +1,67 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "1816f4bb27e4747b3a7aa55682352e78",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 394,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 348,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:00:40.568627+00:00",
+  "response": {
+    "id": "d521b209-bf7f-4f5d-a9be-2c653fefb4b5",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_osgt6Zk4eP84W1BSFMvk2324",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息包含两件事：商户后台今天提测（完成类事件，今天=2026-10-13T18:00:00+08:00），以及承诺支付SDK明天下午5点前修完（2026-10-14T17:00:00+08:00）。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "merchant_admin",
+              "health_status": "on_track",
+              "time_expression": "今天",
+              "expected_completion": "2026-10-13T18:00:00+08:00",
+              "source_quote": "商户后台今天能提测",
+              "confidence": 0.9
+            },
+            {
+              "intent": "make_commitment",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_sdk",
+              "health_status": "at_risk",
+              "time_expression": "明天下午5点前",
+              "expected_completion": "2026-10-14T17:00:00+08:00",
+              "source_quote": "支付SDK明天下午5点前我一定修完",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 394,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 348,
+      "service_tier": "standard"
+    }
+  }
+}

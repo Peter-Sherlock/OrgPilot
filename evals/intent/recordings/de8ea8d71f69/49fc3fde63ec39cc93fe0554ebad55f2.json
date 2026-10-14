@@ -1,0 +1,51 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "49fc3fde63ec39cc93fe0554ebad55f2",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 504,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 150,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:30:23.804764+00:00",
+  "response": {
+    "id": "75323a82-c6a2-46ed-a882-c8c5e622d72e",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_vyL2mGZHECcfxJPx7qQ03522",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息只是闲聊热搜，未回答机器人关于 pay_e2e_test 进展的追问，故按闲聊分类且 answers_pending=false。",
+          "items": [
+            {
+              "intent": "chitchat",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "哈哈哈今天热搜太离谱了",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 504,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 150,
+      "service_tier": "standard"
+    }
+  }
+}

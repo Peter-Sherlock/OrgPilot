@@ -1,0 +1,55 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "59bc2db7d62833c9d9f204f26a8ef107",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 565,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 218,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:27:49.431589+00:00",
+  "response": {
+    "id": "c70828e5-f64e-4082-b70e-7205d2b29a2a",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_xuZDg1oP0rFNIrgWXxwE8097",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "本条正面回答机器人追问的恢复时间，属于 answer_pending；同时给出预计恢复时间，构成对压测任务的承诺/状态补充。压测当前卡住，仍为 at_risk。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "task_id": "pay_e2e_test",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "health_status": "at_risk",
+              "time_expression": "明天下午5点",
+              "expected_completion": "2026-10-16T17:00:00+08:00",
+              "source_quote": "预计明天下午5点能恢复",
+              "confidence": 0.92
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 565,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 218,
+      "service_tier": "standard"
+    }
+  }
+}

@@ -1,0 +1,51 @@
+# 意图评测固定项目夹具（ADR-0008 第 8 节）
+# 1 名 PM + 3 名工程师；5 个任务，含两组易混淆名称：
+#   支付SDK接入 (pay_sdk) vs 支付全链路压测 (pay_e2e_test)
+#   收银台页面改版 (checkout_page) vs 商户后台管理端 (merchant_admin)
+# 任务时间基准周：2026-10-13（周二）至 2026-10-23。
+schema_version: 1
+dataset_id: intent_eval_project_fixture
+title: 支付中台迭代项目夹具（意图评测专用）
+project_id: intent-eval-project
+members:
+  - member_id: ou_pm_zhao
+    display_name: 赵敏
+    role: pm
+  - member_id: ou_wei_wang
+    display_name: 王伟
+    role: backend
+  - member_id: ou_fang_liu
+    display_name: 刘芳
+    role: frontend
+  - member_id: ou_lei_chen
+    display_name: 陈磊
+    role: qa
+tasks:
+  - task_id: pay_sdk
+    title: 支付SDK接入
+    owner_id: ou_wei_wang
+    workflow_status: doing
+    deadline: "2026-10-16T18:00:00+08:00"
+  - task_id: checkout_page
+    title: 收银台页面改版
+    owner_id: ou_fang_liu
+    workflow_status: doing
+    deadline: "2026-10-18T18:00:00+08:00"
+    dependencies: [pay_sdk]
+  - task_id: pay_e2e_test
+    title: 支付全链路压测
+    owner_id: ou_lei_chen
+    workflow_status: todo
+    deadline: "2026-10-20T18:00:00+08:00"
+    dependencies: [pay_sdk, checkout_page]
+  - task_id: merchant_admin
+    title: 商户后台管理端
+    owner_id: ou_wei_wang
+    workflow_status: todo
+    deadline: "2026-10-23T18:00:00+08:00"
+  - task_id: ledger_check
+    title: 对账模块联调
+    owner_id: ou_fang_liu
+    workflow_status: todo
+    deadline: "2026-10-22T18:00:00+08:00"
+    dependencies: [pay_sdk]

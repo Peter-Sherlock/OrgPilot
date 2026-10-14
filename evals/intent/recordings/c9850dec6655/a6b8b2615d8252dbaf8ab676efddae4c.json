@@ -1,0 +1,53 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "a6b8b2615d8252dbaf8ab676efddae4c",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 559,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 164,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:02:44.610048+00:00",
+  "response": {
+    "id": "ee1b711e-0825-4cea-b811-8d933f87bc48",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_zyQCGlNmShk4NngLk11K1687",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "这是对机器人追问预计完成时间的回答，明确表示给不出时间，按规则记为 at_risk 而非 unknown。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "task_id": "pay_e2e_test",
+              "health_status": "at_risk",
+              "source_quote": "实在说不好什么时候能好",
+              "confidence": 0.9
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 559,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 164,
+      "service_tier": "standard"
+    }
+  }
+}

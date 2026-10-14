@@ -1,0 +1,51 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "df368b56c39db81d854f328ae501d5cc",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 516,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 144,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:15:05.126279+00:00",
+  "response": {
+    "id": "c72f05c8-e084-4e15-8e4d-df680b24cd3f",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_wAr94qmbpLmXmqei0cdA9581",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息是约饭闲聊，未回答待回答的收银台兼容问题，属于换话题。",
+          "items": [
+            {
+              "intent": "chitchat",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "先不管这个，中午一起吃什么？",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 516,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 144,
+      "service_tier": "standard"
+    }
+  }
+}

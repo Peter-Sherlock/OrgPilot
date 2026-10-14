@@ -1,0 +1,51 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "93ea809c7575d91a9f02022b00d6086c",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 375,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 134,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:59:59.503306+00:00",
+  "response": {
+    "id": "8b17b9f5-a22e-49ab-bcaf-674fd8807358",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_Iv4OIxiKyZ9WePM5VXLv4597",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息只是打招呼寒暄，与工作进度无关，也无任何请求。",
+          "items": [
+            {
+              "intent": "chitchat",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "早上好呀各位",
+              "confidence": 0.97
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 375,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 134,
+      "service_tier": "standard"
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "9ef65858917bf5a65d8724ce56a808ba",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 587,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 145,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:30:50.959240+00:00",
+  "response": {
+    "id": "0dcc325f-045f-43df-8696-48af4b3ecda3",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_WQY5gfhfOw9MFF3Peo7b1020",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "本条消息只是闲聊大笑，未回答机器人关于 pay_e2e_test 进展的追问，也未涉及任何任务状态。",
+          "items": [
+            {
+              "intent": "chitchat",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "哈哈哈笑死我了",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 587,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 145,
+      "service_tier": "standard"
+    }
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "733a471a0dd5f729647f38840dd4bb9e",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 352,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2176,
+    "output_tokens": 229,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:26:09.948954+00:00",
+  "response": {
+    "id": "005be09b-c33a-43d0-845c-8539f63460d4",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_QVbJgoMwJqNstrrawebV1125",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊汇报自己负责的支付全链路压测进展，预计下周三（2026-10-21）完成，晚于截止日 2026-10-20，判定 delayed；未提及阻塞原因，blocker 留空。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "task_id": "pay_e2e_test",
+              "health_status": "delayed",
+              "time_expression": "下周三",
+              "expected_completion": "2026-10-21T18:00:00+08:00",
+              "source_quote": "压测第一轮可能要拖到下周三才能跑完",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 352,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2176,
+      "output_tokens": 229,
+      "service_tier": "standard"
+    }
+  }
+}

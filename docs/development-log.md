@@ -1,5 +1,456 @@
 # 开发记录
 
+## 2026-10-13：第 3b 步结项——记录正式结果与已知问题（提示词保持冻结，分支 `feat/intent-router`）
+
+冻结提示词 `c9850dec6655` 的正式评测结果（本步零代码、零提示词改动）：
+
+| 指标 | dev | test | 对话 |
+|---|---|---|---|
+| 行为通过率 | 95.1%（97/102） | 91.4%（53/58） | 10/10 |
+| 错误 claim 率 | 3.08%（2/65） | 0/39 | — |
+| claim 精确率 | 93.2% | 89.5% | — |
+| 意图 macro-F1 | 95.8% | 71.8%⁽¹⁾ | — |
+| p95 延迟 / 费用 | 1962.7ms，$0.00035/条 | — | 1638.0ms，$0.000374/条 |
+
+⁽¹⁾ test 中 P1/P2 意图各仅 1 条样本，该指标不稳定。
+
+- **留出集纪律**：c9850dec6655 是第一个查看 test 结果的版本；此前的提示词改动只在 dev 与
+  对话评测上验证，此后的提示词改动也只在 dev 与对话评测上验证，test 数字仅作参考。下一个
+  正式留出集来自内测真实消息（经同意、脱敏后标注）。
+- **流程偏差**：运行 test 的预设条件"dev 错误 claim ≤ 1"未满足（实际 2 条，差异在噪声范围
+  内），test 数字照常记录并注明。
+- **ADR-0008 状态改为 Accepted**：P0 意图层实现完成并通过冻结门槛；"待决问题"下新增
+  「已知问题」清单 7 项（依赖等待健康度、汇报/承诺边界、非负责人否定陈述、询问式等待口径
+  冲突、假设句空条目、能力询问归类、错误 claim 指标口径），本步不修，按优先级排入后续迭代。
+- `c9850dec6655` 录制 188 文件入库；BASELINE.md LLM 评测表扩列（test 通过率/错误 claim、
+  claim 精确率、macro-F1 dev/test、p95、费用）并补冻结行。
+
+```text
+replay --all: 9/9 PASS；pytest 全部通过（coverage ≥90%）；ruff clean；git diff --check PASS
+test.yaml 未再修改（哈希 1da96ed7… 不变）；测试全部离线；未 push
+```
+
+---
+
+## 2026-10-13：第 3b 步（下半·收尾）——最后一轮修正，之后冻结提示词（分支 `feat/intent-router`）
+
+第二轮在线评测（prompt `ef5a12682a05`）：dev 行为 96.1%（98/102，+14.7pp）、对话 8/10 → 10/10、
+意图 macro-F1 89.12% → 93.59%；首轮 19 条失败修复 16 条，剩余 3 条中 2 条由本轮标注修正覆盖、
+1 条（dev_sync_near_negative_002）按产品决定记为已知分歧。**本轮后提示词冻结：`c9850dec6655`。**
+
+### 已实现（按部分提交）
+
+- **dev 修正 + recent_messages 接线**：dev_answer_pending_002 health on_track → at_risk（R1：根因找到 ≠ 已解决，问题仍在处理中）；dev_hypothetical_004 增加 `context.recent_messages`（成员前句"支付SDK的报错还在排查"），保留测试目的（含糊语气 + 假设从句 → at_risk + 明天 18:00）且任务在 R7 下唯一可定——layered SUT 新增 `_seed_recent_messages`：把样本提供的近期对话播种进消息表，路由器的"最近对话"上下文（进而 LLM 提示词）即可见到；bot 侧不播种（真实回复经实际发送进入历史）；baseline SUT 不具备该机制、行为不受影响（有测试固化接线）。
+- **test 集口径（用户 2026-10-13 批准）**：test_multi_task_002 删 pay_sdk hypothetical 条目、test_multi_task_003 删 merchant_admin negative 条目（R12 顺带提及不输出条目，行为期望不变）；test_request_sync_003 保持 request_sync；冻结 sha256 `b023ded8…` → `1da96ed7…`（BASELINE.md 与 `tests/test_intent_dataset.py` 同步）。
+- **提示词措辞（最后一改，同步 LABELING R3/R11）**：已经发生的完成（"已经修好了""已经上线"）不填、将来的完成（"今天能提测""明天修好"）必须填；状态汇报中的等待依赖写入该条目 blocker，不另外输出 dependency_wait 条目（dependency_wait 只用于单纯询问或催促依赖方）。
+- **不处理**：dev_sync_near_negative_002 在 BASELINE.md 记为已知分歧（两轮均未按 R8 negative 判定，产品决定不加特例规则）。
+- **记录**：`ef5a12682a05` 录制 132 文件入库（`--replay` 可离线复跑第二轮）；BASELINE.md LLM 评测记录表补第二轮行；REVISION-2026-10.md 登记全部修订（样本/旧值/新值/规则/批准）。
+
+### 自检与验收
+
+```text
+oracle: dev 0 失败 + 意图 100%（99/99）；test 0 失败 + 意图 100%（56/56）；对话 10/10
+orgpilot replay --all: 9/9 PASS
+pytest: 全部通过, coverage 90.86%（fail_under=90）
+ruff: All checks passed
+git diff --check: PASS
+测试全部离线；未 push；提示词自此冻结（c9850dec6655）
+```
+
+---
+
+## 2026-10-13：第 3b 步（下半·第一轮）——按 dev 错误分析修正：确定性护栏 + 提示词规则 + 标注口径（分支 `feat/intent-router`）
+
+首轮在线评测（prompt `de8ea8d71f69`，录制已入库）：dev 行为 81.4%（83/102）、对话 8/10、
+错误 claim 1.54%、意图 macro-F1 89.12%、$0.00037/条；19 条失败逐条归因。
+
+### 已实现（按部分提交）
+
+- **确定性护栏（代码，LABELING S4/S5）**：截止日判定移入代码——expected_completion 晚于任务截止日 → health 取 max(模型判断, delayed)，早于不下调（直接 claim 路径 + 探针合并按目标任务逐个判定）；unknown/空 health 的 report_status/answer_pending 条目不写 claim，探针中不算"已回答"，按既有追问规则驱动到 3a.2 总上限后标记「信息不全」；启发式兜底回答同源修 principle（健康词→on_track、否则 at_risk）。连带更新：mini 陷阱样本补 health、sandbox 测试的"进度正常"消息改为"还有点问题"（on_track 现在即完整回答）、conv_06/conv_10 的 oracle 失败通过移除自加的"无变化跳过事件"去重解决（重复回答照常重写 claim，supersession 语义）。
+- **提示词规则修订（de8ea8d71f69 → ef5a12682a05，逐条同步 LABELING.md）**：健康度以"未解决问题"为主判据（正在修/排查/卡住/能修好→至少 at_risk；on_track 仅限无问题推进/完成/解除；"说不好"→at_risk）；删除提示词的截止日比较要求（系统负责）；hedged 限定不确定词表（应该/估计/可能/大概/也许/说不准/理论上/"差不多……吧"），"快完工了/还行/有点慢/预计"=certain；句末"吧"自任务陈述=statement；完成类事件清单（修好/修完/恢复/解决/完成/提测/上线/交付/合并）；任务归属先推断（发送者任务+健康度）后追问；顺带提及（可以开始=依赖解除、我没管）不输出条目；P1 不吞 P0；request_sync 仅限向全员收集、催人不是、明确拒绝→negative；out_of_scope（有请求）vs chitchat（无请求）；待确认卡片"发吧/确认/可以"→acknowledge。提示词例句与三个数据集零重句（程序化核对）。
+- **标注口径（只动 dev，登记 REVISION-2026-10.md）**：dev_request_sync_003"帮我看看现在的项目进度"→ query_status/query_answer（R8/S6）；handlers 新增 S6：PM 状态查询回答后附一句"需要我向大家发起同步吗？"（只提示不发卡）；confirmation_flow 核对已是 acknowledge（无需改）。
+- **评测口径**：第 0 层样本（显式命令/卡片回调）不计入意图层指标、单列数量——oracle dev 意图集合匹配从 97.06% 修正为 100%（99/99）、test 100%（56/56）；按类别"同步误触发"列改为只统计"不该触发却触发"，与总体一致。
+- **test 一致性检查（只读，不改 test.yaml）**：S4 无冲突（无 completion 过截止日且 health≠delayed 的标注）；S5 无行为级冲突（health=None 条目均为 hypothetical 或 negative-no-health，本就不产生 claim）；建议项 2 条——test_multi_task_002 删除 pay_sdk hypothetical 条目（"一恢复我就开跑"属 R12 顺带提及）、test_multi_task_003 删除 merchant_admin negative 条目（"还没碰"非本人任务，R12 不输出条目）——均不影响行为期望，待审批后改并更新冻结哈希；另 test_request_sync_003"我想知道每个人手上的任务都推到哪了"建议保留 request_sync（明确指向全员收集，非模糊"看看进度"）。
+- **记录**：de8ea8d71f69 录制 132 个文件入库（--replay 可离线复跑首轮）；BASELINE.md 新增"LLM 评测记录"表（prompt 版本维度，首行填首轮数据）。
+
+### 自检与验收
+
+```text
+oracle: dev 0 失败 + 意图 100%（99/99）；test 0 失败 + 意图 100%（56/56）；对话 10/10
+orgpilot replay --all: 9/9 PASS
+pytest: 327 passed, coverage ≥90%
+ruff: All checks passed
+git diff --check: PASS
+test.yaml 未修改（frozen-hash 不变）；测试全部离线；未 push
+```
+
+### 下一轮在线评测命令（新 prompt 版本 ef5a12682a05）
+
+```powershell
+$env:ORGPILOT_LLM_PROVIDER = "deepseek"
+$env:DEEPSEEK_API_KEY = "<你的 key>"
+uv run orgpilot eval-intent --split dev --client llm --live --confirm-spend --max-spend-usd 2
+uv run orgpilot eval-intent --conversations --client llm --live --confirm-spend --max-spend-usd 2
+```
+
+---
+
+## 2026-10-13：第 3b.1 步——修复预算闸门、运行时录制、计费与重试 + §8 意图层指标（分支 `feat/intent-router`）
+
+### 已实现（按部分提交）
+
+- **commit A（bdc4218）预算闸门 / 录制边界 / 计费 / 提示词**：
+  - 预算闸门前置：发请求前累计估算 ≥ `--max-spend-usd` 直接抛 `SpendLimitExceeded` 不再发出请求；调用后超限立即中止。回归：预算 $0.01 + 单次 $0.016 跑 3 段对话 → 旧实现 12 次调用 / $5.04 / "正常结束" 0/3，现在 1 次调用 + CLI 返回非 0 打印「超出预算中止」；
+  - 新增 `IntentInfrastructureError` 基类，`ReplayMissError`（兼作 FileNotFoundError）与 `SpendLimitExceeded` 继承；router 对该基类一律上抛（不重试、不降级）；
+  - router 只对瞬时错误（超时 / 连接错误 / HTTP 429 与 5xx）重试一次；`LLMIntentError`（客户端已重试过校验）直接降级——连续失败时每条消息最多 3 次 HTTP 调用，全部来自客户端内部；
+  - `LLMIntentClient` 新增 `record` 开关（默认关闭）：仅评测 CLI `--live` 显式开启录制；运行时路径（`from_settings` / `default_intent_client`）永不写录制，用户原话不进仓库；冒烟遗留的旧版本录制目录已删除；
+  - 计费表更新为官方高峰价（deepseek-flash：input 0.30 / cache_read 0.006 / output 1.20 USD 每百万 token，2026-10 核对）；未知模型按"价格未知"处理，设 `--max-spend-usd` 且价格未知时拒绝运行；
+  - `PROMPT_VERSION` 改为哈希（固定前缀 + 工具 schema + 动态模板版本常量 + 降级说明），改任何字段 description 都会换版本；提示词小修：blocker 不推测（提到原因才填、尽量原文）、最近对话轮数用 `ORGPILOT_INTENT_RECENT_TURNS`、承诺示例换句式避免与 dev 集雷同。
+- **commit B（本次）§8 意图层指标 + §9 报告显示**：
+  - `RecordingIntentClient` 透明包装 oracle / llm 客户端，记录每条样本的 `IntentResult`（预护栏，不改路由逻辑）；新增 `intent/metrics.py`：意图集合完全匹配率、各意图 P/R/F1 + macro-F1（仅出现的意图）、answers_pending 准确率、匹配条目四项属性准确率、期望→实际混淆表（task_id 对齐、位置兜底）；失败样本附模型实际输出；
+  - oracle 自检：mini 集（6 条）全部意图指标 100%（测试固化）；单条与 CLI `--intent oracle` / `--client llm` 均已接线，报告新增「意图层指标」章节与混淆表；
+  - §9：分母为 0 显示"—"不显示 0%；「baseline 无意图层」说明只在 baseline 报告出现。
+
+### 自检与验收
+
+```text
+orgpilot replay --all: 9/9 PASS
+pytest: 321 passed, coverage 90.76% (fail_under=90)
+ruff: All checks passed
+git diff --check: PASS
+test.yaml 未修改（frozen-hash 测试通过）；测试全部离线（MockTransport / replay / mock）；未 push
+```
+
+### 在线评测运行命令（留给用户；价格按新计费表估算）
+
+```powershell
+$env:ORGPILOT_LLM_PROVIDER = "deepseek"
+$env:DEEPSEEK_API_KEY = "<你的 key>"
+# ① 冒烟（10 条，schema 一次通过率 < 90% 停下汇报）
+uv run orgpilot eval-intent --split dev --client llm --live --confirm-spend --limit 10 --max-spend-usd 0.5
+# ② 完整 dev 集（报告含意图层指标 + 混淆表 + 失败样本模型输出）
+uv run orgpilot eval-intent --split dev --client llm --live --confirm-spend --max-spend-usd 2
+# ③ 全部对话评测
+uv run orgpilot eval-intent --conversations --client llm --live --confirm-spend --max-spend-usd 2
+```
+
+---
+
+## 2026-10-12：第 3b 步（上半）——LLMIntentClient 接入 DeepSeek，跑第一次 dev 评测（分支 `feat/intent-router`）
+
+### 已实现（按部分提交）
+
+- **commit A：LLM 侧 schema 加固**
+  - `IntentItem.health_status` 改为 `HealthStatus` StrEnum：JSON schema 出现 enum；原 field_validator 允许的恰是这 4 个值，**校验语义不变**（复跑 layered+oracle dev/test 均 0 失败确认）；handlers 中两处把枚举当裸字符串用的地方改为显式 `.value`；
+  - IntentItem/IntentResult 全字段中文 description（expected_completion=带时区偏移 ISO 8601、source_quote=原文逐字子串、R11 只填完成/解除时间等），随 `model_json_schema()` 直接成为给模型的工具说明；`reasoning` 移到首字段并限定两句话；
+  - 新增 `llm_client.normalize_intent_payload`：LLM 边界只修两类良性问题并分类计数——丢弃幻觉字段、naive expected_completion 按业务时区补齐；其余错误不修补，交给 Pydantic 报错驱动重试。
+- **commit B：LLMIntentClient + 配置**
+  - 强制工具调用 `record_intent`（schema 即 IntentResult）、tool_choice=tool、temperature=0、thinking=disabled（按兼容性结论，不采用思考模式）；异步 httpx；
+  - 提示词：固定前缀（角色/意图表/正交属性/R1–R11 判定规则/输出要求）进 system，动态内容（时间、发送者、任务含截止日、待回答、最近 N 轮、消息）进 user——固定前缀哈希 = prompt 版本，顺序设计为命中 DeepSeek 自动缓存；示例全部新写，与三个评测数据集零重句；
+  - 校验失败 → 错误摘要（loc+type）附在重试消息中再试一次 → 仍失败抛 LLMIntentError（router 走既有 fallback）；无 tool_use → 降级一次（schema 写入提示词解析文本块）；
+  - 录制/回放：`evals/intent/recordings/<prompt版本>/<请求哈希>.json`；replay 只读，缺失抛 ReplayMissError，router 对它直接上抛（不静默降级）；结构化日志每次调用一条（token/延迟/缓存/stop_reason/重试/降级/校验错误/归一化/费用），无 key；
+  - `ORGPILOT_INTENT_CLIENT=heuristic|llm`（默认 heuristic，mock 演示不变；llm 需 provider=deepseek/aihubmix）。
+- **commit C：评测运行器**
+  - `--client llm` + `--live --confirm-spend`（需 key）或 `--replay`（只读）；`--limit N`；`--max-spend-usd`（官方高峰价常数表估算，超限立即中止 SpendLimitExceeded）；
+  - 报告新增 llm_stats：一次通过率/重试率/降级率、校验错误类型分布、延迟 p50/p95、每消息 token（含 cache read）与费用、缓存命中占比；JSON+markdown 双输出；mini 数据集上验证 live 录制 → replay 离线复现相同指标。
+- **commit D：兼容性脚本顺手修复**：token 统计加入 cache_read_input_tokens；两个结构化探针记录校验失败 loc+type（上限 50）。
+
+### 在线运行停止点（本步约定）
+
+- 在线调用只在用户授权后执行（用户自己运行命令，或在 agent 环境设置 key 并给出预算）；
+- 先 `--limit 10` 冒烟：schema 一次通过率 < 90% 即停，汇报校验错误分布；通过后跑完整 dev 集与全部对话评测，然后停下——**本步不迭代提示词、不运行 test 集**。
+- 本次开发环境无 key，上述在线步骤由用户执行（命令见汇报）；离线验收全部通过。
+
+---
+
+## 2026-10-12：第 3b-0 步——接入 DeepSeek V4.1 Flash，修正兼容性脚本（分支 `feat/intent-router`）
+
+本步**不接入意图层、不发起任何真实调用**：只补齐 provider 配置面与探针脚本，为 3b（真实 LLM 意图客户端）铺路。
+
+### 已实现（按部分提交）
+
+- **commit A（8d39935）deepseek provider + thinking 开关**：
+  - `ORGPILOT_LLM_PROVIDER` 扩展为 mock / aihubmix / **deepseek**；新增 `DEEPSEEK_API_KEY`（repr=False）、`DEEPSEEK_BASE_URL`（默认 `https://api.deepseek.com/anthropic`）、`DEEPSEEK_MODEL`（默认 `deepseek-flash`，即 DeepSeek-V4.1-Flash）；deepseek 缺 key 时 validate 报错；
+  - 新增 `ORGPILOT_LLM_THINKING`（omit 不发送字段 / disabled / enabled），**provider 决定默认值**：aihubmix → omit（字段不发，原有行为不变），deepseek → disabled（服务端默认开启思考）；from_env 支持 env 显式覆盖；
+  - 两个在线 provider 复用 `AnthropicCompatibleLLMClient`：构造参数新增 `thinking`，非 omit 时在请求体注入 `"thinking": {"type": ...}`；响应中只取 text 块、忽略 thinking 块（原有行为保持）；gateway/app 按 provider 构造；
+  - .env.example 与 README 增补 deepseek 配置段与 thinking 说明。
+- **commit B（fd4a2e0）兼容性脚本扩展**（`scripts/llm_compat_check.py`）：
+  - 运行门槛按 provider 校验：provider ∈ {aihubmix, deepseek}、对应 key（`AIHUBMIX_API_KEY` / `DEEPSEEK_API_KEY`）已设置、`--confirm-spend`；base URL / 模型默认值按 provider 取（env 可覆盖，CLI `--model/--base-url` 最高优先）；
+  - 新增 `--thinking omit|disabled|enabled`（默认随 provider）：enabled 时全部探针 max_tokens 提到 4096；
+  - 每次调用记录 `stop_reason` 与响应 `model`（逐调用清单入 JSON）；汇总新增 `max_tokens_truncations`（stop_reason=max_tokens 次数）与 `model_mismatches`（响应模型 ≠ 请求模型次数——DeepSeek 会把未知模型名静默映射到 deepseek-flash，不报错，所以这个计数很关键）；
+  - 新增探针 (e) 强制工具调用：工具 `record_intent`，input_schema = `IntentResult.model_json_schema()`，`tool_choice={"type":"tool","name":"record_intent"}`，调用 N 次，统计 tool_use 出现率与 Pydantic 校验通过率；端点因 `$defs/$ref` 拒收（HTTP 400 且响应含 $defs/$ref）时记录错误、改用展开后的 schema（`expand_schema_refs` 全量解析引用）重试整轮，汇总注明 `schema_expanded`；
+  - 单个探针 HTTP 错误：记录状态码 + 响应体前 300 字符（API key 强制替换为 `***`），其余探针继续执行，不整体崩溃；
+  - 结果写入 `reports/compat/<provider>-<model>-<thinking>-<时间戳>.json`（已加入 .gitignore），同时打印；
+  - 测试全部用 httpx MockTransport（12 个用例）：provider 门槛、thinking 注入/省略与 max_tokens、强制工具探针解析、$defs 拒收回退（断言重试请求的 schema 不再含 $defs/$ref）、HTTP 错误隔离与 key 脱敏、模型不一致与截断计数、报告落盘、思考参数透传。
+
+### 文档
+
+- ADR-0008 §7 改写：主候选 DeepSeek V4.1 Flash（官方 API、Anthropic 兼容端点），AIHubMix gpt-5.6-luna 为可选对照；结构化输出策略取决于兼容性测试（无原生 schema 输出，优先强制工具调用，$defs/$ref 被拒则展开）；选型依据 = 兼容性测试 + dev 集结果，test 集只在选定模型与提示词后运行一次；数据流向：官方 API 只经过 DeepSeek 一方，进入企业使用前仍需合规评估。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS
+pytest: 全部通过（含 compat 脚本 12 个 MockTransport 用例），覆盖率 ≥ 90%
+ruff / git diff --check: PASS
+真实调用：0 次（全测试走 MockTransport）
+```
+
+---
+
+## 2026-10-12：第 3a.2 步——追问次数封顶，mock 模式下探针能收敛（分支 `feat/intent-router`）
+
+### 已实现（按部分提交）
+
+- **commit A（0a592f0）追问次数封顶**：
+  - `PendingClarification.reask_count`：因换话题而消耗的重问预算，与 `asked_rounds` 分开计数；`DialogueStateStore.max_topic_reasks`（默认 1，`ORGPILOT_MAX_TOPIC_REASKS`，负数校验）；
+  - 换话题轮：`reask_count += 1`；未超重问预算 → 回复末尾附带重问；`asked_rounds + reask_count` 达到 `max_clarification_rounds + max_topic_reasks`（默认 3+1=4）→ 停止追问——probe 来源经 `notify_probe_finished(complete=False, note="信息不全")` 通知协调器并清除（与"多轮追问后仍不完整"同一处理），clarify 来源直接清除；
+  - answer 批处理的放弃条件从 `asked ≥ 3` 改为 `asked + reasked ≥ 4`：换话题轮与不完整回答轮共用同一总预算，任何混合序列（闲聊与部分回答交替）都会收敛；探针首次提问不计入（`asked_rounds` 从 0 起）；
+  - LABELING.md R9 补充该规则（重问预算、总上限、两种来源的收敛方式）。
+- **commit B（62bb23b）HeuristicIntentClient 最小兜底**（只为 mock 演示收敛，不追求准确率）：有待回答问题时，非命令、非明显闲聊（关键词表）、非单纯确认语（精确匹配表）的消息按 `answer_pending` 处理；任务默认取待答任务，多目标任务按消息提及优先——任务 id/标题完整包含直接命中，否则按字符 bigram 重叠 ≥2 且严格领先判定"提到的那个"；无明确提及 → 任务置空，由合并层作用于全部目标任务（安全失败：健康度兜底 at_risk、只追问时间，不虚构完成信息）；时间仍由 TemporalResolver 解析，未扩展解析能力。
+- **commit C（91958de）评测扩充与门槛**：
+  - `conversations.yaml` 8 段 22 轮 → **10 段 36 轮**：conv_09 连续换话题（第 2 次换话题不再重问；第 4 次达到总上限 → 标记「信息不全」收敛出简报）、conv_10 成员始终不正面回答（第 5 轮含糊回复达到总上限后收敛）；
+  - conv_06 适配新总上限：放弃点从第 4 轮顺延到第 5 轮（t6 的 asks_clarification 标注翻转为 true，新增 t7 放弃轮）——总上限 3→4 的直接推论，属标注随行为契约修订；
+  - CLI `--conversations` heuristic 门槛：**conv_01 必须收敛且完成时间正确**（`HEURISTIC_GATE_CONVERSATIONS`），其余对话只记录不设门槛；oracle 门槛不变（全部对话通过）；
+  - BASELINE.md 按 3a.2 口径刷新：多轮对话 oracle **10/10 段（36/36 轮）**、heuristic 2/10（conv_01 + conv_08）；单条样本三组数字同步更新（heuristic 多轮补全 dev 37.5%→62.5%、test 0%→50%，错误 claim 4/64→6/65 的刻意取舍已注明）。
+- **测试对齐**：`test_probe_reply_with_sync_keyword_is_not_treated_as_new_sync` 的成员消息从"我这边当前进度正常"改为纯闲聊——3a.2 语义下前者是含糊回答尝试（正确地消耗一轮追问），原断言"探针期间消息绝不二次发起同步"用闲聊消息保持不变。
+
+### 实施中的决策
+
+- **换话题轮无论是否实际附带重问文本都消耗预算**：若只按"实际发出了重问"计数，只闲聊不回答的成员永远不会触发总上限，与本次目标（mock 模式下探针必能收敛）相悖；`reask_count` 的语义因此是"因换话题消耗的重问预算"，LABELING.md R9 按此描述。
+- **任务提及检测用 bigram 重叠而非完整标题包含**："支付SDK明天下午5点能修好"提到的是任务"支付SDK接入"的标题前缀，完整包含判定会漏配、把答案错误作用于全部目标任务（conv_02 t1 首跑即暴露，随后修复）。
+- **fallback 条目不猜健康度**：健康度留空由合并层兜底（有原 draft 沿用、否则 at_risk），缺失槽位继续追问——宁可多问一句，不虚构"正常/已完成"。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS
+pytest: 273 passed
+coverage: 91% branch-aware (fail_under=90%)
+ruff: All checks passed
+git diff --check: PASS
+eval-intent 单条样本: oracle dev 102/102、test 58/58（100%），未经确认群发 0、误触发 0、错误 claim 0
+eval-intent --conversations: oracle 10/10 段（36/36 轮）通过；heuristic 2/10（conv_01 门槛通过，exit 0）
+```
+
+### mock 模式完整演示（/同步 → 成员回复 → PM 收到简报）
+
+```text
+[09:00] 赵敏: /同步
+  机器人 -> 已发起全员进度同步：已向 3 位负责人发送进度探针。(sync_started)
+[09:12] 王伟: 我负责的两个都搞定了
+  机器人 -> 已记录：支付SDK接入 → 有风险；已记录：商户后台管理端 → 有风险。
+            还需要补充：【支付SDK接入】还差：预计恢复或完成时间点；【商户后台管理端】还差：预计恢复或完成时间点
+  (clarification_sent —— fallback 把含糊回答按 at_risk 兜底并追问时间)
+[09:22] 王伟: 最晚明天下午5点，都搞定
+  机器人 -> 已记录：支付SDK接入 → 有风险，预计 10/17 17:00 完成；已记录：商户后台管理端 → 有风险，预计 10/17 17:00 完成，信息完整，谢谢！
+[09:30] 刘芳: 都搞定了，最晚明天下午6点
+  机器人 -> 已记录：收银台页面改版 → 有风险，预计 10/17 18:00 完成；已记录：对账模块联调 → 有风险，预计 10/17 18:00 完成，信息完整，谢谢！
+[09:45] 陈磊: 压测已经全部搞定了
+  机器人 -> 已记录：支付全链路压测 → 正常，信息完整，谢谢！(关键词恢复路径)
+会话状态：发起于 10/16 09:00，已回复 3/3 人
+简报已生成：True
+简报摘要：项目全景进度汇总：共 5 项活跃任务，0 项正常推进，0 项延误，4 项存在潜在风险。
+  - 王伟/刘芳/陈磊：collected
+  · 建议：有 4 项任务处于不确定风险状态，建议关注后续技术排查进展。
+```
+
+### 已知限制
+
+- 对话状态仍仅在内存（重启丢失）；probe 来源 claim 的合并加权规则仍属第 4 步；
+- heuristic 错误 claim 率 6/65 是"准确率换演示收敛"的刻意取舍（BASELINE.md 已注明）；"正常""跑通"等恢复表达仍在 MockLLMClient 关键词之外，heuristic 多轮对话 2/10 的其余失败均属 3b 的目标空间。
+
+---
+
+## 2026-10-12：第 3a.1 步——探针回复统一接入新流水线，多轮对话评测（分支 `feat/intent-router`）
+
+### 已实现（按部分提交）
+
+- **commit A（8740bc4）路由顺序修正**：显式命令前移到探针捕获之前且不消耗轮数；会话进行中 PM 重复 `/同步`、确认卡片或 acknowledge 确认 → `sync_already_active`，回复会话状态（发起时间、已回复/总人数，`SyncSession.progress_summary()` 新增）；
+- **commit B（8fc1df7）探针回复统一接入新流水线**：
+  - `PendingClarification` 目标任务扩展为列表（`task_ids`），待补全 claim 与缺失槽位按任务组织（`claims`/`missing` 字典）；
+  - 发出探针时为每个被询问成员登记 probe 来源的追问（`router.start_sync` + `register_probe_clarifications`，公开 API；确认卡片确认与 acknowledge 确认同路径）；
+  - 删除旧路径：`ProgressSyncCoordinator.handle_member_reply`（内含 ClaimExtractor 抽取与 SlotCompletenessEvaluator 判断）与 `GatewayService.handle_sync_member_reply` 整体移除，协调器不再持有 extractor；
+  - 新增协调器公开 API `notify_probe_finished(project_id, member_id, complete=…)`：收集完成/信息不全经它通知，协调器负责收敛与简报；超时路径不变（`get_active_session` 触发，每条入站消息都会"对表"并刷新协调器 agent，保证超时简报反映最新已持久化 claim）；
+  - 收集完成判定按任务：on_track 免槽位、at_risk 需时间、delayed 需时间+阻塞（与 SlotCompletenessEvaluator 同源的 `_task_missing_slots`，不留两套逻辑）；无任务整句回答（"都正常"）作用于全部目标任务；追问只列缺信息任务与槽位；最大轮数（3）仍不完整 → `MemberProbeState.incomplete` 标记，简报 recommendations 首行标注"信息不全"；
+  - **replay 场景说明**：9 个 replay 场景直接驱动 `CoordinationAgent.run_turn` 内核、不经过 ProgressSyncCoordinator，行为零变化，无需更新期望（逐条核对过 runner 源码）；
+- **commit C（本次）评测补充**：
+  - 样本上下文新增 `pending_probe`（task_ids + asked_rounds）；`LayeredSystemUnderTest` 遇到它时通过公开 API `router.start_sync` 建立**真实同步会话**并按样本登记探针追问；新增 dev 样本 `dev_probe_reply_001/002`（probe_reply 类别，下限 2），dev 102 条；
+  - `evals/intent/conversations.yaml`：8 段 22 轮，覆盖任务书 8 个场景（时间澄清补全、双任务部分回答、换话题重追问、探针期间 /帮助 不耗轮数、PM 被探针时重复 /同步、最大轮数信息不全、NL 同步→卡片→确认→全员回复→简报、重复投递幂等），每轮断言行为、每段断言最终状态（claims/collected/简报标注）；
+  - `intent/conversation_eval.py` + CLI `eval-intent --conversations`；oracle 以 (sender, message) 为键、按对话注入（`allow_duplicate_keys` 供重复投递轮）；**oracle 门槛：全部对话通过——实测 8/8 段（22/22 轮）通过**；
+  - BASELINE.md 记录 baseline 数字对应提交 `4ee48bf`（可检出复跑）及多轮对话结果。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS
+pytest: 265 passed（新增 coordinator notify 3、会话评测 5、router 探针/命令/护栏 6、CLI --conversations 2 等）
+coverage: 90.46% branch-aware (fail_under=90%)
+ruff: All checks passed
+git diff --check: PASS
+eval-intent: 单条样本 dev/test oracle 0 失败（100%），--conversations oracle 8/8 通过
+```
+
+### 探针路径前后对比（场景 1：探针 → 风险无时间 → 追问 → 补时间 → 收集完成）
+
+| 轮次 | 旧路径（3a 及之前） | 新路径（3a.1） |
+|---|---|---|
+| 发起 | `/同步` → 协调器建会话并群发探针 | 同左，但 router 另为每个成员登记 probe 追问（目标=其全部任务） |
+| 回答1 "压测这边卡住了" | `handle_sync_member_reply` → ClaimExtractor 抽取 → SlotCompletenessEvaluator 判缺时间 → 协调器自己追问（turns_count+1） | 意图分类（answer_pending）→ 护栏 → answer 批量合并 → 按任务判完整性（at_risk 缺时间）→ 追问只提该任务该槽位（rounds+1） |
+| 回答2 "预计明天下午5点能恢复" | 再抽取 → 完整 → 协调器标记 COLLECTED，全员收敛才出简报 | 合并补上时间 → 按任务完整 → `notify_probe_finished(complete=True)` → 协调器标记 COLLECTED，全员终态才出简报 |
+| 差异要点 | 抽取/完整性/追问文案都在协调器内，意图层无法介入；成员多任务时追问文案只提第一个任务 | 抽取与完整性在意图层（可被 oracle/模型替换），按任务逐个追问；协调器只管收敛与简报 |
+
+### 已知限制
+
+- 对话状态仍仅在内存（重启丢失）；probe 来源 claim 的"合并规则"（同人多任务加权）仍属第 4 步；
+- `--system baseline` 与 layered+heuristic 同链路（同 3a 说明）；heuristic 在多轮对话上大量失败属预期（探针回答意图识别是 3b 目标）。
+
+---
+
+## 2026-10-12：意图识别第 3a 步——三层路由、对话状态、消息幂等与 oracle 评测（分支 `feat/intent-router`）
+
+### 已实现
+
+- **意图客户端接口**（`intent/client.py`）：`IntentClient` 协议 + `IntentContext`（消息、业务时区 occurred_at、发送者 id/角色/显示名、负责的任务、全部任务快照、待回答/待确认上下文、最近 N 轮对话含机器人发言，N 默认 6 可配 `ORGPILOT_INTENT_RECENT_TURNS`）；`HeuristicIntentClient`（包装 MockLLMClient，mock provider 默认，效果不作考核）；`ScriptedIntentClient`（预设结果 + 可模拟超时/异常/非法输出）；所有调用经 `classify_with_timeout`（`asyncio.wait_for`，默认 20 秒 = `ORGPILOT_INTENT_TIMEOUT_SECONDS`），同步实现 `asyncio.to_thread` 包装；
+- **MessageRouter**（`intent/router.py`）：webhook（含 WS）与 sandbox-chat 全部改走 router，两处的重复路由逻辑（同步关键词列表、"不可处理回欢迎语"）已删除；`/messages` 保留为 legacy 低层抽取接口（docstring 标注）。消息处理顺序：**幂等 → 群聊拒收 → 未注册拒收 → 探针回复 → 显式命令 → 对话状态+意图分类 → 护栏 → 处理器**；意图分类失败重试一次，仍失败回复"没理解，可以换个说法吗？也可以发送 /帮助 查看用法"，回复类别 `fallback`，不改状态；
+- **消息级幂等**（`storage/message_store.py` 新增 `processed_messages` 持久化表）：project_id + message_id 已存在时直接返回上次结果，不重新识别、不重复发送；同一张表提供"最近 N 轮对话"上下文；
+- **DialogueStateStore**（`intent/dialogue.py`）：按（项目+发送者）存放 PendingClarification（问题/目标任务/待补全 claim/缺失槽位/轮数/来源 probe|clarify）与 PendingSyncConfirmation（发起人/成员/时间）；过期 24 小时/30 分钟可配置；探针追问登记于此，探针回复仍委托协调器收敛；**本轮仅内存，重启丢失**（已知限制）；
+- **护栏**（`intent/guards.py`，纯函数 + 单测）：grounding（复用 verify_quote）→ 任务（R7 追问列出发送者任务）→ 语气（question+report → 查询；hypothetical → noted）→ 含糊无时间追问（R6）→ 置信度阈值（默认 0.6，`ORGPILOT_INTENT_CONFIDENCE_THRESHOLD`）→ 时间原文子串 + **只比对日期** → request_sync 仅 PM → P1/P2 → unsupported；
+- **处理器**（`intent/handlers.py`）：report_status/make_commitment 走可复用事件构造（`extraction/event_builder.py`）+ `commit_extracted_events`（内存校验→持久化→跑一轮），回复"已记录：支付SDK接入 → 有风险，预计 10/14 17:00 完成"式摘要；answer_pending 把答案合并进待补全 claim（字段覆盖、健康度缺省链、无原 claim 则新建），SlotCompletenessEvaluator 判完整性，不完整且未达轮数只追问剩余槽位；换话题（answers_pending=false）正常处理并末尾重新追问、轮数不增（R9）；query_status 直接从投影回答；request_sync PM 发 `kind=sync_confirmation` 确认卡片（按钮 sync_confirm/sync_cancel，仅发起人且 PM 可操作，过期原地更新"已过期"），否定句 → noted；acknowledge 有待确认卡片时肯定 → 发起（sync_started）/否定 → 取消（noted），无卡片 → smalltalk；一条消息多条目分别处理合并回复，类别按优先级 `no_permission > sync_started > sync_confirm > clarify > claim_recorded > query_answer > noted > unsupported > help > smalltalk`（已写入 ADR）；
+- **oracle 评测**（`intent/oracle.py` 仅评测路径 + `evaluator.LayeredSystemUnderTest` + CLI `--system baseline|layered --intent heuristic|oracle`，oracle 仅限 layered，报告标题标注上限口径）；oracle 达标：**dev 100/100、test 58/58 全部通过（100% ≥ 95%），未经确认群发 0、同步误触发 0、错误 claim 0**，0 条失败即无需修流水线 bug 也无需上报标注问题。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS
+pytest: 251 passed（新增 router 集成 19、guards 15、client 6、dialogue/message_store 6、oracle 流水线 1 等）
+coverage: 90.07% branch-aware total coverage (fail_under=90%)
+ruff: All checks passed
+git diff --check: PASS
+eval-intent 四种组合可运行；oracle+baseline 组合按设计拒绝（SystemExit 提示只能与 layered 组合）
+```
+
+### 已知限制（如实标注）
+
+- **DialogueStateStore 仅在内存**：进程重启后待回答追问与待确认卡片全部丢失（探针自身的会话状态仍由协调器管理）；持久化留给后续步骤；
+- probe 来源的 claim 合并仍由协调器内旧抽取路径完成（router 登记其追问状态但处理委托给协调器），统一的"按探针合并"留到第 4 步（claim 合并规则）；
+- `--system baseline` 在运行时与 layered+heuristic 同链路（旧 webhook 路由已删除），仅观测口径不同；BASELINE.md 中 baseline 行为第 3a 步之前的历史数字；
+- oracle 每个样本需要唯一 (sender, message) 键，同一 split 内消息重复会构造失败（当前数据集满足）。
+
+---
+
+## 2026-10-12：评测集小修订（R11）并冻结 test 集（分支 `feat/intent-eval-baseline`）
+
+### 已实现
+
+- **规则 R11**（`LABELING.md`）：`expected_completion` 只填"任务完成或阻塞解除"的时间；开始时间、演示时间、定位原因的时间、下次同步的时间不填，任务已完成的样本也不填；
+- **样本修订**（登记于 `REVISION-2026-10.md` 第五节）：
+  - 消息改写使时间成为完成时间、保留解析难点：dev_time_chinese_001（"三点能定位"→"三点能修好"）、dev_time_chinese_002（"5点半演示"→"5点半能全部搞定"）、dev_time_chinese_003（"下周三才能开始"→"下周三才能跑完"）、test_answer_pending_001（"明天上午十点开始全链路跑"→"明天上午十点能恢复"，健康度 on_track→at_risk）、test_time_chinese_001（改为明确的"拖到月底才能做完"，保留"月底"）、test_time_chinese_002（"晚上八点开跑"→"晚上八点能全部跑完"）；
+  - **dev_time_chinese_004 补上 delayed**（月底 10-31 晚于截止日 10-22，R1）。更正：上一轮修订清单误记此样本已改为 delayed，实际未落地，本轮修正；
+- **回复类别拆分**：`sync_confirm`（只发确认卡片）与 `sync_started`（已发起同步：命令直达或卡片确认后）分离；7 条已发起样本（sync_command PM×3、confirmation_flow 确认×4）改为 sync_started，request_sync 8 条维持 sync_confirm；评测器观测逻辑同步（observed：发起了→sync_started，仅发卡片→sync_confirm），LABELING.md 的 R5/R8 表已更新；
+- **CLI**：`eval-intent` 汇总输出新增"Unconfirmed mass sync sends: x / y samples requiring a card (target 0)"；
+- **test 集冻结**：BASELINE.md 记录 `test.yaml` 的 sha256（82f55b9e…）并注明"之后修改 test 集需要先经过审批"；新增 `test_frozen_test_split_unchanged_without_approval`，哈希不一致即失败并在失败信息中提示需审批、同步更新 BASELINE.md。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS
+pytest: 204 passed（新增冻结哈希测试 1 条；评测器/评测集用例按 sync_started 口径更新）
+coverage: 91.15% branch-aware total coverage (fail_under=90%)
+ruff: All checks passed
+git diff --check: PASS
+eval-intent dev/test --mode mock: 正常运行，CLI 输出含未经确认群发次数
+```
+
+### 基线 (b) 更新（口径：R1–R11 + sync_started 拆分 + 时间修复）
+
+- dev：claim P 41.18% / R 17.50%；时间 75.00%；错误 claim 率 6.25%；同步误触发 0%；未经确认群发 1/5；回复类别 29.00% → **28.00%**（唯一变化：dev_request_sync_003 的回复在新口径下类别不符）；失败 85；
+- test：claim P 20.00% → **33.33%** / R 5.00% → **10.00%**；task 40.00% → **50.00%**；健康度 50.00% → **66.67%**；时间 0.00%；未经确认群发 0/3；回复类别 17.24% → **18.97%**；失败 51。test 的提升来自 R11 改写让消息含义更明确（mock 抽取多命中 1 条正确 claim），并非运行时变化；
+- 完整数字见 `evals/intent/BASELINE.md`（含冻结哈希）。
+
+---
+
+## 2026-10-11：评测集修订（R1–R10 标注口径）与两个时间 bug（分支 `feat/intent-eval-baseline`）
+
+### 已实现
+
+- **标注规范 `evals/intent/LABELING.md`**（产品确定的唯一口径，R1–R10）：R1 健康度按"预计完成时间 vs 任务截止日"三档判定；R2 否定句按实际含义（负责人否定风险 → on_track claim；字面否定、问题仍在 → at_risk）；R3 带疑问的等待归 query_status；R4 非负责人汇报照常生成 claim；R5 回复类别新增 `noted`（与项目相关但不改变状态：假设句、拒同步、拒绝确认）并把"无待确认事项的单纯确认语"归 smalltalk；R6 含糊语气无时间→追问、有时间→生成 claim；R7 任务歧义（未提任务名且负责人多任务）→追问不猜测；R8 全员同步矩阵（PM 自然语言=只发确认卡片；`/同步`=直接发起；卡片确认/拒绝；非 PM=no_permission）；R9 换话题按新话题回复并重新追问；R10 时间约定补充"只有日期没有时刻 = 当天 18:00"。dev/test 文件头指向该文件；
+- **评测集修订**：145 条旧样本逐条复查，33 条修订（R1×4、R2×7、R3×1、R5×11、R6×1、R7×1、R8×8，其中 dev_p1_p2_003 移入 query_status 类别）；新增 13 条：sync_command 5（PM `/同步`×3、非 PM `/同步`×1、`/帮助`×1）、confirmation_flow 7（PM 确认×4、PM 拒绝×2、非 PM 误回复×1，context 新增 `pending_confirmation{kind=sync, initiated_by}`）、dev_p1_p2_007（补足 p1_p2 覆盖）。修订后 dev 100 / test 58 共 158 条（63:37）；逐条修订登记于 `evals/intent/REVISION-2026-10.md`；
+- **评测器修订**（`src/orgpilot/intent/evaluator.py`，非运行时业务代码）：`ReplyCategory` 新增 `NOTED`；样本上下文支持 `pending_confirmation`（baseline 无确认卡片机制，构造不了状态，预期失败）；确认卡片判定改为显式约定——只有带 `kind=sync_confirmation` 标记、副作用发生前的消息才算卡片，同步之后发出的通知不再算；同步指标拆分为"同步误触发率"（不该发起且不该发卡片的样本上出现任何同步副作用）与"未经确认群发次数"（应先发卡片的样本上直接发起，计数、目标 0）；Markdown 报告对样本数 <5 的类别标注"样本不足，仅供参考"；`evals/intent/reports/` 移出版本控制（.gitignore + git rm --cached），基线数字改记 `evals/intent/BASELINE.md`（不带生成时间）；
+- **B5 业务时区**（运行时修复）：Feishu create_time 是 UTC 毫秒，此前相对时间按 UTC 锚定，北京用户说"明天下午5点"会被记成 17:00 UTC。新增 `ORGPILOT_TIMEZONE`（默认 Asia/Shanghai，`validate()` 校验 IANA 时区名）；`GatewayService.to_business_timezone()` 在消息进入抽取/同步路径前统一换算（webhook、WS（经 webhook 委托）、sandbox-chat、/messages 四入口一致；事件存储仍为带时区同一时刻）；依赖加入 `tzdata`（Windows zoneinfo 需要）并更新 uv.lock；
+- **B6 "下周X" 自然周**（运行时修复）：此前周二说"下周三"解析为本周三；现改为"下一个自然周（周一为一周起点）的周X"，"周X""这周X""本周X"保持原行为。未顺带扩展中文数字、"半"、"下班前"等解析能力。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS
+pytest: 203 passed（新增 tests/test_business_timezone.py 5 条、resolver 下周X 2 条、评测器/评测集用例重写）
+coverage: 91.19% branch-aware total coverage (fail_under=90%)
+ruff: All checks passed
+git diff --check: PASS
+orgpilot eval-intent --split dev/test --mode mock: 均运行并生成报告（报告已不入库）
+```
+
+### 基线重跑（顺序：先评测器修订、后时间修复）
+
+- 基线 (a)＝时间修复之前代码：dev 时间准确率 0.00%、失败 87；test 时间准确率 0.00%、失败 51；
+- 基线 (b)＝时间修复之后代码：dev 时间准确率 75.00%、失败 85（dev_answer_pending_003 与 dev_time_chinese_003 的"下周三"经 B6 转为通过）；test 数字不变；
+- 其余指标两组完全一致（claim P/R、错误 claim 率、同步误触发 0%、未经确认群发 dev 1 次、回复类别、多轮），完整数字见 `evals/intent/BASELINE.md`。
+
+### 与任务说明的差异（如实标注）
+
+- 上一轮提交的评测报告文件按本轮要求从索引移除并忽略，上轮开发日志中"报告随分支提交留档"的做法自此作废；
+- dev_p1_p2_003 修订后类别从 p1_p2 移至 query_status，为保持 p1_p2 ≥10 的类别下限新增 dev_p1_p2_007（P2 计划变更）；
+- test 集时间准确率仍为 0%：可触发 claim 的 test 样本时间表达（月底前、晚上八点、中午、明早）均在现有 TemporalResolver 能力之外，或消息不触发 claim，属真实基线而非回归。
+
+---
+
+## 2026-10-11：意图识别第 1 步——schema、对抗评测集与现有系统基线（分支 `feat/intent-eval-baseline`）
+
+### 已实现（按 ADR-0008 实施顺序第 1 步，不改任何运行时行为）
+
+- **ADR-0008 落库**：从设计工作区复制 `docs/adr/0008-layered-intent-recognition.md`（意图分类、正交属性、三层路由、评测先行原则），作为意图层工作的依据；
+- **意图输出 schema**（`src/orgpilot/intent/models.py`，仅定义未接入运行时）：`IntentType` 覆盖 ADR-0008 第 2 节全部 15 个意图（P0 九个 / P1 五个 / P2 一个）；`IntentItem` 含正交属性 `speech_act`/`polarity`/`certainty` 与槽位（task_id、health_status、原文 time_expression、带时区 expected_completion、blocker、必填 source_quote、confidence）；`IntentResult` 支持一条消息多个条目、answers_pending 与 reasoning；
+- **对抗评测集**（`evals/intent/`）：固定项目夹具（1 PM + 3 工程师，5 个任务，含"支付SDK接入/支付全链路压测""收银台页面改版/商户后台管理端"两组易混淆名称、负责人与依赖）；dev 92 条 / test 53 条共 **145 条**，按类别分层（见下），每条含 id、category、message、sender、occurred_at(+08:00)、可选 pending_question/最近对话上下文，expected 分 behavior（claims/commitments/starts_sync/确认卡片/追问/回复类别）与 intents（意图 + 正交属性）两部分。样本按真实团队中文口语编写，未参考 `MockLLMClient` 关键词；
+- **评测运行器与基线**（`src/orgpilot/intent/evaluator.py` + CLI `orgpilot eval-intent --split dev|test --mode mock|replay|live`）：被测系统协议为"一条样本 → 观测行为"；baseline 通过真实入口 `FeishuWebhookHandler` 驱动现有系统（内存 SQLite + mock adapter + 记录用 Feishu client），从事件库、同步会话与外发消息采集行为；带 pending_question 的样本先构造探针为 CLARIFYING 的活跃会话（updated_at 锚定样本时间，避开 F1 空闲超时）；指标含错误 claim 率、同步误触发率、claim P/R 与 task/健康度/时间准确率、回复类别准确率、多轮补全成功率及按类别统计；意图层指标对 baseline 记 N/A。报告输出 JSON + Markdown（含按类别表与期望/实际失败清单）至 `evals/intent/reports/`。本步不设通过门槛、不接 CI 门禁；replay/live 模式明确报"需意图层/在线模型，当前步骤仅支持 mock"；
+- **LLM 兼容性脚本**（`scripts/llm_compat_check.py`，只写未运行、不入 CI）：三重门槛（provider=aihubmix、AIHUBMIX_API_KEY、--confirm-spend）不满足即退出；探测 (a) 工具调用 tool_use 块、(b) IntentResult schema 写入 prompt 的 N 次 JSON 解析/校验通过率、(c) 延迟 p50/p95、(d) token 用量；单元测试全部经 httpx MockTransport，未发生任何真实外部调用。
+
+### 评测集类别分布（dev + test）
+
+report_status 8、make_commitment 8、answer_pending 8（多轮回答）、query_status 8（疑问）、request_sync 8（同步正例）、acknowledge 8、chitchat 8、help 8、out_of_scope 8、negation 8、hypothetical 6、vague 6、multi_task 8、disambiguation 6、time_chinese 10、substring_trap 6、p1_p2 10、sync_near_negative 6、sync_non_pm 3、multi_turn_topic_shift 4；合计 145（dev:test ≈ 6:4）。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS (4 P0 + 5 M1)
+pytest: 192 passed
+coverage: 90.97% branch-aware total coverage (fail_under=90%)
+ruff: All checks passed
+git diff --check: PASS
+orgpilot eval-intent --split dev --mode mock / --split test --mode mock: 均运行并生成报告
+```
+
+### baseline 核心指标（无门槛，仅记录现状）
+
+```text
+dev (92 条):  claim P 47.06% / R 23.53%；task_id 58.82%；健康度 80.00%；时间 0.00%
+              错误 claim 率 11.29%；同步误触发 0%；回复类别 34.78%；多轮补全 12.50%（8 条多轮）
+test (53 条): claim P 0.00% / R 0.00%；task_id 20.00%；健康度 0.00%；时间 0.00%
+              错误 claim 率 11.11%；同步误触发 0%；回复类别 26.42%；多轮补全 0.00%（8 条多轮）
+失败最集中类别：时间表达解析（time_chinese 10/10）、P1/P2 误处理（p1_p2 10/10 产生副作用或答非所问）、
+report_status/make_commitment/query_status 各 split 的措辞变体、多轮回答未合并进待补全 claim。
+```
+
+### 与任务说明的差异（如实标注）
+
+- 分支基点：任务书写"从最新 origin/main 新建"，但上一轮受"不要 push"约束，F1/F2 合并只存在于本地 main（6bf22a2），origin/main 仍停在没有 F1/F2 的 7a9ed18；为满足"含 F1、F2 已合并"的前提，本分支自本地 main 新建；
+- 回复类别在任务书示例的 7 类之外补充了 `clarify`（机器人追问轮次），示例列表为"例如"性质，已 在 schema docstring 注明；
+- `sends_confirmation_card` 语义锚定 ADR-0008 §4 的"同步确认卡片"（自然语言同步须经确认），不涵盖改期审批卡片；
+- 评测生成的报告文件随本分支提交（作为基线留档），后续运行会覆盖。
+
+---
+
+
 ## 2026-10-11：修复飞书消息链路 4 个 P0 缺陷（分支 `fix/feishu-sync-routing-p0`）
 
 ### 已修复

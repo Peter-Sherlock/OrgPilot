@@ -1,0 +1,61 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "10adfa6ddbca5970c261909132d49db0",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 398,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 246,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:09:09.750987+00:00",
+  "response": {
+    "id": "c4b98bd1-a48e-4c34-91a9-f5e84493fdf8",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_z5X0MOgboVksBuBdXOVL9490",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳请求把对账模块联调转交给王伟，属于任务转派/计划变更类请求，识别为 propose_plan_change；她本人无法继续投入，也体现不可用。",
+          "items": [
+            {
+              "intent": "propose_plan_change",
+              "speech_act": "imperative",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "ledger_check",
+              "source_quote": "把对账模块联调转给王伟吧，我实在腾不出手",
+              "confidence": 0.85
+            },
+            {
+              "intent": "unavailability",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "task_id": "ledger_check",
+              "source_quote": "我实在腾不出手",
+              "confidence": 0.8
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 398,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 246,
+      "service_tier": "standard"
+    }
+  }
+}

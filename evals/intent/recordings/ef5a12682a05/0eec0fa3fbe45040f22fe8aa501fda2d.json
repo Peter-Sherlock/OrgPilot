@@ -1,0 +1,51 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "0eec0fa3fbe45040f22fe8aa501fda2d",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 517,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 137,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:28:17.044394+00:00",
+  "response": {
+    "id": "f8e80ca6-7731-43a6-a4c7-c6c9b75cde2a",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_b8VRYMjO987QfFukaghu9333",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息是与工作进度无关的寒暄闲聊，未回答待汇报的进展问题。",
+          "answers_pending": false,
+          "items": [
+            {
+              "intent": "chitchat",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "哈哈哈周末去哪玩了",
+              "confidence": 0.95
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 517,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 137,
+      "service_tier": "standard"
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "db6eb511554b2f07314bc6d529bf41f6",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 137,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2816,
+    "output_tokens": 213,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:01:05.247925+00:00",
+  "response": {
+    "id": "22b71f4d-29dc-4aa6-8c32-330e40aa8332",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_4q0tb98NcJJcDCxAJcCB1242",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "发送者更正此前给出的完成时间，属于 correction；同时给出新的完成时间，明天下午5点=2026-10-14T17:00:00+08:00。",
+          "items": [
+            {
+              "intent": "correction",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_sdk",
+              "time_expression": "明天下午5点",
+              "expected_completion": "2026-10-14T17:00:00+08:00",
+              "source_quote": "刚才说错了，支付SDK是明天下午5点能好，不是三点",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 137,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2816,
+      "output_tokens": 213,
+      "service_tier": "standard"
+    }
+  }
+}

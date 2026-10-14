@@ -1,0 +1,51 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "aa023947fc9d341ba11993d0be55e410",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 355,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 149,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:15:08.854479+00:00",
+  "response": {
+    "id": "2c2bc8a1-394b-4909-a9e0-61bb3662b402",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_WXjLVt4Trn3Zlj3vvkhU0817",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "存在待确认的同步卡片（发起人即本人），\"可以，就按这个发\"是对该卡片的确认应答。",
+          "items": [
+            {
+              "intent": "acknowledge",
+              "speech_act": "imperative",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "可以，就按这个发",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 355,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 149,
+      "service_tier": "standard"
+    }
+  }
+}

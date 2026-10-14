@@ -1,0 +1,58 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "b0154d5204d3638108b0a7e79b9a3329",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 500,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 190,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:13:34.863934+00:00",
+  "response": {
+    "id": "73a0b9b8-0cea-4817-95c9-cfecbfcbbbd9",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_vdqymLCRDcXGavxxCxEE6346",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳询问后端接口交付时间，属于向机器人提问的查询；同时陈述页面已等待两天，隐含依赖阻塞，附带 dependency_wait。",
+          "items": [
+            {
+              "intent": "query_status",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "后端的接口什么时候给我？",
+              "confidence": 0.85
+            },
+            {
+              "intent": "dependency_wait",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "我这边页面都干等两天了",
+              "confidence": 0.8
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 500,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 190,
+      "service_tier": "standard"
+    }
+  }
+}

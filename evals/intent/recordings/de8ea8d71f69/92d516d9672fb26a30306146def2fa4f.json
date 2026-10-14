@@ -1,0 +1,52 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "92d516d9672fb26a30306146def2fa4f",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 483,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 177,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:25:43.643330+00:00",
+  "response": {
+    "id": "3ee7802b-f51b-43d7-837c-2c2557be46b0",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_GjqUF8iwgzUP3f1wx1Ha7656",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "这是假设句（“要是……还没好”），假设不产生状态变更，属于对压测环境依赖的风险陈述，识别为 dependency_wait。无待回答问题。",
+          "items": [
+            {
+              "intent": "dependency_wait",
+              "speech_act": "hypothetical",
+              "polarity": "negative",
+              "certainty": "hedged",
+              "task_id": "pay_e2e_test",
+              "source_quote": "要是压测环境周五还没好，整个迭代计划都得往后推",
+              "confidence": 0.75
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 483,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 177,
+      "service_tier": "standard"
+    }
+  }
+}

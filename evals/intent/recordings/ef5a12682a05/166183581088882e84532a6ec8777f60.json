@@ -1,0 +1,51 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "166183581088882e84532a6ec8777f60",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 494,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 146,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:14:02.472711+00:00",
+  "response": {
+    "id": "b02ad8df-6253-4b78-9b44-e5010fe5cdd9",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_4MQO6Y1qE48wScszaN6F6766",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息要求机器人代发节日祝福邮件，与项目进度协调无关，属于超出处理范围的请求。",
+          "items": [
+            {
+              "intent": "out_of_scope",
+              "speech_act": "imperative",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "帮我给客户发一封节日祝福邮件",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 494,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 146,
+      "service_tier": "standard"
+    }
+  }
+}

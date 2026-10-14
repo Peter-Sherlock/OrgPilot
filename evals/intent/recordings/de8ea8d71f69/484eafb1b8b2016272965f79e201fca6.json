@@ -1,0 +1,52 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "484eafb1b8b2016272965f79e201fca6",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 465,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 152,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:25:01.990319+00:00",
+  "response": {
+    "id": "edea9bf0-2f9f-4215-a31f-2e8b14d3c4fd",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_LN7W5CPhknxq8Fjwagtz4906",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "赵敏询问支付SDK接入任务的当前状态，属于查询任务状态，无待回答问题。",
+          "items": [
+            {
+              "intent": "query_status",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_sdk",
+              "source_quote": "支付SDK现在到底什么情况了？",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 465,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 152,
+      "service_tier": "standard"
+    }
+  }
+}

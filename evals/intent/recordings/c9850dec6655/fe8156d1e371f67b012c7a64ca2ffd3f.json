@@ -1,0 +1,52 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "fe8156d1e371f67b012c7a64ca2ffd3f",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 367,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 151,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:59:35.989581+00:00",
+  "response": {
+    "id": "856ae1a5-9bbc-4459-82dc-7b7b2ba13347",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_QwT2s1pcnB4JHZEx6eEL7039",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "赵敏点名询问支付SDK接入任务的当前状态，属于向机器人提问的查询。",
+          "items": [
+            {
+              "intent": "query_status",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_sdk",
+              "source_quote": "支付SDK现在到底什么情况了？",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 367,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 151,
+      "service_tier": "standard"
+    }
+  }
+}

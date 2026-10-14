@@ -1,0 +1,51 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "e4961a6c44fb713ae64c1c7f1966228d",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 387,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 159,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:09:13.251582+00:00",
+  "response": {
+    "id": "eae599e4-753d-4c17-8993-1e095e73f7ec",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_ZF87wi9Mucma2mj1mriO5019",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "发送者要求汇总所有人的进展，属于请求全员进度同步；但刘芳是 frontend 角色，非项目负责人，权限不足，仍按 request_sync 识别。",
+          "items": [
+            {
+              "intent": "request_sync",
+              "speech_act": "imperative",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "把所有人的进展拉一份给我",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 387,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 159,
+      "service_tier": "standard"
+    }
+  }
+}

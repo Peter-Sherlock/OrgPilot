@@ -1,0 +1,62 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "cfdac711dda90836e4acfea601a61ae1",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 365,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 221,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:14:21.106062+00:00",
+  "response": {
+    "id": "0b480f92-a824-46a3-b309-a2698c160c54",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_8MrkVmnFSHc5Y9HktKgs3529",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息分别汇报支付SDK仍在修复（未解决问题→at_risk）和商户后台接近完工（正常推进→on_track）。",
+          "items": [
+            {
+              "intent": "report_status",
+              "task_id": "pay_sdk",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "health_status": "at_risk",
+              "source_quote": "支付SDK还在修",
+              "confidence": 0.9
+            },
+            {
+              "intent": "report_status",
+              "task_id": "merchant_admin",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "health_status": "on_track",
+              "source_quote": "商户后台倒是快完工了",
+              "confidence": 0.85
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 365,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 221,
+      "service_tier": "standard"
+    }
+  }
+}

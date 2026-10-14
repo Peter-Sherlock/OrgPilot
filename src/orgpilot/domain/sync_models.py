@@ -15,6 +15,9 @@ class MemberProbeState(BaseModel):
     display_name: str = ""
     assigned_tasks: list[str] = Field(default_factory=list)
     status: ProbeMemberStatus = ProbeMemberStatus.PENDING
+    # True when the member's answers stayed partial after the max clarification
+    # rounds: collected, but the briefing must flag the information gap (3a.1).
+    incomplete: bool = False
     turns_count: int = 0
     raw_replies: list[str] = Field(default_factory=list)
     clarification_questions: list[str] = Field(default_factory=list)
@@ -69,3 +72,15 @@ class SyncSession(BaseModel):
     updated_at: datetime
     member_probes: dict[str, MemberProbeState] = Field(default_factory=dict)
     briefing: ExecutiveBriefing | None = None
+
+    def progress_summary(self) -> str:
+        """One-line status used when a duplicate sync request is declined (3a.1)."""
+        from orgpilot.domain.enums import ProbeMemberStatus
+
+        collected = sum(
+            1
+            for probe in self.member_probes.values()
+            if probe.status == ProbeMemberStatus.COLLECTED
+        )
+        start = self.created_at.strftime("%m/%d %H:%M")
+        return f"发起于 {start}，已回复 {collected}/{len(self.member_probes)} 人"

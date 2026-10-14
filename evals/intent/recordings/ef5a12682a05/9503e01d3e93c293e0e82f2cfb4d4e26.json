@@ -1,0 +1,51 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "9503e01d3e93c293e0e82f2cfb4d4e26",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 353,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 142,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:15:07.495709+00:00",
+  "response": {
+    "id": "b6550439-616e-4fc8-a214-da23b0cfa754",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_C0nsOtuY6JE5ecwjhUX63045",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "存在待确认的同步卡片，发送者用「好的，发吧」表示确认，属于 acknowledge。",
+          "items": [
+            {
+              "intent": "acknowledge",
+              "speech_act": "imperative",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "好的，发吧",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 353,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 142,
+      "service_tier": "standard"
+    }
+  }
+}

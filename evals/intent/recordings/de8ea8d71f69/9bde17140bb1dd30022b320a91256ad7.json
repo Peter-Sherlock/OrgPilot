@@ -1,0 +1,63 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "9bde17140bb1dd30022b320a91256ad7",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 514,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 250,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:30:39.655747+00:00",
+  "response": {
+    "id": "41901d50-c05a-45e0-9cdc-360220ea7df4",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_wrgtQi9mVQyZiNLjrrmJ0440",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟正面回答负责人的进度追问，汇报 pay_sdk 与 merchant_admin 两项任务均正常推进，需拆成两条 answer_pending。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_sdk",
+              "health_status": "on_track",
+              "source_quote": "支付SDK和商户后台都正常了",
+              "confidence": 0.85
+            },
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "merchant_admin",
+              "health_status": "on_track",
+              "source_quote": "支付SDK和商户后台都正常了",
+              "confidence": 0.85
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 514,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 250,
+      "service_tier": "standard"
+    }
+  }
+}

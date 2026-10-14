@@ -1,0 +1,54 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "4fd6c80c9638a78d458b762601adfb4d",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 392,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 193,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:09:01.746141+00:00",
+  "response": {
+    "id": "b87768a3-fb00-425a-8608-82e7c99a12ac",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_R45EE3dggAF5Ms21c76J2546",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳汇报自己负责的对账模块联调进展，承诺周日完成差异清单整理，属明确承诺完成时间。",
+          "items": [
+            {
+              "intent": "make_commitment",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "ledger_check",
+              "time_expression": "这周日",
+              "expected_completion": "2026-10-18T18:00:00+08:00",
+              "source_quote": "对账模块的差异清单这周日就能整理出来",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 392,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 193,
+      "service_tier": "standard"
+    }
+  }
+}

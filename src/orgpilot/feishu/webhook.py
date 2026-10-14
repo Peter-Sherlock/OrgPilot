@@ -7,7 +7,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
-from orgpilot.domain.enums import ProbeMemberStatus, WorkflowStatus
+from orgpilot.domain.enums import WorkflowStatus
 from orgpilot.events.models import (
     EventSource,
     MemberRegisteredEvent,
@@ -17,9 +17,11 @@ from orgpilot.events.models import (
     TaskCreatedPayload,
 )
 from orgpilot.feishu.cards import build_approval_updated_card
+from orgpilot.intent.replies import WELCOME_TEXT
 
 if TYPE_CHECKING:
     from orgpilot.gateway.service import GatewayService
+    from orgpilot.intent.router import MessageRouter
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +34,25 @@ class FeishuWebhookHandler:
         service: Any,
         project_id: str = "feishu-default",
         verification_token: str | None = None,
+        router: "MessageRouter | None" = None,
     ) -> None:
         self.service: GatewayService = service
         self.project_id = project_id
         self.verification_token = verification_token
+        self._router = router
+
+    @property
+    def router(self) -> "MessageRouter":
+        """The layered message router; lazily built with heuristic intents."""
+        if self._router is None:
+            from orgpilot.intent.router import MessageRouter
+
+            self._router = getattr(self.service, "intent_router", None)
+        if self._router is None:
+            from orgpilot.intent.router import MessageRouter
+
+            self._router = MessageRouter(service=self.service)
+        return self._router
 
     async def handle_event(self, body: dict[str, Any]) -> dict[str, Any]:
         """Dispatches Feishu webhook payload according to event type."""
@@ -97,8 +114,12 @@ class FeishuWebhookHandler:
             if occurred_ts
             else datetime.now(UTC)
         )
+        # Feishu timestamps are UTC epoch millis; relative phrases like "明天下午5点"
+        # must resolve against the team's business-timezone date, not UTC (B5).
+        occurred_at = self.service.to_business_timezone(occurred_at)
 
-        # Auto-bootstrap demo tasks for first-time solo tester
+        # Auto-bootstrap demo tasks for first-time solo tester; the welcome text
+        # is sent only here (first contact) and from /帮助 (ADR-0008 §4).
         agent_init = await self.service.get_or_replay_agent(self.project_id)
         bootstrapped = False
         if not agent_init.projector.state.tasks and actor_id:
@@ -174,171 +195,45 @@ class FeishuWebhookHandler:
             bootstrapped = True
 
         chat_type = message.get("chat_type", "p2p")
-        chat_id = message.get("chat_id")
-        reply_target = chat_id if (chat_type == "group" and chat_id) else actor_id
 
-        # Authoritative member/project state for routing decisions. Bootstrap events
-        # are appended straight to the store, so replay once when they were written.
         if bootstrapped:
-            state_agent = await self.service.get_or_replay_agent(self.project_id)
-        else:
-            state_agent = agent_init
-        member = state_agent.projector.state.members.get(actor_id)
-        if member is None:
-            # Never ingest messages from non-members: their events would fail
-            # projection on every replay and permanently break the project.
-            logger.warning(
-                "Ignoring message %s from unregistered sender %s in project %s",
-                message.get("message_id"),
-                actor_id,
-                self.project_id,
-            )
+            # First-contact welcome (ADR-0008 §4: welcome only at bootstrap / /帮助)
             adapter = self.service.adapter_factory(self.project_id)
             client = getattr(adapter, "client", None)
             if client and hasattr(client, "send_message"):
-                hint_text = (
-                    "你好！你还未加入本项目的成员名单，暂时无法处理你的消息。"
-                    "请联系项目负责人将你添加为项目成员后再试。"
-                )
                 try:
                     res = client.send_message(
-                        receive_id=reply_target, msg_type="text", content={"text": hint_text}
-                    )
-                    if asyncio.iscoroutine(res):
-                        await res
-                except Exception:
-                    pass
-            return {
-                "code": 0,
-                "msg": "sender_not_registered",
-                "data": {"actor_id": actor_id},
-            }
-
-        # 1. Replies to an active sync probe always take priority over intent keywords
-        coordinator = await self.service.get_sync_coordinator(self.project_id)
-        active_session = coordinator.get_active_session(self.project_id, now=occurred_at)
-        probe = active_session.member_probes.get(actor_id) if active_session else None
-        if probe is not None and probe.status in (
-            ProbeMemberStatus.PENDING,
-            ProbeMemberStatus.CLARIFYING,
-        ):
-            converged, clarify_q, _session, _new = await self.service.handle_sync_member_reply(
-                project_id=self.project_id,
-                member_id=actor_id,
-                message=raw_text,
-                occurred_at=occurred_at,
-                source_ref=message.get("message_id"),
-            )
-            if not converged and clarify_q:
-                return {
-                    "code": 0,
-                    "msg": "clarification_sent",
-                    "data": {"question": clarify_q},
-                }
-            # Probed replies never fall through to regular extraction, otherwise the
-            # same message would be claimed twice (once per pipeline).
-            return {
-                "code": 0,
-                "msg": "probe_collected",
-                "data": {"session_id": active_session.session_id},
-            }
-
-        # 2. Check for PM proactive progress sync intent
-        is_sync_intent = any(
-            k in raw_text
-            for k in [
-                "跟进进度",
-                "同步进度",
-                "项目进度",
-                "进度汇总",
-                "检查进度",
-                "当前进度",
-                "我要知道当前的项目进度",
-                "看看进度",
-            ]
-        )
-        if is_sync_intent and member is not None and member.role == "pm":
-            session = await self.service.start_progress_sync(
-                self.project_id, initiated_by=reply_target
-            )
-            adapter = self.service.adapter_factory(self.project_id)
-            client = getattr(adapter, "client", None)
-            if client and hasattr(client, "send_message"):
-                n_members = len(session.member_probes)
-                confirm_msg = (
-                    "🚀 **收到指令！已启动全员进度探针与协同工作流**\n\n"
-                    f"• **探测范围**：已向 {n_members} 位任务负责人发起 1 对 1 私聊探针\n"
-                    "• **智能追问**：若成员回复存在时间或阻塞模糊，系统将自主多轮追问收敛\n"
-                    "• **拓扑决策**：全员信息就绪后，将自动推演关键路径并呈送【决策简报】！"
-                )
-                try:
-                    res = client.send_message(
-                        receive_id=reply_target, msg_type="text", content={"text": confirm_msg}
-                    )
-                    if asyncio.iscoroutine(res):
-                        await res
-                except Exception:
-                    pass
-
-            return {
-                "code": 0,
-                "msg": "sync_session_started",
-                "data": {
-                    "session_id": session.session_id,
-                    "probed_members_count": len(session.member_probes),
-                },
-            }
-
-        # 3. Standard message ingestion and single-turn coordination
-        is_act, ext_events, agent, reason, round_num, error = await self.service.ingest_message(
-            project_id=self.project_id,
-            message=raw_text,
-            actor_id=actor_id,
-            occurred_at=occurred_at,
-            source_ref=message.get("message_id"),
-            auto_run_turn=True,
-        )
-        if error:
-            # Projection rejected these events; nothing was persisted.
-            return {"code": 0, "msg": "message_rejected", "data": {"error": error}}
-
-        if not is_act and actor_id:
-            adapter = self.service.adapter_factory(self.project_id)
-            client = getattr(adapter, "client", None)
-            if client and hasattr(client, "send_message"):
-                greeting_text = (
-                    "👋 你好！我是 OrgPilot 组织风险与排期协调智能体。\n\n"
-                    "🎯 已为您自动初始化单人体验项目，您当前身兼「负责人」与「审批人 (PM)」角色：\n"
-                    "• 关联任务链：[支付SDK接入] ➔ [收银台前端结账] ➔ [支付全链路压测与验收]\n\n"
-                    "💬 您现在可以直接向我发送以下测试消息进行体验：\n"
-                    "1️⃣ **发起全员主动协同**：「我要知道当前的项目进度」\n"
-                    "   （机器人将主动给相关负责人发私聊，多轮追问后为您汇总决策简报）\n"
-                    "2️⃣ **汇报阻塞与改期**：「支付 SDK 报错，排查需要到明天下午 5 点」\n"
-                    "   （机器人将识别风险并向您发送交互式改期审批卡片）\n"
-                    "3️⃣ **汇报进度恢复**：「支付 SDK 阻塞已解决，按原计划推进」\n\n"
-                    "📊 浏览器访问 http://localhost:8000/ 可实时查看任务拓扑大盘与关键路径！"
-                )
-                try:
-                    res = client.send_message(
-                        receive_id=reply_target,
+                        receive_id=actor_id,
                         msg_type="text",
-                        content={"text": greeting_text},
+                        content={"text": WELCOME_TEXT},
                     )
                     if asyncio.iscoroutine(res):
                         await res
                 except Exception:
                     pass
 
-        return {
-            "code": 0,
-            "msg": "success",
-            "data": {
-                "is_actionable": is_act,
-                "extracted_events_count": len(ext_events),
-                "turn_termination_reason": reason,
-                "round_number": round_num,
-            },
-        }
+        # Layers 0-2: idempotency, group refusal, membership, probes, commands,
+        # dialogue state, classification, guardrails, and handlers all live in
+        # the MessageRouter now (ADR-0008 §3).
+        message_id = message.get("message_id") or (
+            f"noid-{int(occurred_at.timestamp() * 1000)}-{abs(hash(raw_text)) % 10_000_000}"
+        )
+        outcome = await self.router.handle_message(
+            project_id=self.project_id,
+            sender_id=actor_id,
+            message_id=message_id,
+            text=raw_text,
+            occurred_at=occurred_at,
+            chat_type=chat_type,
+        )
+        return self._outcome_response(outcome)
+
+    def _outcome_response(self, outcome: Any) -> dict[str, Any]:
+        data = dict(outcome.data)
+        data.pop("intent_summary", None)
+        data.setdefault("reply_category", outcome.reply_category.value)
+        data.setdefault("asks_clarification", outcome.asks_clarification)
+        return {"code": 0, "msg": outcome.msg, "data": data}
 
     async def _handle_card_action(self, event_data: dict[str, Any]) -> dict[str, Any]:
         """Processes a card action button click and returns in-place updated card JSON."""
@@ -348,6 +243,14 @@ class FeishuWebhookHandler:
 
         operator = event_data.get("operator", {}).get("open_id")
         now = datetime.now(UTC)
+
+        if decision in {"sync_confirm", "sync_cancel"}:
+            return await self.router.handle_sync_card_action(
+                project_id=self.project_id,
+                action_value=action_val,
+                operator_id=operator or "",
+                now=now,
+            )
 
         if not approval_id:
             return {"code": 400, "msg": "missing approval_id in button value"}

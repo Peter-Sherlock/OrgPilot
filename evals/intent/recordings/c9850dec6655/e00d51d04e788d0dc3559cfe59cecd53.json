@@ -1,0 +1,51 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "e00d51d04e788d0dc3559cfe59cecd53",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 376,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 147,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:01:29.102074+00:00",
+  "response": {
+    "id": "0e4a1abe-78e7-4f57-9396-a67cfba18632",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_UYIljIDG4FoJdrzC1iUN8117",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "存在待确认的同步卡片，发送者说“先不发”，是对同步请求的否定应答，属于 acknowledge 且 polarity=negative。",
+          "items": [
+            {
+              "intent": "acknowledge",
+              "speech_act": "imperative",
+              "polarity": "negative",
+              "certainty": "certain",
+              "source_quote": "算了，先不发",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 376,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 147,
+      "service_tier": "standard"
+    }
+  }
+}

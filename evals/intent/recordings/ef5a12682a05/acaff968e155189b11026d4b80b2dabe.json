@@ -1,0 +1,53 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "acaff968e155189b11026d4b80b2dabe",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 491,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 168,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:14:09.767025+00:00",
+  "response": {
+    "id": "b41f5c7f-e607-48ab-88f1-43091a2179bb",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_fYLn1zMWVHgjafAfP5rl0085",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟澄清自己负责的商户后台管理端仍在推进，属于对任务状态的汇报，且无未解决问题，健康度正常。",
+          "items": [
+            {
+              "intent": "report_status",
+              "task_id": "merchant_admin",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "health_status": "on_track",
+              "source_quote": "商户后台没有停工，别听人瞎传",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 491,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 168,
+      "service_tier": "standard"
+    }
+  }
+}

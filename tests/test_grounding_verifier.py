@@ -157,3 +157,35 @@ def test_temporal_resolver_expressions() -> None:
 
     # Invalid expression
     assert TemporalResolver.resolve_relative_time("无时间描述", NOW) is None
+
+
+def test_temporal_resolver_next_week_is_next_natural_week() -> None:
+    # B6: "下周X" is weekday X of the NEXT natural week (Monday as week start).
+    tz = NOW.tzinfo
+    tuesday = datetime.fromisoformat("2026-10-13T10:00:00+08:00")
+    assert TemporalResolver.resolve_relative_time("下周三", tuesday) == datetime.fromisoformat(
+        "2026-10-21T18:00:00+08:00"
+    )
+    sunday = datetime.fromisoformat("2026-10-18T10:00:00+08:00")
+    assert TemporalResolver.resolve_relative_time("下周一", sunday) == datetime.fromisoformat(
+        "2026-10-19T18:00:00+08:00"
+    )
+    monday = datetime.fromisoformat("2026-10-12T10:00:00+08:00")
+    assert TemporalResolver.resolve_relative_time("下周一", monday) == datetime.fromisoformat(
+        "2026-10-19T18:00:00+08:00"
+    )
+    assert tz is not None
+
+
+def test_temporal_resolver_this_week_prefix_unchanged() -> None:
+    # "周X" / "这周X" / "本周X" keep rolling to the nearest X within this week.
+    wednesday = datetime.fromisoformat("2026-10-14T10:00:00+08:00")
+    assert TemporalResolver.resolve_relative_time("这周日", wednesday) == datetime.fromisoformat(
+        "2026-10-18T18:00:00+08:00"
+    )
+    assert TemporalResolver.resolve_relative_time("本周五", wednesday) == datetime.fromisoformat(
+        "2026-10-16T18:00:00+08:00"
+    )
+    assert TemporalResolver.resolve_relative_time("周五", wednesday) == datetime.fromisoformat(
+        "2026-10-16T18:00:00+08:00"
+    )

@@ -1,0 +1,52 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "2aea76c621a0b3c23793f038fd4dc364",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 376,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 187,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:14:50.798918+00:00",
+  "response": {
+    "id": "44bbb3f7-58fd-4224-af53-d5ab42b06dc4",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_wnMLdgsIxh7bg2uvZEHZ5517",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳说明收银台任务在等支付SDK联调环境，属于单纯陈述等待依赖并催促依赖方，识别为 dependency_wait；未汇报自身任务进展，故不额外输出 report_status。",
+          "items": [
+            {
+              "intent": "dependency_wait",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "checkout_page",
+              "source_quote": "收银台这边一直等着支付SDK的联调环境，谁来催一下啊",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 376,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 187,
+      "service_tier": "standard"
+    }
+  }
+}

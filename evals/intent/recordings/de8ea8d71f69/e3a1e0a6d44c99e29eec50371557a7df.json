@@ -1,0 +1,53 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "e3a1e0a6d44c99e29eec50371557a7df",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 707,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 170,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:30:35.787160+00:00",
+  "response": {
+    "id": "5afad352-3194-4179-9c3b-ab64899a337d",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_FmkfIvsP3likf4wJPBDf6075",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "用户回应机器人追问的完成时间，表示无法给出时间，属于对追问的回答；无明确时间点，健康度维持有风险。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "hedged",
+              "task_id": "pay_e2e_test",
+              "health_status": "at_risk",
+              "source_quote": "真的说不好，先这样吧",
+              "confidence": 0.8
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 707,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 170,
+      "service_tier": "standard"
+    }
+  }
+}

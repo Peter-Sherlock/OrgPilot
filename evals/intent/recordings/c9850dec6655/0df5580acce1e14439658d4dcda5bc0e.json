@@ -1,0 +1,55 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "0df5580acce1e14439658d4dcda5bc0e",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 394,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 209,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:00:54.248033+00:00",
+  "response": {
+    "id": "454de03e-cbb7-40fc-8339-59c22ddaf534",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_7MLG7DxVHwaIW9oiVoWt6757",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳汇报对账模块联调进展：历史差异清理已完成，整体收尾预计月底完成，晚于任务截止 10-22，属延期。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "ledger_check",
+              "health_status": "delayed",
+              "time_expression": "月底",
+              "expected_completion": "2026-10-31T18:00:00+08:00",
+              "source_quote": "对账模块的历史差异清理完了，整体收尾要到月底",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 394,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 209,
+      "service_tier": "standard"
+    }
+  }
+}

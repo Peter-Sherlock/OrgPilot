@@ -1,0 +1,53 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "b0aef93b2d71c609e1433fb19cd8b5bc",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 569,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 164,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:28:01.323171+00:00",
+  "response": {
+    "id": "05bf34b4-f7dc-45e6-a9c6-4fd06a968f52",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_zHYocIUx3wtIy66Q82wo0703",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊回答机器人追问，说明压测仍卡住，未给出时间点，属未解决问题→at_risk。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "task_id": "pay_e2e_test",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "health_status": "at_risk",
+              "source_quote": "还是卡着",
+              "confidence": 0.9
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 569,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 164,
+      "service_tier": "standard"
+    }
+  }
+}

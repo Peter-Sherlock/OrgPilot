@@ -1,0 +1,55 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "703838c990a65b1a8a02f1ab27b499de",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 501,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 212,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:13:25.198042+00:00",
+  "response": {
+    "id": "97aeea9a-7b6e-4795-95a5-8427ae30908e",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_iqxMfZuiHRIzefvHURYH3835",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息正面回答了机器人关于压测环境恢复时间的追问，给出“下周三”这一时间点，属于 answer_pending。环境尚未恢复，存在未解决问题，健康度为 at_risk。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "task_id": "pay_e2e_test",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "health_status": "at_risk",
+              "time_expression": "下周三",
+              "expected_completion": "2026-10-21T18:00:00+08:00",
+              "source_quote": "大概要到下周三",
+              "confidence": 0.85
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 501,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 212,
+      "service_tier": "standard"
+    }
+  }
+}

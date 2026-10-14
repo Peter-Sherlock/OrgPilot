@@ -1,0 +1,51 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "9f97e81e494b245a17d05c9654c1cc72",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 407,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 161,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:09:14.673786+00:00",
+  "response": {
+    "id": "054d10bf-5f88-4e7f-b36b-f6d29384c7cf",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_aCI4oiISoRZlmgEOAMDG4087",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息是在向他人索要商户后台接口文档，属于与进度协调无关的资源请求，且未回答待回答的支付SDK恢复时间问题。",
+          "items": [
+            {
+              "intent": "out_of_scope",
+              "speech_act": "imperative",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "你们谁有商户后台的接口文档？发我一份",
+              "confidence": 0.75
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 407,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 161,
+      "service_tier": "standard"
+    }
+  }
+}

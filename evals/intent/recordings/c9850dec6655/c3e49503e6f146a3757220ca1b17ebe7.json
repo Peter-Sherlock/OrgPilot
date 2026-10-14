@@ -1,0 +1,55 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "c3e49503e6f146a3757220ca1b17ebe7",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 396,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 222,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:00:55.935829+00:00",
+  "response": {
+    "id": "c7a5544a-e3bd-4a1c-82e1-11e8abbc73fd",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_AK3JBfk8bwIm4sMClajU9066",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳汇报自己负责的收银台页面改版任务，兼容问题仍在修复中，属于未解决问题→at_risk；给出周五下班前的完成时间，需填 expected_completion。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "task_id": "checkout_page",
+              "health_status": "at_risk",
+              "time_expression": "周五下班前",
+              "expected_completion": "2026-10-16T18:00:00+08:00",
+              "source_quote": "收银台的兼容问题还在修，周五下班前应该能修完",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 396,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 222,
+      "service_tier": "standard"
+    }
+  }
+}

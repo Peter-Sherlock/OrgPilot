@@ -1,0 +1,53 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "00bc60adbd6afa14ab125ff4a65d9451",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 414,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 164,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:59:33.653180+00:00",
+  "response": {
+    "id": "592e7707-4be8-4292-965a-4b868116240b",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_W6XP85LT5wpFpO1CUs8L1637",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息正面回答了待回答问题：收银台兼容问题已修复、恢复正常，属于已完成状态，不填完成时间。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "checkout_page",
+              "health_status": "on_track",
+              "source_quote": "收银台已经恢复正常了",
+              "confidence": 0.9
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 414,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 164,
+      "service_tier": "standard"
+    }
+  }
+}

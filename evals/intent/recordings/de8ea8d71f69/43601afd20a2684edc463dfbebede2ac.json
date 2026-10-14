@@ -1,0 +1,51 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "43601afd20a2684edc463dfbebede2ac",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 483,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 136,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:25:21.120583+00:00",
+  "response": {
+    "id": "44276b3f-60a1-40a2-b779-f66cf62cf24e",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_bumtyrvbs0rYkI3Ltrhs4966",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息只是关于午饭的闲聊，与工作进度无关，无待回答问题。",
+          "items": [
+            {
+              "intent": "chitchat",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "source_quote": "中午吃什么好呢",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 483,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 136,
+      "service_tier": "standard"
+    }
+  }
+}

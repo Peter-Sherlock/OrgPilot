@@ -1,0 +1,51 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "d404bf37a1c504fa55cd13190c1ad153",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 492,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 131,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:13:55.640503+00:00",
+  "response": {
+    "id": "4f431bd8-4f2e-42d0-bbf5-3c1f95feaf2d",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_iO5jJZrzKzKCtI81PqHN0744",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "用户在询问机器人支持哪些指令，属于 help 意图。",
+          "items": [
+            {
+              "intent": "help",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "这个机器人支持哪些指令？",
+              "confidence": 0.98
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 492,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 131,
+      "service_tier": "standard"
+    }
+  }
+}

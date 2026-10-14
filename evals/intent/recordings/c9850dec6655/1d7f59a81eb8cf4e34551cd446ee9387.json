@@ -1,0 +1,53 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "1d7f59a81eb8cf4e34551cd446ee9387",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 515,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 173,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:03:10.040427+00:00",
+  "response": {
+    "id": "de419b3e-d418-4e5b-8f35-c491fe9e42ce",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_mCYTzBVg6LEiCZDEyP6s1863",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊在回答机器人追问的完成时间，明确表示给不出具体时间，属于回答待回答问题；被追问时给不出时间按 at_risk 处理。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "task_id": "pay_e2e_test",
+              "health_status": "at_risk",
+              "source_quote": "真给不出具体时间",
+              "confidence": 0.9
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 515,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 173,
+      "service_tier": "standard"
+    }
+  }
+}

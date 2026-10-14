@@ -1,0 +1,53 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "b79b3bc2fa1dd03397d83adf86ddbc47",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 480,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 177,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:25:51.862637+00:00",
+  "response": {
+    "id": "1c602420-db71-454d-a31e-c7313a9398bb",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_CAqZpif9PtDKdXefg16J4248",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟汇报自己负责的商户后台管理端进展，用「估计还得一阵子」含糊推测，未给出具体时间，也无明确延期，故健康度为 at_risk。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "health_status": "at_risk",
+              "task_id": "merchant_admin",
+              "source_quote": "商户后台估计还得一阵子",
+              "confidence": 0.75
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 480,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 177,
+      "service_tier": "standard"
+    }
+  }
+}

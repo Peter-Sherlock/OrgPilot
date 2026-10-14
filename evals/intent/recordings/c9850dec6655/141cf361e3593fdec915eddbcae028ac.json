@@ -1,0 +1,52 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "141cf361e3593fdec915eddbcae028ac",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 366,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 160,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:09:03.113339+00:00",
+  "response": {
+    "id": "f54f3cc0-e079-4ccd-ad9c-9a7703fc2b67",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_8jPyIMoHAVsPcZzY0WwN0742",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "赵敏询问商户后台管理端本周验收是否没问题，属于向机器人询问任务状态，未点名具体任务但明确指向 merchant_admin。",
+          "items": [
+            {
+              "intent": "query_status",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "merchant_admin",
+              "source_quote": "商户后台这周的验收没问题了吧？",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 366,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 160,
+      "service_tier": "standard"
+    }
+  }
+}

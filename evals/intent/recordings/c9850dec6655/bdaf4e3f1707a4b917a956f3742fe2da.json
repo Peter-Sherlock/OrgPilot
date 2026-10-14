@@ -1,0 +1,53 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "bdaf4e3f1707a4b917a956f3742fe2da",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 467,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 171,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:03:08.618257+00:00",
+  "response": {
+    "id": "4b3dc5e8-1540-41da-9adc-5f0ac87e668b",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_Eu5rAKP9AeQ2nie6G2Zd1334",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊在回答机器人追问的完成时间，仍表示说不准，无法给出时间点，按规则记为 at_risk 而非 unknown。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "hedged",
+              "task_id": "pay_e2e_test",
+              "health_status": "at_risk",
+              "source_quote": "再等等吧，我也说不准",
+              "confidence": 0.85
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 467,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 171,
+      "service_tier": "standard"
+    }
+  }
+}

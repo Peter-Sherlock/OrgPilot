@@ -1,0 +1,51 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "b0039c835ae55fc97fef9373c792d18e",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 469,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 151,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:25:10.580909+00:00",
+  "response": {
+    "id": "4e4aafa5-5b3e-4e0e-9b57-01ff1a942451",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_baJ6wk3juhHQh3TWMK9S2873",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "赵敏作为PM要求汇总各任务负责人进展、查看整体情况，属于请求发起全员进度同步。",
+          "items": [
+            {
+              "intent": "request_sync",
+              "speech_act": "imperative",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "把各任务负责人的进展汇总一下，我要看整体情况",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 469,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 151,
+      "service_tier": "standard"
+    }
+  }
+}

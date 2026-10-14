@@ -1,0 +1,63 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "15ad6eaddb76a2be4bd878b5d67f6511",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 374,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 234,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:14:22.405679+00:00",
+  "response": {
+    "id": "692a3a39-e5a9-4518-b29f-21f53793587c",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_999hJYPOVDGttPDske2s0808",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳汇报两个自己负责的任务均已完成，属于状态汇报，已完成不填预计完成时间。",
+          "items": [
+            {
+              "intent": "report_status",
+              "task_id": "checkout_page",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "health_status": "on_track",
+              "source_quote": "收银台页面改版做完了",
+              "confidence": 0.95
+            },
+            {
+              "intent": "report_status",
+              "task_id": "ledger_check",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "health_status": "on_track",
+              "source_quote": "对账模块联调也过了",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 374,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 234,
+      "service_tier": "standard"
+    }
+  }
+}

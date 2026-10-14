@@ -5,6 +5,7 @@ import logging
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from orgpilot.adapter.base import CollaborationAdapter
 from orgpilot.adapter.mock import MockCollaborationAdapter
@@ -24,6 +25,8 @@ from orgpilot.storage.state_store import SqlStateStore
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_BUSINESS_TIMEZONE = ZoneInfo("Asia/Shanghai")
+
 
 class GatewayService:
     """Coordinates event ingestion, natural language extraction, and agent execution with
@@ -36,6 +39,7 @@ class GatewayService:
         extractor: ClaimExtractor | None = None,
         adapter_factory: Callable[[str], CollaborationAdapter] | None = None,
         sync_session_timeout: timedelta = timedelta(hours=24),
+        business_timezone: ZoneInfo = DEFAULT_BUSINESS_TIMEZONE,
     ) -> None:
         self.db = db
         self.event_store = SqlEventStore(db)
@@ -45,7 +49,16 @@ class GatewayService:
             lambda project_id: MockCollaborationAdapter(project_id=project_id)
         )
         self.sync_session_timeout = sync_session_timeout
+        self.business_timezone = business_timezone
         self._sync_coordinators: dict[str, ProgressSyncCoordinator] = {}
+
+    def to_business_timezone(self, moment: datetime) -> datetime:
+        """Re-expresses an instant in the business timezone so relative phrases like
+        "明天" resolve against the team's local date. Event storage stays timezone
+        -aware, so this is a zone conversion, not a time shift."""
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=UTC)
+        return moment.astimezone(self.business_timezone)
 
     async def get_or_replay_agent(self, project_id: str) -> CoordinationAgent:
         """Constructs an Agent with state restored from the persistent SQL event log and stores."""
@@ -154,32 +167,15 @@ class GatewayService:
 
         extraction_result, extracted_events = self.extractor.extract_from_message(message, context)
 
-        # Validate the whole batch against a throwaway copy of the projection before
-        # any persistence: an event that fails projection (e.g. from an unregistered
-        # actor) must never reach the event store, where every later replay of it
-        # would raise and permanently break the project.
-        validation_projector = OrgProjector(project_id=project_id)
-        validation_projector.state = agent.projector.state.model_copy(deep=True)
-        try:
-            for evt in extracted_events:
-                validation_projector.apply(evt)
-        except DomainInvariantError as exc:
-            logger.warning(
-                "Rejected message from actor %r in project %r: %s", actor_id, project_id, exc
-            )
-            return (False, [], agent, None, None, str(exc))
-
-        # Persist extracted events
-        for evt in extracted_events:
-            await self.event_store.append(evt)
-
-        turn_reason: str | None = None
-        round_num: int | None = None
-
-        if auto_run_turn and extracted_events:
-            turn_trace, _ = await self.run_agent_turn(agent, extracted_events, ts)
-            turn_reason = turn_trace.termination_reason.value
-            round_num = turn_trace.round_number
+        agent, turn_reason, round_num, error = await self.commit_extracted_events(
+            project_id,
+            extracted_events,
+            actor_id=actor_id,
+            occurred_at=ts,
+            auto_run_turn=auto_run_turn,
+        )
+        if error is not None:
+            return (False, [], agent, None, None, error)
 
         return (
             extraction_result.is_actionable,
@@ -190,6 +186,52 @@ class GatewayService:
             None,
         )
 
+    async def commit_extracted_events(
+        self,
+        project_id: str,
+        events: list[OrgEvent],
+        *,
+        actor_id: str,
+        occurred_at: datetime,
+        auto_run_turn: bool = True,
+    ) -> tuple[CoordinationAgent, str | None, int | None, str | None]:
+        """Validates a batch in memory, persists it, and optionally runs one turn.
+
+        Shared by the legacy extraction path and the intent handlers (ADR-0008
+        layer 2). Returns an error string instead of raising when in-memory
+        projection validation fails, so nothing unprojectable is ever persisted.
+        """
+        agent = await self.get_or_replay_agent(project_id)
+        if not events:
+            return agent, None, None, None
+
+        # Validate the whole batch against a throwaway copy of the projection before
+        # any persistence: an event that fails projection (e.g. from an unregistered
+        # actor) must never reach the event store, where every later replay of it
+        # would raise and permanently break the project.
+        validation_projector = OrgProjector(project_id=project_id)
+        validation_projector.state = agent.projector.state.model_copy(deep=True)
+        try:
+            for evt in events:
+                validation_projector.apply(evt)
+        except DomainInvariantError as exc:
+            logger.warning(
+                "Rejected events from actor %r in project %r: %s", actor_id, project_id, exc
+            )
+            return (agent, None, None, str(exc))
+
+        for evt in events:
+            await self.event_store.append(evt)
+
+        turn_reason: str | None = None
+        round_num: int | None = None
+        if auto_run_turn:
+            turn_trace, _ = await self.run_agent_turn(agent, events, occurred_at)
+            turn_reason = turn_trace.termination_reason.value
+            round_num = turn_trace.round_number
+
+        return (agent, turn_reason, round_num, None)
+
     async def get_sync_coordinator(self, project_id: str) -> ProgressSyncCoordinator:
         """Retrieves or creates a ProgressSyncCoordinator bound to the current project agent."""
         if project_id not in self._sync_coordinators:
@@ -197,7 +239,6 @@ class GatewayService:
             self._sync_coordinators[project_id] = ProgressSyncCoordinator(
                 agent=agent,
                 adapter=agent.adapter,
-                extractor=self.extractor,
                 session_timeout=self.sync_session_timeout,
             )
         return self._sync_coordinators[project_id]
@@ -207,6 +248,7 @@ class GatewayService:
         project_id: str,
         initiated_by: str,
         custom_intro: str | None = None,
+        occurred_at: datetime | None = None,
     ) -> SyncSession:
         """Starts a distributed progress sync session with active task owners."""
         coordinator = await self.get_sync_coordinator(project_id)
@@ -214,43 +256,7 @@ class GatewayService:
         agent = await self.get_or_replay_agent(project_id)
         coordinator.agent = agent
         coordinator.adapter = agent.adapter
-        return coordinator.start_sync_session(project_id, initiated_by, custom_intro)
-
-    async def handle_sync_member_reply(
-        self,
-        project_id: str,
-        member_id: str,
-        message: str,
-        occurred_at: datetime | None = None,
-        source_ref: str | None = None,
-    ) -> tuple[bool, str | None, SyncSession | None, list[OrgEvent]]:
-        """Handles reply from probed member, driving clarification or DAG briefing delivery.
-
-        Returns the convergence flag, the pending clarification question (if any), the
-        active session, and the events generated by this reply for the caller to
-        persist.
-        """
-        coordinator = await self.get_sync_coordinator(project_id)
-        active_session = coordinator.get_active_session(project_id, now=occurred_at)
-        if not active_session:
-            return True, None, None, []
-
-        # Replay from the event log before every reply so the coordinator never works
-        # from a stale cached agent that missed events written by other paths.
-        agent = await self.get_or_replay_agent(project_id)
-        coordinator.agent = agent
-        coordinator.adapter = agent.adapter
-
-        converged, clarification_q, new_events = coordinator.handle_member_reply(
-            session_id=active_session.session_id,
-            member_id=member_id,
-            message=message,
-            occurred_at=occurred_at,
-            source_ref=source_ref,
+        return coordinator.start_sync_session(
+            project_id, initiated_by, custom_intro, occurred_at=occurred_at
         )
 
-        # Persist only the events this reply produced, then checkpoint the agent.
-        for evt in new_events:
-            await self.event_store.append(evt)
-        await self.save_agent_state(coordinator.agent)
-        return converged, clarification_q, active_session, new_events

@@ -1,0 +1,52 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "7fd7e0f942d09931abea75d00ded752b",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 395,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 179,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:08:43.697622+00:00",
+  "response": {
+    "id": "7f95ed53-57cb-4ec8-b426-da5bea434130",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_B6O8RISANsSNbNXA3Tcp5820",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息是假设性方案（“万一……就……”），假设不产生状态变更，也不属于任何可执行意图类别，按 propose_plan_change 识别但不执行。",
+          "items": [
+            {
+              "intent": "propose_plan_change",
+              "speech_act": "hypothetical",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "task_id": "checkout_page",
+              "source_quote": "万一收银台切图来不及，就先上旧版凑合",
+              "confidence": 0.75
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 395,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 179,
+      "service_tier": "standard"
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "05e29d0a9fa2fe2c29f82e2d32198181",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 381,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 188,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:01:02.028460+00:00",
+  "response": {
+    "id": "29a09af3-a4f3-44df-8fda-cbf620462551",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_DOnbK9juvFiU1FThC9wA3068",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊汇报自己负责的支付全链路压测，因环境未就绪而无法进行，属于未解决问题，健康度 at_risk；未给出完成时间。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "task_id": "pay_e2e_test",
+              "health_status": "at_risk",
+              "blocker": "环境还没就绪",
+              "source_quote": "压测不是不行，是环境还没就绪",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 381,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 188,
+      "service_tier": "standard"
+    }
+  }
+}

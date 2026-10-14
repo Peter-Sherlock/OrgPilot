@@ -1,0 +1,53 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "0d3cb52c264bb0145068231faba65287",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 397,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 173,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:08:54.519547+00:00",
+  "response": {
+    "id": "21db3166-d759-40a6-ae9a-d218f075ff29",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_C5WllIeBf0PpojIDEFrL1632",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳汇报收银台页面改版走查已通过，属正常推进；商户后台明确声明不归其管，不输出条目。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "收银台页面改版的走查过了",
+              "confidence": 0.9,
+              "task_id": "checkout_page",
+              "health_status": "on_track"
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 397,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 173,
+      "service_tier": "standard"
+    }
+  }
+}

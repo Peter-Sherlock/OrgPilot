@@ -1,0 +1,53 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "8bf516caf00320cafed474afdeae8237",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 714,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 169,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:28:30.146952+00:00",
+  "response": {
+    "id": "761df055-4c7f-4466-a7fc-9e5294c288a5",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_OXoH9cTSUamoSObx6WSV3373",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "发送者回应机器人追问的完成时间，明确表示暂不承诺时间，属于对追问的回答；无法给出时间按规则记为 at_risk。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "task_id": "pay_e2e_test",
+              "health_status": "at_risk",
+              "source_quote": "先不承诺时间了",
+              "confidence": 0.85
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 714,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 169,
+      "service_tier": "standard"
+    }
+  }
+}

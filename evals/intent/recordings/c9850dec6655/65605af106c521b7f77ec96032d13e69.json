@@ -1,0 +1,54 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "65605af106c521b7f77ec96032d13e69",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 393,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 197,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:59:25.671700+00:00",
+  "response": {
+    "id": "5f824d3c-a251-4ba5-8212-502c18fcfdba",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_w6JJq9n8im06q4JDZA3K4867",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳明确承诺今天下班前完成对账模块差异清单，属于 make_commitment，完成时间 18:00。",
+          "items": [
+            {
+              "intent": "make_commitment",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "ledger_check",
+              "time_expression": "今天下班前",
+              "expected_completion": "2026-10-13T18:00:00+08:00",
+              "source_quote": "对账模块的差异清单我今天下班前一定理出来",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 393,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 197,
+      "service_tier": "standard"
+    }
+  }
+}

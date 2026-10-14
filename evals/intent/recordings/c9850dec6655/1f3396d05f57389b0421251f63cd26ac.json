@@ -1,0 +1,52 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "1f3396d05f57389b0421251f63cd26ac",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 382,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 167,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:08:40.877000+00:00",
+  "response": {
+    "id": "ad959a6d-26f6-4c67-bec0-561fa5e13008",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_pQ5KcuBDWuA0r1cegMIi3562",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟表示自己这边没有阻塞，属于状态汇报；未点名任务，无法唯一确定具体任务，故 task_id 留空。无未解决问题，健康度为 on_track。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "source_quote": "我这边没有遇到什么阻塞",
+              "confidence": 0.7,
+              "health_status": "on_track"
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 382,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 167,
+      "service_tier": "standard"
+    }
+  }
+}

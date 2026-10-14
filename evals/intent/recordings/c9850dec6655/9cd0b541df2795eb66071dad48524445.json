@@ -1,0 +1,53 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "9cd0b541df2795eb66071dad48524445",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 412,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 168,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:03:07.085389+00:00",
+  "response": {
+    "id": "89083bcf-8562-4dc7-aff0-74997c265c09",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_eICtEVT0cKWgnWcmDKUs2769",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "被追问进展时回答\"说不好\"，无法给出时间，按规则记为 at_risk 而非 unknown；同时正面回应了待回答问题。",
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "hedged",
+              "task_id": "pay_e2e_test",
+              "health_status": "at_risk",
+              "source_quote": "这个我真说不好",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": true
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 412,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 168,
+      "service_tier": "standard"
+    }
+  }
+}

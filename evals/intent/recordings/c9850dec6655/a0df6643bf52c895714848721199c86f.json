@@ -1,0 +1,51 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "a0df6643bf52c895714848721199c86f",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 372,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 153,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:59:48.210208+00:00",
+  "response": {
+    "id": "7344c903-046c-4815-a21b-5d7ef18b14d9",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_g8q3M5GfSyaZAOSQZP8u6682",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "发送者是 PM（项目负责人），要求全体成员汇报进展以便与老板对齐，属于发起全员进度同步。",
+          "items": [
+            {
+              "intent": "request_sync",
+              "speech_act": "imperative",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "叫大家各自汇报一下手上的进展，我下午要跟老板对齐",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 372,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 153,
+      "service_tier": "standard"
+    }
+  }
+}

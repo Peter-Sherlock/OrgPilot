@@ -1,0 +1,53 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "24b389341821f8b623ecfa74aa050d7a",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 503,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 173,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:30:18.348558+00:00",
+  "response": {
+    "id": "8986676d-7b1f-4f7a-9176-7baf75f99f07",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_pKxKt24UAfRE8JDLHcQf4002",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊回答机器人追问，汇报负责的支付全链路压测任务被卡住，未给出原因或预计恢复时间，属有风险但无时间信息。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "task_id": "pay_e2e_test",
+              "health_status": "at_risk",
+              "source_quote": "压测这边卡住了",
+              "confidence": 0.85
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 503,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 173,
+      "service_tier": "standard"
+    }
+  }
+}

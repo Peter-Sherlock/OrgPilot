@@ -1,0 +1,53 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "f27e0e22efa74f5c36025f9c8c167eba",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 517,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 172,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:28:25.171722+00:00",
+  "response": {
+    "id": "b0378458-48e0-42db-ae09-1a7d76f36a53",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_PSDfwOMFZdmuA5F9r04h2126",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "机器人追问支付全链路压测进展，陈磊回答“说不好”，属于回答待回答问题且无法给出时间，健康度按规则记为 at_risk。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "task_id": "pay_e2e_test",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "hedged",
+              "health_status": "at_risk",
+              "source_quote": "这个我真说不好",
+              "confidence": 0.85
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 517,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 172,
+      "service_tier": "standard"
+    }
+  }
+}

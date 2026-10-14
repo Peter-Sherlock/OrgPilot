@@ -1,0 +1,55 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "f94130f2599bb6e8373112682b01f9c1",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 389,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 216,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:08:12.622888+00:00",
+  "response": {
+    "id": "f36c3fe8-bb81-4799-aaee-2285b1184bfe",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_ioZJsuE8lo8N3eMKkhRD4657",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟承诺明天中午前解决支付SDK渠道回执问题，属于对自身负责任务的完成时间承诺；存在未解决问题，健康度至少 at_risk。",
+          "items": [
+            {
+              "intent": "make_commitment",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_sdk",
+              "health_status": "at_risk",
+              "time_expression": "明天中午前",
+              "expected_completion": "2026-10-15T12:00:00+08:00",
+              "source_quote": "支付SDK渠道回执的问题我保证明天中午前解决",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 389,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 216,
+      "service_tier": "standard"
+    }
+  }
+}

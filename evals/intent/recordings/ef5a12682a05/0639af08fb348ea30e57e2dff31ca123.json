@@ -1,0 +1,53 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "0639af08fb348ea30e57e2dff31ca123",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 615,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 160,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:28:02.734900+00:00",
+  "response": {
+    "id": "5d9069f0-4713-4c44-b5d5-46a6062c8f08",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_k2BVEh2qXNoHNvSpfO7L1458",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "用户回答机器人追问，说明压测仍卡住，未给出时间点，属有风险状态。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "task_id": "pay_e2e_test",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "health_status": "at_risk",
+              "source_quote": "依然卡着",
+              "confidence": 0.9
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 615,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 160,
+      "service_tier": "standard"
+    }
+  }
+}

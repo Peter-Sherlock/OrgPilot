@@ -1,0 +1,63 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "b24817808ae5c6e1766a96e72f4c8241",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 388,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 248,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:00:34.568258+00:00",
+  "response": {
+    "id": "e571b9ae-f34b-4f77-a523-bbf998eda18b",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_lsLKXlU7psjkk33Mro533455",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟汇报两个自己负责的任务：支付SDK仍在修（未解决问题→at_risk），商户后台快完工（正常推进→on_track）。均无明确完成时间。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_sdk",
+              "health_status": "at_risk",
+              "source_quote": "支付SDK还在修",
+              "confidence": 0.9
+            },
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "merchant_admin",
+              "health_status": "on_track",
+              "source_quote": "商户后台倒是快完工了",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 388,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 248,
+      "service_tier": "standard"
+    }
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "630b50743afccc9e8b872eb019e8a70b",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 499,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 251,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:14:38.359061+00:00",
+  "response": {
+    "id": "4ca347ae-cdb0-414e-8493-d90517e32599",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_YgEpK2usbXtVWuO4feIl2650",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳汇报对账模块联调进展：历史差异已清理完，整体收尾预计月底完成，属正常推进但整体收尾时间点较晚，按规则不按截止日推断延期，故为 on_track。expected_completion 填月底（2026-10-31T18:00:00+08:00）。",
+          "items": [
+            {
+              "intent": "report_status",
+              "task_id": "ledger_check",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "health_status": "on_track",
+              "time_expression": "月底",
+              "expected_completion": "2026-10-31T18:00:00+08:00",
+              "source_quote": "对账模块的历史差异清理完了，整体收尾要到月底",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 499,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 251,
+      "service_tier": "standard"
+    }
+  }
+}

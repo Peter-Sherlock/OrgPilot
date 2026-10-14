@@ -1,0 +1,55 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "d3755018b01f9ea6837128ba3aff4408",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 386,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 214,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:08:57.843286+00:00",
+  "response": {
+    "id": "6998bce9-9818-45ad-a233-d107168e79cd",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_wEGDfVX0ACbzTPCvsryg2763",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊汇报自己负责的支付全链路压测进展，第一轮正在跑，预计今晚八点跑完，属正常推进无未解决问题。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_e2e_test",
+              "health_status": "on_track",
+              "time_expression": "晚上八点",
+              "expected_completion": "2026-10-14T20:00:00+08:00",
+              "source_quote": "压测第一轮正在跑，预计晚上八点能全部跑完",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 386,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 214,
+      "service_tier": "standard"
+    }
+  }
+}

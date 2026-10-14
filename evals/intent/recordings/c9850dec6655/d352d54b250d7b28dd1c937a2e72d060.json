@@ -1,0 +1,52 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "d352d54b250d7b28dd1c937a2e72d060",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 368,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 153,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:59:37.246321+00:00",
+  "response": {
+    "id": "0d386b89-0348-449c-8974-4922bcc4b0c9",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_tS9GOMm15FUH0Znn6iJK9938",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "赵敏询问收银台页面改版的上线时间，属于向机器人查询任务状态。",
+          "items": [
+            {
+              "intent": "query_status",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "checkout_page",
+              "source_quote": "收银台页面这周能上线吗？",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 368,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 153,
+      "service_tier": "standard"
+    }
+  }
+}

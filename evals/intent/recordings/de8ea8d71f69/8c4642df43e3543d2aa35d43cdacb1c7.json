@@ -1,0 +1,51 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "8c4642df43e3543d2aa35d43cdacb1c7",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 369,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2176,
+    "output_tokens": 144,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:26:35.950610+00:00",
+  "response": {
+    "id": "f6b47d6a-6702-437b-a91d-888b52f682fc",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_i6RnCbJCvsYONP2I2Oup6261",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息是闲聊热搜，与工作进度无关，也没有回答待回答的压测环境恢复时间问题。",
+          "items": [
+            {
+              "intent": "chitchat",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "哈哈哈你们看到今天的热搜了吗",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 369,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2176,
+      "output_tokens": 144,
+      "service_tier": "standard"
+    }
+  }
+}

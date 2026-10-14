@@ -316,3 +316,90 @@ def build_executive_briefing_card(
         },
         "elements": elements,
     }
+
+
+def build_sync_confirmation_card(
+    initiated_by: str,
+    member_ids: list[str] | tuple[str, ...],
+    requested_at_str: str,
+) -> dict[str, Any]:
+    """Generates the sync confirmation card shown BEFORE any probe is sent.
+
+    The card payload carries ``kind=sync_confirmation`` so downstream consumers
+    (and the intent evaluation) can identify a pre-side-effect confirmation
+    explicitly (LABELING.md R8). Buttons carry the initiator and request time so
+    the callback can enforce initiator-only confirmation and card expiry.
+    """
+    listing = "、".join(f"`{member_id}`" for member_id in member_ids) or "（无待询问成员）"
+    elements: list[dict[str, Any]] = [
+        {
+            "tag": "div",
+            "text": {
+                "tag": "lark_md",
+                "content": (
+                    f"**发起人**：`{initiated_by}`\n"
+                    f"**将询问的成员**：{listing}\n\n"
+                    "确认后将向以上成员逐一发送 1 对 1 进度探针，并在全员收敛后生成决策简报。"
+                ),
+            },
+        },
+        {"tag": "hr"},
+        {
+            "tag": "action",
+            "actions": [
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "🟢 确认发起"},
+                    "type": "primary",
+                    "value": {
+                        "action": "sync_confirm",
+                        "initiated_by": initiated_by,
+                        "requested_at": requested_at_str,
+                    },
+                },
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "⚪ 取消"},
+                    "type": "default",
+                    "value": {
+                        "action": "sync_cancel",
+                        "initiated_by": initiated_by,
+                        "requested_at": requested_at_str,
+                    },
+                },
+            ],
+        },
+    ]
+    return {
+        "kind": "sync_confirmation",
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"tag": "plain_text", "content": "📋 全员进度同步确认"},
+            "template": "blue",
+        },
+        "elements": elements,
+    }
+
+
+def build_sync_closed_card(status_text: str, note: str) -> dict[str, Any]:
+    """Generates the in-place updated card after confirm/cancel/expiry."""
+    return {
+        "kind": "sync_confirmation",
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"tag": "plain_text", "content": f"📋 全员进度同步 [已关闭：{status_text}]"},
+            "template": "grey",
+        },
+        "elements": [
+            {
+                "tag": "div",
+                "text": {"tag": "lark_md", "content": note},
+            },
+            {
+                "tag": "note",
+                "elements": [
+                    {"tag": "plain_text", "content": "该确认卡片已关闭，无需再点击按钮。"}
+                ],
+            },
+        ],
+    }

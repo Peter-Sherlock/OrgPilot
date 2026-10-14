@@ -1,0 +1,63 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "dd78767c5c6bd40e861a59c9e3ca53a8",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 522,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 250,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:30:41.002923+00:00",
+  "response": {
+    "id": "e49f445e-e9ed-4aaf-8256-ae6b969471f4",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_YnTHGbZwNUL4E1GmfR6g4762",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳正面回答机器人追问，汇报两个负责任务均正常推进，拆成两条 answer_pending。未给出完成时间，健康度为 on_track。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "收银台和对账模块都正常",
+              "confidence": 0.9,
+              "task_id": "checkout_page",
+              "health_status": "on_track"
+            },
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "收银台和对账模块都正常",
+              "confidence": 0.9,
+              "task_id": "ledger_check",
+              "health_status": "on_track"
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 522,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 250,
+      "service_tier": "standard"
+    }
+  }
+}

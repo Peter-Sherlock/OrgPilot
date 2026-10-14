@@ -1,0 +1,52 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "6ab7aadcccc7c0958d351594fa717384",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 365,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 162,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:59:38.544955+00:00",
+  "response": {
+    "id": "f084b95d-fbb8-4f40-a82c-0da553636a92",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_EPHOoAOX3Ws0c8vDotlu8262",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "赵敏询问压测开始时间，属于向机器人查询任务状态；问的是开始时间而非完成时间，故不填 expected_completion。",
+          "items": [
+            {
+              "intent": "query_status",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_e2e_test",
+              "source_quote": "压测什么时候能开始跑？",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 365,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 162,
+      "service_tier": "standard"
+    }
+  }
+}

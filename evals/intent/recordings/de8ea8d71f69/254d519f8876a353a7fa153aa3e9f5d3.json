@@ -1,0 +1,53 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "254d519f8876a353a7fa153aa3e9f5d3",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 512,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 182,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:24:59.483045+00:00",
+  "response": {
+    "id": "f130d1e8-2cf6-4763-bba4-0176d561ee04",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_VBp5FdsV7WPs8YFx5UwU5401",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "用户回答机器人关于收银台兼容问题的追问，说明问题已解决、页面恢复正常，属于 answer_pending 且健康度为 on_track；任务已完成不填预计完成时间。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "不用等了，收银台已经恢复正常了",
+              "confidence": 0.9,
+              "task_id": "checkout_page",
+              "health_status": "on_track"
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 512,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 182,
+      "service_tier": "standard"
+    }
+  }
+}

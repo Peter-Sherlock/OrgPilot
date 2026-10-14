@@ -1,0 +1,2100 @@
+# 意图评测集 dev 划分（ADR-0008 第 8 节）。
+# 样本按真实团队中文口语编写，独立于现有抽取规则的关键词，禁止照抄实现关键词。
+# 标注唯一口径：evals/intent/LABELING.md（R1–R10）；expected.behavior 以"系统接下来做什么"为准。
+# 时间约定：晚上/今晚=20:00，中午=12:00，早上/早=10:00，下班前=18:00，月底=当月最后一天 18:00，
+#   只有日期没有时刻=当天 18:00。
+schema_version: 1
+dataset_id: intent_eval_dev
+split: dev
+samples:
+  # ---------- P0 report_status 正例 ----------
+  - id: dev_report_status_001
+    category: report_status
+    message: "支付SDK这边被第三方接口卡住了，估计要弄到明天下午5点"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T10:05:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: pay_sdk
+            health_status: at_risk
+            expected_completion: "2026-10-14T17:00:00+08:00"
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: pay_sdk
+            speech_act: statement
+            polarity: affirmative
+            certainty: hedged
+            health_status: at_risk
+            time_expression: "明天下午5点"
+            blocker: "第三方接口卡住"
+            source_quote: "支付SDK这边被第三方接口卡住了"
+
+  - id: dev_report_status_002
+    category: report_status
+    message: "压测脚本全部跑通了，链路没有报错"
+    sender: ou_lei_chen
+    occurred_at: "2026-10-13T11:20:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: pay_e2e_test
+            health_status: on_track
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: pay_e2e_test
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: on_track
+            source_quote: "压测脚本全部跑通了"
+
+  - id: dev_report_status_003
+    category: report_status
+    message: "收银台页面改版做完了，就差最后的视觉走查"
+    sender: ou_fang_liu
+    occurred_at: "2026-10-13T14:10:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: checkout_page
+            health_status: on_track
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: checkout_page
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: on_track
+            source_quote: "收银台页面改版做完了"
+
+  - id: dev_report_status_004
+    category: report_status
+    message: "商户后台管理端进展顺利，接口联调都过了"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T15:40:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: merchant_admin
+            health_status: on_track
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: merchant_admin
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: on_track
+            source_quote: "商户后台管理端进展顺利"
+
+  - id: dev_report_status_005
+    category: report_status
+    message: "对账模块碰到点问题，金额老是对不平，还在查原因"
+    sender: ou_fang_liu
+    occurred_at: "2026-10-13T16:30:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: ledger_check
+            health_status: at_risk
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: ledger_check
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: at_risk
+            blocker: "金额对不平"
+            source_quote: "对账模块碰到点问题"
+
+  # ---------- P0 make_commitment 正例 ----------
+  - id: dev_make_commitment_001
+    category: make_commitment
+    message: "收银台页面我本周五之前一定联调完"
+    sender: ou_fang_liu
+    occurred_at: "2026-10-13T09:30:00+08:00"
+    expected:
+      behavior:
+        commitments:
+          - task_id: checkout_page
+            predicate: workflow_status
+            expected_value: done
+            due_at: "2026-10-16T18:00:00+08:00"
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: make_commitment
+            task_id: checkout_page
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            time_expression: "本周五之前"
+            source_quote: "收银台页面我本周五之前一定联调完"
+
+  - id: dev_make_commitment_002
+    category: make_commitment
+    message: "支付SDK的问题我明天下午三点前肯定修好提交"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T10:00:00+08:00"
+    expected:
+      behavior:
+        commitments:
+          - task_id: pay_sdk
+            predicate: workflow_status
+            expected_value: done
+            due_at: "2026-10-14T15:00:00+08:00"
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: make_commitment
+            task_id: pay_sdk
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            time_expression: "明天下午三点前"
+            source_quote: "明天下午三点前肯定修好提交"
+
+  - id: dev_make_commitment_003
+    category: make_commitment
+    message: "压测报告我保证周五下班前发到群里"
+    sender: ou_lei_chen
+    occurred_at: "2026-10-13T11:00:00+08:00"
+    expected:
+      behavior:
+        commitments:
+          - task_id: pay_e2e_test
+            predicate: workflow_status
+            expected_value: done
+            due_at: "2026-10-16T18:00:00+08:00"
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: make_commitment
+            task_id: pay_e2e_test
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            time_expression: "周五下班前"
+            source_quote: "压测报告我保证周五下班前发到群里"
+
+  - id: dev_make_commitment_004
+    category: make_commitment
+    message: "对账模块的差异清单我今天下班前一定理出来"
+    sender: ou_fang_liu
+    occurred_at: "2026-10-13T13:30:00+08:00"
+    expected:
+      behavior:
+        commitments:
+          - task_id: ledger_check
+            predicate: workflow_status
+            expected_value: done
+            due_at: "2026-10-13T18:00:00+08:00"
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: make_commitment
+            task_id: ledger_check
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            time_expression: "今天下班前"
+            source_quote: "差异清单我今天下班前一定理出来"
+
+  - id: dev_make_commitment_005
+    category: make_commitment
+    message: "商户后台的权限模块我今晚搞定，明天大家可以直接用"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T17:50:00+08:00"
+    expected:
+      behavior:
+        commitments:
+          - task_id: merchant_admin
+            predicate: workflow_status
+            expected_value: done
+            due_at: "2026-10-13T20:00:00+08:00"
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: make_commitment
+            task_id: merchant_admin
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            time_expression: "今晚"
+            source_quote: "权限模块我今晚搞定"
+
+  # ---------- P0 answer_pending 正例（多轮：回答追问） ----------
+  - id: dev_answer_pending_001
+    category: answer_pending
+    message: "还在排查，预计明天下午5点能恢复"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T10:40:00+08:00"
+    context:
+      pending_question:
+        question: "支付SDK大概预计需要排查到什么时候能恢复？"
+        task_id: pay_sdk
+    expected:
+      behavior:
+        claims:
+          - task_id: pay_sdk
+            health_status: at_risk
+            expected_completion: "2026-10-14T17:00:00+08:00"
+        reply_category: claim_recorded
+      intents:
+        answers_pending: true
+        items:
+          - intent: answer_pending
+            task_id: pay_sdk
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: at_risk
+            time_expression: "明天下午5点"
+            source_quote: "预计明天下午5点能恢复"
+
+  - id: dev_answer_pending_002
+    category: answer_pending
+    message: "根因找到了，是证书过期，今天下班前能搞定"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T11:15:00+08:00"
+    context:
+      pending_question:
+        question: "支付SDK的报错大概什么时候能解决？"
+        task_id: pay_sdk
+    expected:
+      behavior:
+        claims:
+          - task_id: pay_sdk
+            health_status: at_risk
+            expected_completion: "2026-10-13T18:00:00+08:00"
+        reply_category: claim_recorded
+      intents:
+        answers_pending: true
+        items:
+          - intent: answer_pending
+            task_id: pay_sdk
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: at_risk
+            time_expression: "今天下班前"
+            source_quote: "今天下班前能搞定"
+
+  - id: dev_answer_pending_003
+    category: answer_pending
+    message: "大概要到下周三"
+    sender: ou_lei_chen
+    occurred_at: "2026-10-13T14:00:00+08:00"
+    context:
+      pending_question:
+        question: "压测环境预计什么时候能恢复？"
+        task_id: pay_e2e_test
+    expected:
+      behavior:
+        claims:
+          - task_id: pay_e2e_test
+            health_status: delayed
+            expected_completion: "2026-10-21T18:00:00+08:00"
+        reply_category: claim_recorded
+      intents:
+        answers_pending: true
+        items:
+          - intent: answer_pending
+            task_id: pay_e2e_test
+            speech_act: statement
+            polarity: affirmative
+            certainty: hedged
+            health_status: delayed
+            time_expression: "下周三"
+            source_quote: "大概要到下周三"
+
+  - id: dev_answer_pending_004
+    category: answer_pending
+    message: "不用等了，收银台已经恢复正常了"
+    sender: ou_fang_liu
+    occurred_at: "2026-10-13T15:20:00+08:00"
+    context:
+      pending_question:
+        question: "收银台页面的兼容问题预计什么时候能修完？"
+        task_id: checkout_page
+    expected:
+      behavior:
+        claims:
+          - task_id: checkout_page
+            health_status: on_track
+        reply_category: claim_recorded
+      intents:
+        answers_pending: true
+        items:
+          - intent: answer_pending
+            task_id: checkout_page
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: on_track
+            source_quote: "收银台已经恢复正常了"
+
+  - id: dev_answer_pending_005
+    category: answer_pending
+    message: "还在卡着，具体几点说不好，明天再同步给你"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T16:00:00+08:00"
+    context:
+      pending_question:
+        question: "支付SDK大概什么时候能恢复？"
+        task_id: pay_sdk
+    expected:
+      behavior:
+        claims:
+          - task_id: pay_sdk
+            health_status: at_risk
+        asks_clarification: true
+        reply_category: claim_recorded
+      intents:
+        answers_pending: true
+        items:
+          - intent: answer_pending
+            task_id: pay_sdk
+            speech_act: statement
+            polarity: affirmative
+            certainty: hedged
+            health_status: at_risk
+            source_quote: "还在卡着"
+
+  # ---------- P0 query_status 正例（疑问） ----------
+  - id: dev_query_status_001
+    category: query_status
+    message: "支付SDK现在到底什么情况了？"
+    sender: ou_pm_zhao
+    occurred_at: "2026-10-13T10:30:00+08:00"
+    expected:
+      behavior:
+        reply_category: query_answer
+      intents:
+        items:
+          - intent: query_status
+            task_id: pay_sdk
+            speech_act: question
+            polarity: affirmative
+            certainty: certain
+            source_quote: "支付SDK现在到底什么情况了"
+
+  - id: dev_query_status_002
+    category: query_status
+    message: "收银台页面这周能上线吗？"
+    sender: ou_pm_zhao
+    occurred_at: "2026-10-13T11:00:00+08:00"
+    expected:
+      behavior:
+        reply_category: query_answer
+      intents:
+        items:
+          - intent: query_status
+            task_id: checkout_page
+            speech_act: question
+            polarity: affirmative
+            certainty: certain
+            source_quote: "收银台页面这周能上线吗"
+
+  - id: dev_query_status_003
+    category: query_status
+    message: "压测什么时候能开始跑？"
+    sender: ou_pm_zhao
+    occurred_at: "2026-10-13T13:20:00+08:00"
+    expected:
+      behavior:
+        reply_category: query_answer
+      intents:
+        items:
+          - intent: query_status
+            task_id: pay_e2e_test
+            speech_act: question
+            polarity: affirmative
+            certainty: certain
+            source_quote: "压测什么时候能开始跑"
+
+  - id: dev_query_status_004
+    category: query_status
+    message: "对账模块现在进度怎么样了？"
+    sender: ou_pm_zhao
+    occurred_at: "2026-10-13T14:50:00+08:00"
+    expected:
+      behavior:
+        reply_category: query_answer
+      intents:
+        items:
+          - intent: query_status
+            task_id: ledger_check
+            speech_act: question
+            polarity: affirmative
+            certainty: certain
+            source_quote: "对账模块现在进度怎么样了"
+
+  - id: dev_query_status_005
+    category: query_status
+    message: "支付SDK那边好了没？我们压测还等着呢"
+    sender: ou_lei_chen
+    occurred_at: "2026-10-13T15:10:00+08:00"
+    expected:
+      behavior:
+        reply_category: query_answer
+      intents:
+        items:
+          - intent: query_status
+            task_id: pay_sdk
+            speech_act: question
+            polarity: affirmative
+            certainty: certain
+            source_quote: "支付SDK那边好了没"
+
+  - id: dev_p1_p2_003
+    category: query_status
+    message: "后端的接口什么时候给我？我这边页面都干等两天了"
+    sender: ou_fang_liu
+    occurred_at: "2026-10-13T13:15:00+08:00"
+    expected:
+      behavior:
+        reply_category: query_answer
+      intents:
+        items:
+          - intent: query_status
+            task_id: checkout_page
+            speech_act: question
+            polarity: affirmative
+            certainty: certain
+            source_quote: "后端的接口什么时候给我"
+
+  # ---------- P0 request_sync 正例（同步触发） ----------
+  - id: dev_request_sync_001
+    category: request_sync
+    message: "来一次全员进度同步吧"
+    sender: ou_pm_zhao
+    occurred_at: "2026-10-13T09:40:00+08:00"
+    expected:
+      behavior:
+        starts_sync: false
+        sends_confirmation_card: true
+        reply_category: sync_confirm
+      intents:
+        items:
+          - intent: request_sync
+            speech_act: imperative
+            polarity: affirmative
+            certainty: certain
+            source_quote: "来一次全员进度同步"
+
+  - id: dev_request_sync_002
+    category: request_sync
+    message: "把各任务负责人的进展汇总一下，我要看整体情况"
+    sender: ou_pm_zhao
+    occurred_at: "2026-10-13T10:15:00+08:00"
+    expected:
+      behavior:
+        starts_sync: false
+        sends_confirmation_card: true
+        reply_category: sync_confirm
+      intents:
+        items:
+          - intent: request_sync
+            speech_act: imperative
+            polarity: affirmative
+            certainty: certain
+            source_quote: "把各任务负责人的进展汇总一下"
+
+  - id: dev_request_sync_003
+    category: request_sync
+    message: "帮我看看现在的项目进度"
+    sender: ou_pm_zhao
+    occurred_at: "2026-10-13T11:40:00+08:00"
+    expected:
+      behavior:
+        starts_sync: false
+        sends_confirmation_card: false
+        reply_category: query_answer
+      intents:
+        items:
+          - intent: query_status
+            speech_act: imperative
+            polarity: affirmative
+            certainty: certain
+            source_quote: "看看现在的项目进度"
+
+  - id: dev_request_sync_004
+    category: request_sync
+    message: "叫大家各自汇报一下手上的进展，我下午要跟老板对齐"
+    sender: ou_pm_zhao
+    occurred_at: "2026-10-13T13:00:00+08:00"
+    expected:
+      behavior:
+        starts_sync: false
+        sends_confirmation_card: true
+        reply_category: sync_confirm
+      intents:
+        items:
+          - intent: request_sync
+            speech_act: imperative
+            polarity: affirmative
+            certainty: certain
+            source_quote: "叫大家各自汇报一下手上的进展"
+
+  - id: dev_request_sync_005
+    category: request_sync
+    message: "全员手头任务的状态收集一下，月底复盘要用"
+    sender: ou_pm_zhao
+    occurred_at: "2026-10-13T16:20:00+08:00"
+    expected:
+      behavior:
+        starts_sync: false
+        sends_confirmation_card: true
+        reply_category: sync_confirm
+      intents:
+        items:
+          - intent: request_sync
+            speech_act: imperative
+            polarity: affirmative
+            certainty: certain
+            source_quote: "全员手头任务的状态收集一下"
+
+  # ---------- P0 acknowledge 正例 ----------
+  - id: dev_acknowledge_001
+    category: acknowledge
+    message: "收到"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T10:20:00+08:00"
+    expected:
+      behavior:
+        reply_category: smalltalk
+      intents:
+        items:
+          - intent: acknowledge
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            source_quote: "收到"
+
+  - id: dev_acknowledge_002
+    category: acknowledge
+    message: "好的，明白了"
+    sender: ou_lei_chen
+    occurred_at: "2026-10-13T11:30:00+08:00"
+    expected:
+      behavior:
+        reply_category: smalltalk
+      intents:
+        items:
+          - intent: acknowledge
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            source_quote: "好的，明白了"
+
+  - id: dev_acknowledge_003
+    category: acknowledge
+    message: "收到收到"
+    sender: ou_fang_liu
+    occurred_at: "2026-10-13T13:10:00+08:00"
+    expected:
+      behavior:
+        reply_category: smalltalk
+      intents:
+        items:
+          - intent: acknowledge
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            source_quote: "收到收到"
+
+  - id: dev_acknowledge_004
+    category: acknowledge
+    message: "ok"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T14:40:00+08:00"
+    expected:
+      behavior:
+        reply_category: smalltalk
+      intents:
+        items:
+          - intent: acknowledge
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            source_quote: "ok"
+
+  - id: dev_acknowledge_005
+    category: acknowledge
+    message: "了解，那就按这个来"
+    sender: ou_fang_liu
+    occurred_at: "2026-10-13T16:50:00+08:00"
+    expected:
+      behavior:
+        reply_category: smalltalk
+      intents:
+        items:
+          - intent: acknowledge
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            source_quote: "了解，那就按这个来"
+
+  # ---------- P0 chitchat 正例 ----------
+  - id: dev_chitchat_001
+    category: chitchat
+    message: "今天好累啊"
+    sender: ou_lei_chen
+    occurred_at: "2026-10-13T10:45:00+08:00"
+    expected:
+      behavior:
+        reply_category: smalltalk
+      intents:
+        items:
+          - intent: chitchat
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            source_quote: "今天好累啊"
+
+  - id: dev_chitchat_002
+    category: chitchat
+    message: "中午吃什么好呢"
+    sender: ou_fang_liu
+    occurred_at: "2026-10-13T11:50:00+08:00"
+    expected:
+      behavior:
+        reply_category: smalltalk
+      intents:
+        items:
+          - intent: chitchat
+            speech_act: question
+            polarity: affirmative
+            certainty: certain
+            source_quote: "中午吃什么好呢"
+
+  - id: dev_chitchat_003
+    category: chitchat
+    message: "哈哈哈哈这个表情包太搞笑了"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T13:40:00+08:00"
+    expected:
+      behavior:
+        reply_category: smalltalk
+      intents:
+        items:
+          - intent: chitchat
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            source_quote: "这个表情包太搞笑了"
+
+  - id: dev_chitchat_004
+    category: chitchat
+    message: "早上好呀各位"
+    sender: ou_lei_chen
+    occurred_at: "2026-10-13T09:10:00+08:00"
+    expected:
+      behavior:
+        reply_category: smalltalk
+      intents:
+        items:
+          - intent: chitchat
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            source_quote: "早上好呀各位"
+
+  - id: dev_chitchat_005
+    category: chitchat
+    message: "今天地铁又挤爆了"
+    sender: ou_fang_liu
+    occurred_at: "2026-10-13T09:25:00+08:00"
+    expected:
+      behavior:
+        reply_category: smalltalk
+      intents:
+        items:
+          - intent: chitchat
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            source_quote: "今天地铁又挤爆了"
+
+  # ---------- P0 help 正例 ----------
+  - id: dev_help_001
+    category: help
+    message: "你能做什么？"
+    sender: ou_lei_chen
+    occurred_at: "2026-10-13T10:10:00+08:00"
+    expected:
+      behavior:
+        reply_category: help
+      intents:
+        items:
+          - intent: help
+            speech_act: question
+            polarity: affirmative
+            certainty: certain
+            source_quote: "你能做什么"
+
+  - id: dev_help_002
+    category: help
+    message: "怎么让机器人给大家发进度询问啊？"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T11:10:00+08:00"
+    expected:
+      behavior:
+        reply_category: help
+      intents:
+        items:
+          - intent: help
+            speech_act: question
+            polarity: affirmative
+            certainty: certain
+            source_quote: "怎么让机器人给大家发进度询问"
+
+  - id: dev_help_003
+    category: help
+    message: "这个机器人支持哪些指令？"
+    sender: ou_fang_liu
+    occurred_at: "2026-10-13T12:40:00+08:00"
+    expected:
+      behavior:
+        reply_category: help
+      intents:
+        items:
+          - intent: help
+            speech_act: question
+            polarity: affirmative
+            certainty: certain
+            source_quote: "这个机器人支持哪些指令"
+
+  - id: dev_help_004
+    category: help
+    message: "有没有使用说明文档？"
+    sender: ou_lei_chen
+    occurred_at: "2026-10-13T15:30:00+08:00"
+    expected:
+      behavior:
+        reply_category: help
+      intents:
+        items:
+          - intent: help
+            speech_act: question
+            polarity: affirmative
+            certainty: certain
+            source_quote: "有没有使用说明文档"
+
+  - id: dev_help_005
+    category: help
+    message: "我想发起多人进度收集，该怎么操作？"
+    sender: ou_pm_zhao
+    occurred_at: "2026-10-13T17:10:00+08:00"
+    expected:
+      behavior:
+        reply_category: help
+      intents:
+        items:
+          - intent: help
+            speech_act: question
+            polarity: affirmative
+            certainty: certain
+            source_quote: "我想发起多人进度收集，该怎么操作"
+
+  # ---------- P0 out_of_scope 正例 ----------
+  - id: dev_out_of_scope_001
+    category: out_of_scope
+    message: "帮我订一下明天下午的会议室"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T10:25:00+08:00"
+    expected:
+      behavior:
+        reply_category: unsupported
+      intents:
+        items:
+          - intent: out_of_scope
+            speech_act: imperative
+            polarity: affirmative
+            certainty: certain
+            source_quote: "帮我订一下明天下午的会议室"
+
+  - id: dev_out_of_scope_002
+    category: out_of_scope
+    message: "附近有什么好吃的推荐吗？"
+    sender: ou_fang_liu
+    occurred_at: "2026-10-13T11:45:00+08:00"
+    expected:
+      behavior:
+        reply_category: unsupported
+      intents:
+        items:
+          - intent: out_of_scope
+            speech_act: question
+            polarity: affirmative
+            certainty: certain
+            source_quote: "附近有什么好吃的推荐吗"
+
+  - id: dev_out_of_scope_003
+    category: out_of_scope
+    message: "帮我查下明天去上海的机票价格"
+    sender: ou_lei_chen
+    occurred_at: "2026-10-13T13:50:00+08:00"
+    expected:
+      behavior:
+        reply_category: unsupported
+      intents:
+        items:
+          - intent: out_of_scope
+            speech_act: imperative
+            polarity: affirmative
+            certainty: certain
+            source_quote: "帮我查下明天去上海的机票价格"
+
+  - id: dev_out_of_scope_004
+    category: out_of_scope
+    message: "帮我给客户发一封节日祝福邮件"
+    sender: ou_fang_liu
+    occurred_at: "2026-10-13T15:00:00+08:00"
+    expected:
+      behavior:
+        reply_category: unsupported
+      intents:
+        items:
+          - intent: out_of_scope
+            speech_act: imperative
+            polarity: affirmative
+            certainty: certain
+            source_quote: "帮我给客户发一封节日祝福邮件"
+
+  - id: dev_out_of_scope_005
+    category: out_of_scope
+    message: "现在人民币兑美元汇率是多少？"
+    sender: ou_lei_chen
+    occurred_at: "2026-10-13T16:40:00+08:00"
+    expected:
+      behavior:
+        reply_category: unsupported
+      intents:
+        items:
+          - intent: out_of_scope
+            speech_act: question
+            polarity: affirmative
+            certainty: certain
+            source_quote: "现在人民币兑美元汇率是多少"
+
+  # ---------- 否定 ----------
+  - id: dev_negation_001
+    category: negation
+    message: "支付SDK没有卡住，大家不用担心"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T10:35:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: pay_sdk
+            health_status: on_track
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: pay_sdk
+            speech_act: statement
+            polarity: negative
+            certainty: certain
+            health_status: on_track
+            source_quote: "支付SDK没有卡住"
+
+  - id: dev_negation_002
+    category: negation
+    message: "压测不会延期的，放心"
+    sender: ou_lei_chen
+    occurred_at: "2026-10-13T11:05:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: pay_e2e_test
+            health_status: on_track
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: pay_e2e_test
+            speech_act: statement
+            polarity: negative
+            certainty: certain
+            health_status: on_track
+            source_quote: "压测不会延期的"
+
+  - id: dev_negation_003
+    category: negation
+    message: "对账模块没有新问题"
+    sender: ou_fang_liu
+    occurred_at: "2026-10-13T13:25:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: ledger_check
+            health_status: on_track
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: ledger_check
+            speech_act: statement
+            polarity: negative
+            certainty: certain
+            health_status: on_track
+            source_quote: "对账模块没有新问题"
+
+  - id: dev_negation_004
+    category: negation
+    message: "收银台不存在兼容性问题"
+    sender: ou_fang_liu
+    occurred_at: "2026-10-13T14:30:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: checkout_page
+            health_status: on_track
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: checkout_page
+            speech_act: statement
+            polarity: negative
+            certainty: certain
+            health_status: on_track
+            source_quote: "收银台不存在兼容性问题"
+
+  - id: dev_negation_005
+    category: negation
+    message: "商户后台没有停工，别听人瞎传"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T15:50:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: merchant_admin
+            health_status: on_track
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: merchant_admin
+            speech_act: statement
+            polarity: negative
+            certainty: certain
+            health_status: on_track
+            source_quote: "商户后台没有停工"
+
+  # ---------- 假设 ----------
+  - id: dev_hypothetical_001
+    category: hypothetical
+    message: "如果明天第三方接口还不稳定，支付SDK就要延期了"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T10:50:00+08:00"
+    expected:
+      behavior:
+        reply_category: noted
+      intents:
+        items:
+          - intent: report_status
+            task_id: pay_sdk
+            speech_act: hypothetical
+            polarity: affirmative
+            certainty: certain
+            health_status: delayed
+            source_quote: "支付SDK就要延期了"
+
+  - id: dev_hypothetical_002
+    category: hypothetical
+    message: "要是压测环境周五还没好，整个迭代计划都得往后推"
+    sender: ou_lei_chen
+    occurred_at: "2026-10-13T11:25:00+08:00"
+    expected:
+      behavior:
+        reply_category: noted
+      intents:
+        items:
+          - intent: report_status
+            task_id: pay_e2e_test
+            speech_act: hypothetical
+            polarity: affirmative
+            certainty: certain
+            source_quote: "整个迭代计划都得往后推"
+
+  - id: dev_hypothetical_003
+    category: hypothetical
+    message: "假如SDK这边周一还出问题，我就先测别的模块"
+    sender: ou_lei_chen
+    occurred_at: "2026-10-13T14:20:00+08:00"
+    expected:
+      behavior:
+        reply_category: noted
+      intents:
+        items:
+          - intent: report_status
+            task_id: pay_e2e_test
+            speech_act: hypothetical
+            polarity: affirmative
+            certainty: certain
+            source_quote: "假如SDK这边周一还出问题"
+
+  - id: dev_hypothetical_004
+    category: hypothetical
+    message: "理论上明天能修好，但如果有隐藏问题就说不准了"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T16:10:00+08:00"
+    context:
+      # R7 任务归属：最近对话提到 pay_sdk 有未解决的报错，而本条消息在说"修好"，
+      # 发送者的另一个任务（merchant_admin）健康 → 任务唯一可定，期望 claim。
+      recent_messages:
+        - role: member
+          text: "支付SDK的报错还在排查"
+    expected:
+      behavior:
+        claims:
+          - task_id: pay_sdk
+            health_status: at_risk
+            expected_completion: "2026-10-14T18:00:00+08:00"
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: pay_sdk
+            speech_act: statement
+            polarity: affirmative
+            certainty: hedged
+            health_status: at_risk
+            time_expression: "明天"
+            expected_completion: "2026-10-14T18:00:00+08:00"
+            source_quote: "理论上明天能修好"
+
+  # ---------- 含糊语气 ----------
+  - id: dev_vague_001
+    category: vague
+    message: "支付SDK那边应该快了"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T10:55:00+08:00"
+    expected:
+      behavior:
+        asks_clarification: true
+        reply_category: clarify
+      intents:
+        items:
+          - intent: report_status
+            task_id: pay_sdk
+            speech_act: statement
+            polarity: affirmative
+            certainty: hedged
+            source_quote: "支付SDK那边应该快了"
+
+  - id: dev_vague_002
+    category: vague
+    message: "压测差不多准备好了吧"
+    sender: ou_lei_chen
+    occurred_at: "2026-10-13T11:35:00+08:00"
+    expected:
+      behavior:
+        asks_clarification: true
+        reply_category: clarify
+      intents:
+        items:
+          - intent: report_status
+            task_id: pay_e2e_test
+            speech_act: statement
+            polarity: affirmative
+            certainty: hedged
+            source_quote: "压测差不多准备好了吧"
+
+  - id: dev_vague_003
+    category: vague
+    message: "收银台那边感觉问题不大"
+    sender: ou_fang_liu
+    occurred_at: "2026-10-13T14:45:00+08:00"
+    expected:
+      behavior:
+        asks_clarification: true
+        reply_category: clarify
+      intents:
+        items:
+          - intent: report_status
+            task_id: checkout_page
+            speech_act: statement
+            polarity: affirmative
+            certainty: hedged
+            source_quote: "收银台那边感觉问题不大"
+
+  - id: dev_vague_004
+    category: vague
+    message: "商户后台估计还得一阵子"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T16:35:00+08:00"
+    expected:
+      behavior:
+        asks_clarification: true
+        reply_category: clarify
+      intents:
+        items:
+          - intent: report_status
+            task_id: merchant_admin
+            speech_act: statement
+            polarity: affirmative
+            certainty: hedged
+            source_quote: "商户后台估计还得一阵子"
+
+  # ---------- 一句多任务 ----------
+  - id: dev_multi_task_001
+    category: multi_task
+    message: "支付SDK还在修，商户后台倒是快完工了"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T10:15:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: pay_sdk
+            health_status: at_risk
+          - task_id: merchant_admin
+            health_status: on_track
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: pay_sdk
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: at_risk
+            source_quote: "支付SDK还在修"
+          - intent: report_status
+            task_id: merchant_admin
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: on_track
+            source_quote: "商户后台倒是快完工了"
+
+  - id: dev_multi_task_002
+    category: multi_task
+    message: "收银台页面改版做完了，对账模块联调也过了"
+    sender: ou_fang_liu
+    occurred_at: "2026-10-13T11:25:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: checkout_page
+            health_status: on_track
+          - task_id: ledger_check
+            health_status: on_track
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: checkout_page
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: on_track
+            source_quote: "收银台页面改版做完了"
+          - intent: report_status
+            task_id: ledger_check
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: on_track
+            source_quote: "对账模块联调也过了"
+
+  - id: dev_multi_task_003
+    category: multi_task
+    message: "压测环境恢复了，但支付SDK的回调还在报错"
+    sender: ou_lei_chen
+    occurred_at: "2026-10-13T13:30:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: pay_e2e_test
+            health_status: on_track
+          - task_id: pay_sdk
+            health_status: at_risk
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: pay_e2e_test
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: on_track
+            source_quote: "压测环境恢复了"
+          - intent: report_status
+            task_id: pay_sdk
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: at_risk
+            blocker: "回调还在报错"
+            source_quote: "支付SDK的回调还在报错"
+
+  - id: dev_multi_task_004
+    category: multi_task
+    message: "商户后台今天能提测，支付SDK明天下午5点前我一定修完"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T14:15:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: merchant_admin
+            health_status: on_track
+            expected_completion: "2026-10-13T18:00:00+08:00"
+        commitments:
+          - task_id: pay_sdk
+            predicate: workflow_status
+            expected_value: done
+            due_at: "2026-10-14T17:00:00+08:00"
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: merchant_admin
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: on_track
+            time_expression: "今天"
+            source_quote: "商户后台今天能提测"
+          - intent: make_commitment
+            task_id: pay_sdk
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            time_expression: "明天下午5点前"
+            source_quote: "支付SDK明天下午5点前我一定修完"
+
+  - id: dev_multi_task_005
+    category: multi_task
+    message: "收银台还有两个视觉问题要改，对账模块的差异也没对平"
+    sender: ou_fang_liu
+    occurred_at: "2026-10-13T15:45:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: checkout_page
+            health_status: at_risk
+          - task_id: ledger_check
+            health_status: at_risk
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: checkout_page
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: at_risk
+            blocker: "两个视觉问题"
+            source_quote: "收银台还有两个视觉问题要改"
+          - intent: report_status
+            task_id: ledger_check
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: at_risk
+            blocker: "差异没对平"
+            source_quote: "对账模块的差异也没对平"
+
+  - id: dev_disambiguation_001
+    category: disambiguation
+    message: "支付全链路压测的环境搭好了，就等支付SDK那边稳定"
+    sender: ou_lei_chen
+    occurred_at: "2026-10-13T10:40:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: pay_e2e_test
+            health_status: on_track
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: pay_e2e_test
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: on_track
+            source_quote: "支付全链路压测的环境搭好了"
+
+  - id: dev_disambiguation_002
+    category: disambiguation
+    message: "商户后台管理端的接口写完了，收银台那边的联调我没参与"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T11:35:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: merchant_admin
+            health_status: on_track
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: merchant_admin
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: on_track
+            source_quote: "商户后台管理端的接口写完了"
+
+  - id: dev_disambiguation_003
+    category: disambiguation
+    message: "对账模块联调通过了，跟支付SDK那边没关系"
+    sender: ou_fang_liu
+    occurred_at: "2026-10-13T14:35:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: ledger_check
+            health_status: on_track
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: ledger_check
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: on_track
+            source_quote: "对账模块联调通过了"
+
+  - id: dev_disambiguation_004
+    category: disambiguation
+    message: "支付SDK接入这块可以收尾了，压测那边的准备我没管"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T15:55:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: pay_sdk
+            health_status: on_track
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: pay_sdk
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: on_track
+            source_quote: "支付SDK接入这块可以收尾了"
+
+  - id: dev_time_chinese_001
+    category: time_chinese
+    message: "支付SDK的报错还在修，预计下午三点能修好"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T10:00:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: pay_sdk
+            health_status: at_risk
+            expected_completion: "2026-10-13T15:00:00+08:00"
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: pay_sdk
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: at_risk
+            time_expression: "下午三点"
+            expected_completion: "2026-10-13T15:00:00+08:00"
+            source_quote: "预计下午三点能修好"
+
+  - id: dev_time_chinese_002
+    category: time_chinese
+    message: "商户后台的审批流收尾很顺利，预计5点半能全部搞定"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T14:25:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: merchant_admin
+            health_status: on_track
+            expected_completion: "2026-10-13T17:30:00+08:00"
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: merchant_admin
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: on_track
+            time_expression: "5点半"
+            expected_completion: "2026-10-13T17:30:00+08:00"
+            source_quote: "预计5点半能全部搞定"
+
+  - id: dev_time_chinese_003
+    category: time_chinese
+    message: "压测第一轮可能要拖到下周三才能跑完"
+    sender: ou_lei_chen
+    occurred_at: "2026-10-13T11:15:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: pay_e2e_test
+            health_status: delayed
+            expected_completion: "2026-10-21T18:00:00+08:00"
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: pay_e2e_test
+            speech_act: statement
+            polarity: affirmative
+            certainty: hedged
+            health_status: delayed
+            time_expression: "下周三"
+            expected_completion: "2026-10-21T18:00:00+08:00"
+            source_quote: "可能要拖到下周三才能跑完"
+
+  - id: dev_time_chinese_004
+    category: time_chinese
+    message: "对账模块的历史差异清理完了，整体收尾要到月底"
+    sender: ou_fang_liu
+    occurred_at: "2026-10-13T15:15:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: ledger_check
+            health_status: delayed
+            expected_completion: "2026-10-31T18:00:00+08:00"
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: ledger_check
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: delayed
+            time_expression: "月底"
+            expected_completion: "2026-10-31T18:00:00+08:00"
+            source_quote: "整体收尾要到月底"
+
+  - id: dev_time_chinese_005
+    category: time_chinese
+    message: "收银台的兼容问题还在修，周五下班前应该能修完"
+    sender: ou_fang_liu
+    occurred_at: "2026-10-13T16:15:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: checkout_page
+            health_status: at_risk
+            expected_completion: "2026-10-16T18:00:00+08:00"
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: checkout_page
+            speech_act: statement
+            polarity: affirmative
+            certainty: hedged
+            health_status: at_risk
+            time_expression: "周五下班前"
+            expected_completion: "2026-10-16T18:00:00+08:00"
+            source_quote: "周五下班前应该能修完"
+
+  - id: dev_time_chinese_006
+    category: time_chinese
+    message: "支付SDK的死锁还在处理，明早十点前解决"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T17:20:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: pay_sdk
+            health_status: at_risk
+            expected_completion: "2026-10-14T10:00:00+08:00"
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: pay_sdk
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: at_risk
+            time_expression: "明早十点前"
+            expected_completion: "2026-10-14T10:00:00+08:00"
+            source_quote: "明早十点前解决"
+
+  - id: dev_substring_trap_001
+    category: substring_trap
+    message: "支付SDK没问题了，压测那边随时可以开始"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T10:45:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: pay_sdk
+            health_status: on_track
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: pay_sdk
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: on_track
+            source_quote: "支付SDK没问题了"
+
+  - id: dev_substring_trap_002
+    category: substring_trap
+    message: "不好意思，收银台页面刚才是我改坏了，马上回滚"
+    sender: ou_fang_liu
+    occurred_at: "2026-10-13T11:40:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: checkout_page
+            health_status: at_risk
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: checkout_page
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: at_risk
+            blocker: "页面被我改坏了，需要回滚"
+            source_quote: "收银台页面刚才是我改坏了"
+
+  - id: dev_substring_trap_003
+    category: substring_trap
+    message: "压测不是不行，是环境还没就绪"
+    sender: ou_lei_chen
+    occurred_at: "2026-10-13T13:45:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: pay_e2e_test
+            health_status: at_risk
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: pay_e2e_test
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: at_risk
+            blocker: "环境还没就绪"
+            source_quote: "是环境还没就绪"
+
+  - id: dev_substring_trap_004
+    category: substring_trap
+    message: "商户后台还行，就是导出功能有点慢"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T15:25:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: merchant_admin
+            health_status: at_risk
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: merchant_admin
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: at_risk
+            blocker: "导出功能有点慢"
+            source_quote: "导出功能有点慢"
+
+  # ---------- P1 / P2 意图（不产生 claim，回复 unsupported） ----------
+  - id: dev_p1_p2_001
+    category: p1_p2
+    message: "刚才说错了，支付SDK是明天下午5点能好，不是三点"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T10:20:00+08:00"
+    expected:
+      behavior:
+        reply_category: unsupported
+      intents:
+        items:
+          - intent: correction
+            task_id: pay_sdk
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            time_expression: "明天下午5点"
+            source_quote: "刚才说错了"
+
+  - id: dev_p1_p2_002
+    category: p1_p2
+    message: "我之前说的压测时间不对，应该是下周四"
+    sender: ou_lei_chen
+    occurred_at: "2026-10-13T11:50:00+08:00"
+    expected:
+      behavior:
+        reply_category: unsupported
+      intents:
+        items:
+          - intent: correction
+            task_id: pay_e2e_test
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            time_expression: "下周四"
+            source_quote: "我之前说的压测时间不对"
+
+  - id: dev_p1_p2_004
+    category: p1_p2
+    message: "收银台这边一直等着支付SDK的联调环境，谁来催一下啊"
+    sender: ou_fang_liu
+    occurred_at: "2026-10-13T14:50:00+08:00"
+    expected:
+      behavior:
+        reply_category: unsupported
+      intents:
+        items:
+          - intent: dependency_wait
+            task_id: checkout_page
+            speech_act: imperative
+            polarity: affirmative
+            certainty: certain
+            source_quote: "一直等着支付SDK的联调环境"
+
+  - id: dev_p1_p2_005
+    category: p1_p2
+    message: "我下周三请一天假，家里有点事"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T15:35:00+08:00"
+    expected:
+      behavior:
+        reply_category: unsupported
+      intents:
+        items:
+          - intent: unavailability
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            time_expression: "下周三"
+            source_quote: "我下周三请一天假"
+
+  - id: dev_p1_p2_006
+    category: p1_p2
+    message: "同意改期，商户后台的上线日期就按下周五来吧"
+    sender: ou_pm_zhao
+    occurred_at: "2026-10-13T16:45:00+08:00"
+    expected:
+      behavior:
+        reply_category: unsupported
+      intents:
+        items:
+          - intent: text_approval
+            task_id: merchant_admin
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            time_expression: "下周五"
+            source_quote: "同意改期"
+
+  # ---------- 同步触发近似反例 ----------
+  - id: dev_sync_near_negative_001
+    category: sync_near_negative
+    message: "我这边支付SDK进度正常，不用单独问我"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T11:45:00+08:00"
+    expected:
+      behavior:
+        claims:
+          - task_id: pay_sdk
+            health_status: on_track
+        reply_category: claim_recorded
+      intents:
+        items:
+          - intent: report_status
+            task_id: pay_sdk
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: on_track
+            source_quote: "我这边支付SDK进度正常"
+
+  - id: dev_sync_near_negative_002
+    category: sync_near_negative
+    message: "不用同步进度了，我马上把压测结果发到群里"
+    sender: ou_lei_chen
+    occurred_at: "2026-10-13T13:35:00+08:00"
+    expected:
+      behavior:
+        reply_category: noted
+      intents:
+        items:
+          - intent: request_sync
+            speech_act: statement
+            polarity: negative
+            certainty: certain
+            source_quote: "不用同步进度了"
+
+  - id: dev_sync_near_negative_003
+    category: sync_near_negative
+    message: "暂时不用收集大家的进展，等周会再说"
+    sender: ou_fang_liu
+    occurred_at: "2026-10-13T15:05:00+08:00"
+    expected:
+      behavior:
+        reply_category: noted
+      intents:
+        items:
+          - intent: request_sync
+            speech_act: statement
+            polarity: negative
+            certainty: certain
+            source_quote: "暂时不用收集大家的进展"
+
+  - id: dev_sync_near_negative_004
+    category: sync_near_negative
+    message: "先不用汇总进展，我这边还没想好口径"
+    sender: ou_pm_zhao
+    occurred_at: "2026-10-13T16:55:00+08:00"
+    expected:
+      behavior:
+        reply_category: noted
+      intents:
+        items:
+          - intent: request_sync
+            speech_act: statement
+            polarity: negative
+            certainty: certain
+            source_quote: "先不用汇总进展"
+
+  # ---------- 非 PM 触发同步（无权限） ----------
+  - id: dev_sync_non_pm_001
+    category: sync_non_pm
+    message: "帮我同步一下大家的进度呗"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T12:10:00+08:00"
+    expected:
+      behavior:
+        reply_category: no_permission
+      intents:
+        items:
+          - intent: request_sync
+            speech_act: imperative
+            polarity: affirmative
+            certainty: certain
+            source_quote: "帮我同步一下大家的进度"
+
+  - id: dev_sync_non_pm_002
+    category: sync_non_pm
+    message: "发起一次全员进度同步"
+    sender: ou_lei_chen
+    occurred_at: "2026-10-13T14:05:00+08:00"
+    expected:
+      behavior:
+        reply_category: no_permission
+      intents:
+        items:
+          - intent: request_sync
+            speech_act: imperative
+            polarity: affirmative
+            certainty: certain
+            source_quote: "发起一次全员进度同步"
+
+  # ---------- 多轮：追问后换话题 ----------
+  - id: dev_multi_turn_topic_shift_001
+    category: multi_turn_topic_shift
+    message: "对了，周报这周还用写吗？"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T11:05:00+08:00"
+    context:
+      pending_question:
+        question: "支付SDK大概什么时候能恢复？"
+        task_id: pay_sdk
+    expected:
+      behavior:
+        asks_clarification: true
+        reply_category: unsupported
+      intents:
+        answers_pending: false
+        items:
+          - intent: out_of_scope
+            speech_act: question
+            polarity: affirmative
+            certainty: certain
+            source_quote: "周报这周还用写吗"
+
+  - id: dev_multi_turn_topic_shift_002
+    category: multi_turn_topic_shift
+    message: "哈哈哈你们看到今天的热搜了吗"
+    sender: ou_lei_chen
+    occurred_at: "2026-10-13T14:40:00+08:00"
+    context:
+      pending_question:
+        question: "压测环境预计什么时候能恢复？"
+        task_id: pay_e2e_test
+    expected:
+      behavior:
+        asks_clarification: true
+        reply_category: smalltalk
+      intents:
+        answers_pending: false
+        items:
+          - intent: chitchat
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            source_quote: "你们看到今天的热搜了吗"
+
+  - id: dev_multi_turn_topic_shift_003
+    category: multi_turn_topic_shift
+    message: "先不管这个，中午一起吃什么？"
+    sender: ou_fang_liu
+    occurred_at: "2026-10-13T11:55:00+08:00"
+    context:
+      pending_question:
+        question: "收银台兼容问题预计什么时候能修完？"
+        task_id: checkout_page
+    expected:
+      behavior:
+        asks_clarification: true
+        reply_category: smalltalk
+      intents:
+        answers_pending: false
+        items:
+          - intent: chitchat
+            speech_act: question
+            polarity: affirmative
+            certainty: certain
+            source_quote: "中午一起吃什么"
+
+  # ---------- P1 / P2 补充（dev_p1_p2_003 按 R3 移入 query_status 后保持覆盖度） ----------
+  - id: dev_p1_p2_007
+    category: p1_p2
+    message: "把压测第一轮的时间挪到周五上午吧，那天大家都在"
+    sender: ou_lei_chen
+    occurred_at: "2026-10-13T17:30:00+08:00"
+    expected:
+      behavior:
+        reply_category: unsupported
+      intents:
+        items:
+          - intent: propose_plan_change
+            task_id: pay_e2e_test
+            speech_act: imperative
+            polarity: affirmative
+            certainty: certain
+            time_expression: "周五上午"
+            source_quote: "把压测第一轮的时间挪到周五上午"
+
+  # ---------- 显式命令：/同步 与 /帮助（R8） ----------
+  - id: dev_sync_command_001
+    category: sync_command
+    message: "/同步"
+    sender: ou_pm_zhao
+    occurred_at: "2026-10-13T09:20:00+08:00"
+    expected:
+      behavior:
+        starts_sync: true
+        reply_category: sync_started
+      intents:
+        items:
+          - intent: request_sync
+            speech_act: imperative
+            polarity: affirmative
+            certainty: certain
+            source_quote: "/同步"
+
+  - id: dev_sync_command_002
+    category: sync_command
+    message: "/同步 全员进度"
+    sender: ou_pm_zhao
+    occurred_at: "2026-10-13T12:20:00+08:00"
+    expected:
+      behavior:
+        starts_sync: true
+        reply_category: sync_started
+      intents:
+        items:
+          - intent: request_sync
+            speech_act: imperative
+            polarity: affirmative
+            certainty: certain
+            source_quote: "/同步 全员进度"
+
+  - id: dev_sync_command_003
+    category: sync_command
+    message: "/帮助"
+    sender: ou_pm_zhao
+    occurred_at: "2026-10-13T13:50:00+08:00"
+    expected:
+      behavior:
+        reply_category: help
+      intents:
+        items:
+          - intent: help
+            speech_act: imperative
+            polarity: affirmative
+            certainty: certain
+            source_quote: "/帮助"
+
+  # ---------- 确认卡片流：确认 / 拒绝 / 非 PM 误回复（R8） ----------
+  - id: dev_confirmation_flow_001
+    category: confirmation_flow
+    message: "好的，发吧"
+    sender: ou_pm_zhao
+    occurred_at: "2026-10-13T10:05:00+08:00"
+    context:
+      pending_confirmation:
+        kind: sync
+        initiated_by: ou_pm_zhao
+    expected:
+      behavior:
+        starts_sync: true
+        reply_category: sync_started
+      intents:
+        items:
+          - intent: acknowledge
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            source_quote: "好的，发吧"
+
+  - id: dev_confirmation_flow_002
+    category: confirmation_flow
+    message: "可以，就按这个发"
+    sender: ou_pm_zhao
+    occurred_at: "2026-10-13T14:05:00+08:00"
+    context:
+      pending_confirmation:
+        kind: sync
+        initiated_by: ou_pm_zhao
+    expected:
+      behavior:
+        starts_sync: true
+        reply_category: sync_started
+      intents:
+        items:
+          - intent: acknowledge
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            source_quote: "可以，就按这个发"
+
+  - id: dev_confirmation_flow_003
+    category: confirmation_flow
+    message: "算了，先不发"
+    sender: ou_pm_zhao
+    occurred_at: "2026-10-13T15:30:00+08:00"
+    context:
+      pending_confirmation:
+        kind: sync
+        initiated_by: ou_pm_zhao
+    expected:
+      behavior:
+        starts_sync: false
+        reply_category: noted
+      intents:
+        items:
+          - intent: acknowledge
+            speech_act: statement
+            polarity: negative
+            certainty: certain
+            source_quote: "算了，先不发"
+
+  - id: dev_confirmation_flow_004
+    category: confirmation_flow
+    message: "好的"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-13T16:40:00+08:00"
+    context:
+      pending_confirmation:
+        kind: sync
+        initiated_by: ou_pm_zhao
+    expected:
+      behavior:
+        starts_sync: false
+        reply_category: smalltalk
+      intents:
+        items:
+          - intent: acknowledge
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            source_quote: "好的"
+
+  # ---------- 探针回复（3a.1：探针统一走意图流水线） ----------
+  - id: dev_probe_reply_001
+    category: probe_reply
+    message: "支付SDK明天下午5点能修好，商户后台已经正常了"
+    sender: ou_wei_wang
+    occurred_at: "2026-10-15T09:30:00+08:00"
+    context:
+      pending_probe:
+        task_ids: [pay_sdk, merchant_admin]
+        asked_rounds: 0
+    expected:
+      behavior:
+        claims:
+          - task_id: pay_sdk
+            health_status: at_risk
+            expected_completion: "2026-10-16T17:00:00+08:00"
+          - task_id: merchant_admin
+            health_status: on_track
+        reply_category: claim_recorded
+      intents:
+        answers_pending: true
+        items:
+          - intent: answer_pending
+            task_id: pay_sdk
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: at_risk
+            time_expression: "明天下午5点"
+            source_quote: "支付SDK明天下午5点能修好"
+          - intent: answer_pending
+            task_id: merchant_admin
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            health_status: on_track
+            source_quote: "商户后台已经正常了"
+
+  - id: dev_probe_reply_002
+    category: probe_reply
+    message: "哈哈这个热搜太离谱了吧"
+    sender: ou_lei_chen
+    occurred_at: "2026-10-15T10:10:00+08:00"
+    context:
+      pending_probe:
+        task_ids: [pay_e2e_test]
+        asked_rounds: 1
+    expected:
+      behavior:
+        asks_clarification: true
+        reply_category: smalltalk
+      intents:
+        answers_pending: false
+        items:
+          - intent: chitchat
+            speech_act: statement
+            polarity: affirmative
+            certainty: certain
+            source_quote: "哈哈这个热搜太离谱了吧"

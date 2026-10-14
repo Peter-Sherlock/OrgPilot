@@ -1,0 +1,52 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "7bb5155d6ccdc7e2c6eaa4111e31fe6a",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 365,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 146,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:08:18.754134+00:00",
+  "response": {
+    "id": "342dc8bf-167a-4da7-bbf3-fdf03f543a19",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_ySDlurmwz5AcBymJDNQh6840",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "赵敏询问商户后台管理端的当前进展，属于查询任务状态。",
+          "items": [
+            {
+              "intent": "query_status",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "商户后台做到哪一步了？",
+              "confidence": 0.95,
+              "task_id": "merchant_admin"
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 365,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 146,
+      "service_tier": "standard"
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "1be71d946b2d4ddf1c27c69e954a8269",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 474,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 168,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:25:48.924348+00:00",
+  "response": {
+    "id": "490f8977-9125-4262-8f98-d6924a9922e9",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_4ozYeIs04lsolg0d7wjt4105",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊用「差不多准备好了吧」询问压测准备情况，属于询问任务状态；「差不多」为含糊推测，但这是提问而非汇报，不填健康度。",
+          "items": [
+            {
+              "intent": "query_status",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "task_id": "pay_e2e_test",
+              "source_quote": "压测差不多准备好了吧",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 474,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 168,
+      "service_tier": "standard"
+    }
+  }
+}

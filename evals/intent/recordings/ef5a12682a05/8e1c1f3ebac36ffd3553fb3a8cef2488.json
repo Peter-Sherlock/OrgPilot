@@ -1,0 +1,53 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "8e1c1f3ebac36ffd3553fb3a8cef2488",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 513,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 187,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:13:27.304090+00:00",
+  "response": {
+    "id": "6caded26-2a63-4af2-8bb9-8b75f9372dfa",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_YV4B449mx9IUqwXc6hOx7169",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟回答机器人关于支付SDK恢复时间的追问，表示仍卡着、给不出具体时间，属于被追问时无法给出时间→at_risk；同时说明明天再同步。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "task_id": "pay_sdk",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "health_status": "at_risk",
+              "source_quote": "还在卡着，具体几点说不好，明天再同步给你",
+              "confidence": 0.9
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 513,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 187,
+      "service_tier": "standard"
+    }
+  }
+}

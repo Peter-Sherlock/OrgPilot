@@ -1,0 +1,63 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "2ce09e52ab8ff52561347dc16baf5ac0",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 529,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 238,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:28:10.149107+00:00",
+  "response": {
+    "id": "e58bd0ae-3657-414e-bf4e-66095c2dd53c",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_3R5p841dlvd7jqEydbdW7260",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息正面回答了机器人关于两个负责任务进展的追问，两个任务均正常推进，无未解决问题。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "task_id": "checkout_page",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "health_status": "on_track",
+              "source_quote": "收银台和对账模块都正常",
+              "confidence": 0.9
+            },
+            {
+              "intent": "answer_pending",
+              "task_id": "ledger_check",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "health_status": "on_track",
+              "source_quote": "收银台和对账模块都正常",
+              "confidence": 0.9
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 529,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 238,
+      "service_tier": "standard"
+    }
+  }
+}

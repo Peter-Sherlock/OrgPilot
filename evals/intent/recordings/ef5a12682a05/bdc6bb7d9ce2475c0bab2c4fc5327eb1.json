@@ -1,0 +1,53 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "bdc6bb7d9ce2475c0bab2c4fc5327eb1",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 499,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 173,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:14:30.689870+00:00",
+  "response": {
+    "id": "43cf528f-777c-402b-b85b-3e2eede0ef8f",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_XCCisro711u1VVS9cXLT0737",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳汇报自己负责的对账模块联调已通过，属已完成状态；后半句说明与支付SDK无关，不构成对pay_sdk的状态汇报。",
+          "items": [
+            {
+              "intent": "report_status",
+              "task_id": "ledger_check",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "health_status": "on_track",
+              "source_quote": "对账模块联调通过了",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 499,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 173,
+      "service_tier": "standard"
+    }
+  }
+}

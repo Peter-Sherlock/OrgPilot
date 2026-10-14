@@ -1,0 +1,53 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "c9f660c246fd85470d05cb08cd697d5c",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 357,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2176,
+    "output_tokens": 192,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:26:00.718274+00:00",
+  "response": {
+    "id": "74ca7b0f-825f-4a13-b425-3f4b72eeaa1e",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_KSaxPwa43E2cZn7KTzKM2757",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊汇报自己负责的压测任务环境已就绪，但需等待支付SDK稳定，属于依赖等待；同时压测本身尚未开始推进，健康度按有风险处理。",
+          "items": [
+            {
+              "intent": "dependency_wait",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_e2e_test",
+              "health_status": "at_risk",
+              "source_quote": "支付全链路压测的环境搭好了，就等支付SDK那边稳定",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 357,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2176,
+      "output_tokens": 192,
+      "service_tier": "standard"
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "c228cdb5ee7044aa6e5e55a0fece8201",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 487,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 178,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:14:16.379766+00:00",
+  "response": {
+    "id": "9507c26c-6c53-497b-8101-631288f5044a",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_2OlOj2lZVnSKgACHtsMn9791",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟谈自己负责的支付SDK接入，句末带“吧”的推测属陈述；含“应该”为 hedged，无未解决问题，按正常推进处理。",
+          "items": [
+            {
+              "intent": "report_status",
+              "task_id": "pay_sdk",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "health_status": "on_track",
+              "source_quote": "支付SDK那边应该快了",
+              "confidence": 0.7
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 487,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 178,
+      "service_tier": "standard"
+    }
+  }
+}

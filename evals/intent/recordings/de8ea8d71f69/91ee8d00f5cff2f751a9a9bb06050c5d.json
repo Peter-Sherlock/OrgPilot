@@ -1,0 +1,55 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "91ee8d00f5cff2f751a9a9bb06050c5d",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 487,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 212,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:24:53.579053+00:00",
+  "response": {
+    "id": "b7f37522-e7c7-4f6f-9371-35338ace2bfb",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_VHQ48Mu3e8xjVA8w5Xgu9263",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟承诺商户后台权限模块今晚完成，属于对 merchant_admin 任务的完成时间承诺；今晚=20:00，早于截止日 10-23，健康度正常。",
+          "items": [
+            {
+              "intent": "make_commitment",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "merchant_admin",
+              "health_status": "on_track",
+              "time_expression": "今晚",
+              "expected_completion": "2026-10-13T20:00:00+08:00",
+              "source_quote": "商户后台的权限模块我今晚搞定",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 487,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 212,
+      "service_tier": "standard"
+    }
+  }
+}

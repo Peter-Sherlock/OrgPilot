@@ -1,0 +1,51 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "4b71769bf3ac98bcfe60724324922b50",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 496,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 147,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:14:57.839513+00:00",
+  "response": {
+    "id": "c5719b9a-1008-4596-8a49-a2ad66600c64",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_Je8Na3THl5hdwojpf7RE2082",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "发送者明确表示暂不需要收集进展，属于 request_sync 的否定极性（先不用汇总）。",
+          "items": [
+            {
+              "intent": "request_sync",
+              "speech_act": "imperative",
+              "polarity": "negative",
+              "certainty": "certain",
+              "source_quote": "暂时不用收集大家的进展，等周会再说",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 496,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 147,
+      "service_tier": "standard"
+    }
+  }
+}

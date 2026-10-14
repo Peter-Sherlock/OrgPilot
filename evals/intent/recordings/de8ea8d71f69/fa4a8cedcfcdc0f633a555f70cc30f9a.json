@@ -1,0 +1,55 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "fa4a8cedcfcdc0f633a555f70cc30f9a",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 490,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 215,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:26:08.286112+00:00",
+  "response": {
+    "id": "6f9114ff-45c5-45dc-85fe-487db94308d1",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_vikgkF2hmxrwmKkL65cH2273",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟汇报自己负责的商户后台管理端审批流收尾进展，预计今天17:30完成，早于截止日10-23，属正常推进。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "merchant_admin",
+              "health_status": "on_track",
+              "time_expression": "5点半",
+              "expected_completion": "2026-10-13T17:30:00+08:00",
+              "source_quote": "商户后台的审批流收尾很顺利，预计5点半能全部搞定",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 490,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 215,
+      "service_tier": "standard"
+    }
+  }
+}

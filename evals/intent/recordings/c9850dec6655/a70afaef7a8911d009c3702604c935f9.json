@@ -1,0 +1,55 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "a70afaef7a8911d009c3702604c935f9",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 389,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 217,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:59:23.180203+00:00",
+  "response": {
+    "id": "36365f6f-4065-45bb-a9d1-d6632611737b",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_dMugDqb09vi5BjdfpPaq8304",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟汇报自己负责的支付SDK任务，承诺明天下午三点前修好提交；存在未解决问题属风险，但承诺在截止日前解决，故 at_risk。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_sdk",
+              "health_status": "at_risk",
+              "time_expression": "明天下午三点前",
+              "expected_completion": "2026-10-14T15:00:00+08:00",
+              "source_quote": "支付SDK的问题我明天下午三点前肯定修好提交",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 389,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 217,
+      "service_tier": "standard"
+    }
+  }
+}

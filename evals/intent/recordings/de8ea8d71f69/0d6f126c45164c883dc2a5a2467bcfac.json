@@ -1,0 +1,54 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "0d6f126c45164c883dc2a5a2467bcfac",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 351,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2176,
+    "output_tokens": 225,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:26:22.391329+00:00",
+  "response": {
+    "id": "988ea32c-b9e3-4e39-ac23-bc77298bb2b1",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_ub0AmldgGbMWmhrdJaub7081",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊修正此前关于压测时间的说法，属于对既有信息的更正，识别为 correction；下周四为 2026-10-22，早于任务截止 10-20？实际晚于截止日，但这是更正时间而非延期汇报，故不填健康度。",
+          "items": [
+            {
+              "intent": "correction",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "task_id": "pay_e2e_test",
+              "time_expression": "下周四",
+              "expected_completion": "2026-10-22T18:00:00+08:00",
+              "source_quote": "我之前说的压测时间不对，应该是下周四",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 351,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2176,
+      "output_tokens": 225,
+      "service_tier": "standard"
+    }
+  }
+}

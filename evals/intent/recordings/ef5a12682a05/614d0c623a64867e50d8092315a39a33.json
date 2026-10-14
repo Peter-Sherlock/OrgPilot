@@ -1,0 +1,51 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "614d0c623a64867e50d8092315a39a33",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 468,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 141,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:13:39.263006+00:00",
+  "response": {
+    "id": "d0946213-f345-4cdb-be03-3f139913f746",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_aau2ZuyrqPyOW06SQpfu3544",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "发送者要求查看当前项目整体进度，属于向机器人询问任务状态，未点名具体任务。",
+          "items": [
+            {
+              "intent": "query_status",
+              "speech_act": "imperative",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "帮我看看现在的项目进度",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 468,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 141,
+      "service_tier": "standard"
+    }
+  }
+}

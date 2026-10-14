@@ -1,0 +1,52 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "d10142d188fd2b7a41a2a8da6bd70d29",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 368,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 163,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:09:07.029613+00:00",
+  "response": {
+    "id": "6db85e40-115c-46d5-8d22-d5fbde4ba66a",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_hCZ5wR87OAxdPQkxk43l8127",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "赵敏作为 PM 批准并决定将商户后台管理端上线日期推迟一周，属于计划变更识别类，不执行。",
+          "items": [
+            {
+              "intent": "propose_plan_change",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "merchant_admin",
+              "source_quote": "批准，商户后台的上线日期往后推一周",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 368,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 163,
+      "service_tier": "standard"
+    }
+  }
+}

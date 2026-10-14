@@ -1,0 +1,53 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "b66ce8438c7a285f81ba6916d510edab",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 382,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 179,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:00:28.478844+00:00",
+  "response": {
+    "id": "0be8deb0-adfa-4306-aa5d-1f844f0cef7f",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_xkHZvFfTYMKNI9BaMLV04417",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟负责 pay_sdk，消息谈自己任务的进展，句末“应该”为含糊推测，属 hedged 陈述；无未解决问题，按正常推进记 on_track。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "task_id": "pay_sdk",
+              "health_status": "on_track",
+              "source_quote": "支付SDK那边应该快了",
+              "confidence": 0.75
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 382,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 179,
+      "service_tier": "standard"
+    }
+  }
+}

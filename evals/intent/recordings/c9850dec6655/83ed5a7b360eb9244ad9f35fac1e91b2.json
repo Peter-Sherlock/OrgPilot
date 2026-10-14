@@ -1,0 +1,50 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "83ed5a7b360eb9244ad9f35fac1e91b2",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 385,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 117,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:08:31.391019+00:00",
+  "response": {
+    "id": "a02910c6-8bd1-4e7e-91a1-0013e7dd995e",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_ORR1gAgfsMbmVpc2iSA51164",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息只是对天气的吐槽，与工作进度无关，也无任何请求。",
+          "items": [
+            {
+              "intent": "chitchat",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "今天天气热死了",
+              "confidence": 0.97
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 385,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 117,
+      "service_tier": "standard"
+    }
+  }
+}

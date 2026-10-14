@@ -1,0 +1,62 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "99ca971c4e16a9ce83896835481ba6d6",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 362,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 235,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:14:23.752473+00:00",
+  "response": {
+    "id": "3fdfa933-e41f-4e71-a636-9d924f49700a",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_UKDo4U5pREGeuDAFrfNW7877",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息汇报压测环境已恢复（阻塞解除），同时指出支付SDK回调仍在报错，属未解决问题。前者指向发送者负责的 pay_e2e_test，后者点名 pay_sdk。",
+          "items": [
+            {
+              "intent": "report_status",
+              "task_id": "pay_e2e_test",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "health_status": "on_track",
+              "source_quote": "压测环境恢复了",
+              "confidence": 0.8
+            },
+            {
+              "intent": "report_status",
+              "task_id": "pay_sdk",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "health_status": "at_risk",
+              "source_quote": "支付SDK的回调还在报错",
+              "confidence": 0.85
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 362,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 235,
+      "service_tier": "standard"
+    }
+  }
+}

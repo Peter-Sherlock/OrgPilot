@@ -1,0 +1,51 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "131a01ec5f18b49f28ff9ae62fe6ec19",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 489,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 151,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:26:30.118462+00:00",
+  "response": {
+    "id": "f5149f67-e0c5-4c29-b629-7a52d840dc82",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_2hD6l8F3BXR1B7kxkR1w9543",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳表示暂不需要收集进展，等周会再说，属于对同步请求的回应/确认，非负责人发起同步。",
+          "items": [
+            {
+              "intent": "acknowledge",
+              "speech_act": "imperative",
+              "polarity": "negative",
+              "certainty": "certain",
+              "source_quote": "暂时不用收集大家的进展，等周会再说",
+              "confidence": 0.8
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 489,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 151,
+      "service_tier": "standard"
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "06b0b110e00d3847ecae9d6e01cce70e",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 480,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 213,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:24:51.249130+00:00",
+  "response": {
+    "id": "924cc694-aef8-4701-a3d6-192ac5fe8333",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_xYPgwtEjcyOZTwlwR65s7811",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊承诺周五下班前发出压测报告，属于对 pay_e2e_test 任务的明确完成时间承诺。周五为 2026-10-16，下班前=18:00。",
+          "items": [
+            {
+              "intent": "make_commitment",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_e2e_test",
+              "time_expression": "周五下班前",
+              "expected_completion": "2026-10-16T18:00:00+08:00",
+              "source_quote": "压测报告我保证周五下班前发到群里",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 480,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 213,
+      "service_tier": "standard"
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "c03fdbf8c58e1a90a288225cc02612da",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 376,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2176,
+    "output_tokens": 178,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:30:43.678280+00:00",
+  "response": {
+    "id": "89a09f85-f009-48ea-8867-74e702b19783",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_o0cQtO63GcpgkVhfqstX6077",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊回答机器人关于 pay_e2e_test 的追问，称压测已全部跑通，属已完成、正常推进；任务已完成故不填预计完成时间。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "health_status": "on_track",
+              "task_id": "pay_e2e_test",
+              "source_quote": "压测已经全部跑通了",
+              "confidence": 0.92
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 376,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2176,
+      "output_tokens": 178,
+      "service_tier": "standard"
+    }
+  }
+}

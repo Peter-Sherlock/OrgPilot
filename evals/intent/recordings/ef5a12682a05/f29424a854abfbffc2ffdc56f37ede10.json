@@ -1,0 +1,53 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "f29424a854abfbffc2ffdc56f37ede10",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 500,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 181,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:13:11.157231+00:00",
+  "response": {
+    "id": "9f45398c-c150-4208-af95-97d59d2e37c2",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_hY1AN1vD6ppE6JD21FwF6581",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳汇报自己负责的收银台页面改版已完成，仅剩视觉走查，无未解决问题，属正常推进。任务已完成不填完成时间。",
+          "items": [
+            {
+              "intent": "report_status",
+              "task_id": "checkout_page",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "health_status": "on_track",
+              "source_quote": "收银台页面改版做完了，就差最后的视觉走查",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 500,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 181,
+      "service_tier": "standard"
+    }
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "e9eaebd539341041dda4182a42fa27dc",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 476,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 172,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:25:37.036305+00:00",
+  "response": {
+    "id": "34a01c10-d348-4e99-a09b-93408621104b",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_bkHo38FJm8sHIE2Ngxvh0547",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊对压测任务表态不会延期，属正常推进的否定式陈述（否定风险），健康度 on_track；未给出具体完成时间。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "task_id": "pay_e2e_test",
+              "health_status": "on_track",
+              "source_quote": "压测不会延期的，放心",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 476,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 172,
+      "service_tier": "standard"
+    }
+  }
+}

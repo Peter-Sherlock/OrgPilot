@@ -1,0 +1,54 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "1e497e0008abf839ad7a655229dead40",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 498,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 202,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:13:14.838102+00:00",
+  "response": {
+    "id": "950bdb25-c885-48c8-9a5d-11eb12cba57d",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_h2f9s2h0hSdLNrogT1aA5595",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳对自己负责的收银台页面改版做出明确完成时间承诺，本周五即 2026-10-16 18:00。",
+          "items": [
+            {
+              "intent": "make_commitment",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "checkout_page",
+              "time_expression": "本周五之前",
+              "expected_completion": "2026-10-16T18:00:00+08:00",
+              "source_quote": "收银台页面我本周五之前一定联调完",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 498,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 202,
+      "service_tier": "standard"
+    }
+  }
+}

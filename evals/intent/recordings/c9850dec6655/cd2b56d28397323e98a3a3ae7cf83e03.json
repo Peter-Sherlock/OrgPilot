@@ -1,0 +1,63 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "cd2b56d28397323e98a3a3ae7cf83e03",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 398,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 246,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:08:52.137347+00:00",
+  "response": {
+    "id": "45da8026-7a57-4d04-8474-d8e4c9f07da9",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_Lt2xApzDexAslkqVdtAO0214",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "刘芳汇报收银台页面改版联调已完成（on_track），并说明商户后台接口尚未开始，属于对 merchant_admin 的状态说明。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "收银台页面改版联调完了",
+              "confidence": 0.9,
+              "task_id": "checkout_page",
+              "health_status": "on_track"
+            },
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "source_quote": "商户后台的接口我还没碰",
+              "confidence": 0.85,
+              "task_id": "merchant_admin",
+              "health_status": "at_risk"
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 398,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 246,
+      "service_tier": "standard"
+    }
+  }
+}

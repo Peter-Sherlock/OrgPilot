@@ -1,0 +1,53 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "8aba7642bda5fd465333948edab5cf5e",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 666,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 169,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:28:28.731196+00:00",
+  "response": {
+    "id": "45bd2169-c3df-4c7e-add1-fd89142f1965",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_B9MqxnmKbKoq9H4Dp19d1610",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "发送者仍在回答机器人追问的完成时间，明确表示定不下来，属于回答待回答问题；被追问时给不出时间，健康度为 at_risk。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "task_id": "pay_e2e_test",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "health_status": "at_risk",
+              "source_quote": "暂时定不下来",
+              "confidence": 0.9
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 666,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 169,
+      "service_tier": "standard"
+    }
+  }
+}

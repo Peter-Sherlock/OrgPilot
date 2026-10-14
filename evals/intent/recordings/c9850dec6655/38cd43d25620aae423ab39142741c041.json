@@ -1,0 +1,51 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "38cd43d25620aae423ab39142741c041",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 386,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 136,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:08:33.256325+00:00",
+  "response": {
+    "id": "82cf90fa-7912-4990-861f-da567a2526c3",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_PNeCuRo2KB2M1pvO3R4t7513",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "询问“指令列表在哪里可以看到”，是在问机器人能做什么/用法，属于 help。",
+          "items": [
+            {
+              "intent": "help",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "指令列表在哪里可以看到？",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 386,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 136,
+      "service_tier": "standard"
+    }
+  }
+}

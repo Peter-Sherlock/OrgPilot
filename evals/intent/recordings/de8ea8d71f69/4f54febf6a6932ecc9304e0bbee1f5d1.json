@@ -1,0 +1,52 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "4f54febf6a6932ecc9304e0bbee1f5d1",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 463,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2048,
+    "output_tokens": 150,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:25:05.463279+00:00",
+  "response": {
+    "id": "9e102bcd-43be-46f5-8f2b-3f6f66eebfc5",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_kVkw7RjliJ8PtXa6tBLx2096",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "赵敏询问对账模块联调的当前进度，属于查询任务状态，无待回答问题。",
+          "items": [
+            {
+              "intent": "query_status",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "ledger_check",
+              "source_quote": "对账模块现在进度怎么样了？",
+              "confidence": 0.95
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 463,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2048,
+      "output_tokens": 150,
+      "service_tier": "standard"
+    }
+  }
+}

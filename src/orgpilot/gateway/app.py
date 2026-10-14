@@ -19,6 +19,7 @@ from orgpilot.feishu.client import AsyncFeishuClient
 from orgpilot.feishu.ws import FeishuWebSocketListener
 from orgpilot.gateway.routes import approvals, cases, coordination, dag, events, feishu
 from orgpilot.gateway.service import GatewayService
+from orgpilot.intent.router import MessageRouter
 from orgpilot.storage.database import Database
 
 
@@ -37,6 +38,14 @@ def create_app(
             api_key=runtime_settings.aihubmix_api_key or "",
             base_url=runtime_settings.aihubmix_base_url,
             model=runtime_settings.aihubmix_model,
+            thinking=runtime_settings.llm_thinking,
+        )
+    elif runtime_settings.llm_provider == "deepseek":
+        llm_client = AnthropicCompatibleLLMClient(
+            api_key=runtime_settings.deepseek_api_key or "",
+            base_url=runtime_settings.deepseek_base_url,
+            model=runtime_settings.deepseek_model,
+            thinking=runtime_settings.llm_thinking,
         )
     extractor = ClaimExtractor(llm_client=llm_client)
 
@@ -58,7 +67,12 @@ def create_app(
         database,
         extractor=extractor,
         adapter_factory=adapter_factory,
+        business_timezone=runtime_settings.business_timezone,
     )
+
+    # Layered intent router (ADR-0008 §3): mock provider keeps the heuristic client.
+    intent_router = MessageRouter(service=gateway_service, settings=runtime_settings)
+    gateway_service.intent_router = intent_router  # type: ignore[attr-defined]
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:

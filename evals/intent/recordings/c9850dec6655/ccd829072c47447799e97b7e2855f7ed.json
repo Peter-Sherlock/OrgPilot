@@ -1,0 +1,63 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "ccd829072c47447799e97b7e2855f7ed",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 416,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 245,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:03:04.266054+00:00",
+  "response": {
+    "id": "221bf43c-0daf-4744-a787-48c894c854ea",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_Cj3JiKrqrxGCAlySes6N8256",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟回答负责人的进度追问，汇报两个负责任务均正常推进，无未解决问题，健康度为 on_track。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "支付SDK和商户后台都正常了",
+              "confidence": 0.9,
+              "task_id": "pay_sdk",
+              "health_status": "on_track"
+            },
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "支付SDK和商户后台都正常了",
+              "confidence": 0.9,
+              "task_id": "merchant_admin",
+              "health_status": "on_track"
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 416,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 245,
+      "service_tier": "standard"
+    }
+  }
+}

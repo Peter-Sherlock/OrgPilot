@@ -1,0 +1,42 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "dd57a6c3c504e0a600e4b5b336bf8738",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 385,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 103,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:00:25.282371+00:00",
+  "response": {
+    "id": "9fd88153-186e-46ee-b165-861091954927",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_dMw6asYK6p0q55p3geIb0365",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息为假设句（“假如……我就……”），假设不产生状态变更，也不构成对某任务的汇报或承诺。仅识别为假设语气，无对应意图条目。",
+          "items": [],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 385,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 103,
+      "service_tier": "standard"
+    }
+  }
+}

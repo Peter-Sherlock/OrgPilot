@@ -1,0 +1,53 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "899c80bb18448fe272ad986a82e0500d",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 380,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 161,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:08:39.473256+00:00",
+  "response": {
+    "id": "32f58901-4975-4418-9173-4f1bd7b8372f",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_IJc6oM6VVrGkZXYHL5YI2941",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟在澄清自己负责的商户后台管理端没有延期，属于状态汇报，否定表述但实际含义为正常推进。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "task_id": "merchant_admin",
+              "health_status": "on_track",
+              "source_quote": "商户后台并没有延期",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 380,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 161,
+      "service_tier": "standard"
+    }
+  }
+}

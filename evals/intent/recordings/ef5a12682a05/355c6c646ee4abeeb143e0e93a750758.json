@@ -1,0 +1,52 @@
+{
+  "prompt_version": "ef5a12682a05",
+  "request_hash": "355c6c646ee4abeeb143e0e93a750758",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 490,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2432,
+    "output_tokens": 167,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T11:14:13.376928+00:00",
+  "response": {
+    "id": "25cc4b80-f5bb-4b76-aa2e-1523e2bb6bd0",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_4vYdwBKdA6oldPiRUtsQ1768",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息为假设句（“假如……我就……”），假设不产生状态变更，也不构成对 SDK 任务的汇报或承诺。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "hypothetical",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "task_id": "pay_sdk",
+              "source_quote": "假如SDK这边周一还出问题，我就先测别的模块",
+              "confidence": 0.6
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 490,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2432,
+      "output_tokens": 167,
+      "service_tier": "standard"
+    }
+  }
+}

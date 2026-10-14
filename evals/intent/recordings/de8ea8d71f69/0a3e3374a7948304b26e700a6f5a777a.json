@@ -1,0 +1,54 @@
+{
+  "prompt_version": "de8ea8d71f69",
+  "request_hash": "0a3e3374a7948304b26e700a6f5a777a",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 233,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2304,
+    "output_tokens": 211,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T09:26:06.976243+00:00",
+  "response": {
+    "id": "3370dcfb-b59f-4d24-ae49-89a9c36681a1",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_hjL6ekHVYZDiyVUtTatN3078",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "王伟汇报支付SDK报错修复进展，预计下午三点修好，早于截止日10-16，属正常推进；下午三点是修复完成时间，但按规则“几点能定位/修复”类时间不填 expected_completion。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "task_id": "pay_sdk",
+              "health_status": "on_track",
+              "time_expression": "下午三点",
+              "source_quote": "支付SDK的报错还在修，预计下午三点能修好",
+              "confidence": 0.85
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 233,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2304,
+      "output_tokens": 211,
+      "service_tier": "standard"
+    }
+  }
+}

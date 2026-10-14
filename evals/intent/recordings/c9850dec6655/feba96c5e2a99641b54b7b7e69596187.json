@@ -1,0 +1,52 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "feba96c5e2a99641b54b7b7e69596187",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 389,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 151,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:09:08.446682+00:00",
+  "response": {
+    "id": "9c332071-fe2c-48f6-b2fe-5f5d4b5e8a1b",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_bm6KC7XkOq9R3JbzDPXb9418",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "用户在纠正机器人对任务的理解，属于 correction 类识别；无待回答问题。",
+          "items": [
+            {
+              "intent": "correction",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "task_id": "merchant_admin",
+              "source_quote": "你理解错了，我说的是商户后台，不是收银台",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 389,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 151,
+      "service_tier": "standard"
+    }
+  }
+}

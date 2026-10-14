@@ -1,0 +1,53 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "f87d24f9d913478cc8899394f8353ca1",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 376,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 184,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-10-13T12:00:29.953400+00:00",
+  "response": {
+    "id": "de9dda6e-ca2b-486b-8937-999b83200aa2",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_rsiSREPNTQpTA59eHKID1919",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "陈磊谈自己负责的支付全链路压测，句末“吧”为推测性陈述而非向机器人提问；出现“差不多”属含糊推测，无未解决问题，健康度按正常推进。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "task_id": "pay_e2e_test",
+              "health_status": "on_track",
+              "source_quote": "压测差不多准备好了吧",
+              "confidence": 0.7
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 376,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 184,
+      "service_tier": "standard"
+    }
+  }
+}
