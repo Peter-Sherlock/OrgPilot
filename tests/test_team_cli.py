@@ -15,6 +15,7 @@ from orgpilot.gateway.service import GatewayService
 from orgpilot.storage.database import Database
 
 EXAMPLE = Path(__file__).resolve().parents[1] / "team.example.yaml"
+REAL_TEAM_DIRECTORY = cli._team_directory
 DIRECTORY = {
     "wang@example.com": "ou_wang",
     "alice@example.com": "ou_alice",
@@ -110,11 +111,11 @@ def test_import_reports_unresolved_emails(
 def test_import_requires_feishu_credentials(
     team_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.undo()  # drop the mock directory and env from the fixture
+    # Restore only the real directory factory. monkeypatch.undo() would also undo
+    # the conftest guard and let a developer's .env supply real credentials.
+    monkeypatch.setattr(cli, "_team_directory", REAL_TEAM_DIRECTORY)
     monkeypatch.delenv("FEISHU_APP_ID", raising=False)
     monkeypatch.delenv("FEISHU_APP_SECRET", raising=False)
-    monkeypatch.setenv("ORGPILOT_DATABASE_URL", "sqlite+aiosqlite:///:memory:")
-    monkeypatch.setenv("ORGPILOT_FEISHU_PROJECT_ID", "feishu-project")
 
     with pytest.raises(SystemExit, match="FEISHU_APP_ID and FEISHU_APP_SECRET"):
         _run(monkeypatch, "import", str(team_env))
