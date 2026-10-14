@@ -41,6 +41,7 @@ from orgpilot.intent.replies import (
     HELP_TEXT,
     ReplyKind,
     RouterOutcome,
+    sync_started_text,
 )
 from orgpilot.storage.message_store import SqlMessageStore
 
@@ -466,9 +467,7 @@ class MessageRouter:
             return RouterOutcome(
                 msg="sync_session_started",
                 reply_category=ReplyKind.SYNC_STARTED,
-                reply_text=(
-                    f"已发起全员进度同步：已向 {len(session.member_probes)} 位负责人发送进度探针。"
-                ),
+                reply_text=sync_started_text(session),
                 data={
                     "session_id": session.session_id,
                     "intent_summary": {"command": head},

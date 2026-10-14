@@ -16,6 +16,7 @@ from orgpilot.adapter.base import CollaborationAdapter
 from orgpilot.dependencies.analyzer import DependencyAnalyzer
 from orgpilot.domain.enums import (
     ActionType,
+    CommandStatus,
     HealthStatus,
     ProbeMemberStatus,
     SyncSessionStatus,
@@ -129,6 +130,7 @@ class ProgressSyncCoordinator:
             owner_tasks[initiated_by] = []
 
         member_probes: dict[str, MemberProbeState] = {}
+        failed_probe_member_ids: list[str] = []
         for member_id, task_ids in owner_tasks.items():
             member_name = (
                 self.agent.projector.state.members[member_id].display_name
@@ -171,10 +173,22 @@ class ProgressSyncCoordinator:
                 created_at=now,
                 idempotency_key=f"idem:probe:{session_id}:{member_id}",
             )
+            # A probe that never reached the member must not be reported as sent:
+            # the adapter returns FAILED instead of raising (F2), so check both.
             try:
-                self.adapter.execute(cmd)
+                result = self.adapter.execute(cmd)
             except Exception as exc:
                 logger.error("Failed to send inquiry to %s: %s", member_id, exc)
+                failed_probe_member_ids.append(member_id)
+            else:
+                if result.status is not CommandStatus.SUCCESS:
+                    logger.warning(
+                        "Probe to %s was not delivered (%s): %s",
+                        member_id,
+                        result.status.value,
+                        result.error,
+                    )
+                    failed_probe_member_ids.append(member_id)
 
         session = SyncSession(
             session_id=session_id,
@@ -184,6 +198,7 @@ class ProgressSyncCoordinator:
             created_at=now,
             updated_at=now,
             member_probes=member_probes,
+            failed_probe_member_ids=failed_probe_member_ids,
         )
         self._sessions[session_id] = session
         logger.info(

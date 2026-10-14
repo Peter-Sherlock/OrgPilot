@@ -1,6 +1,7 @@
 """Feishu collaboration adapter for ActionCommands, Feishu cards, and OpenAPI calls."""
 
 import asyncio
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import Any
@@ -21,6 +22,8 @@ from orgpilot.feishu.cards import (
     build_notification_card,
 )
 from orgpilot.feishu.client import FeishuClient, MockFeishuClient
+
+logger = logging.getLogger(__name__)
 
 
 class FeishuCollaborationAdapter(CollaborationAdapter):
@@ -73,6 +76,9 @@ class FeishuCollaborationAdapter(CollaborationAdapter):
             except Exception as exc:
                 # A probe or clarification that never reached Feishu must surface as a
                 # failed command, not as a silently "successful" send.
+                logger.warning(
+                    "Feishu send_message to %s failed: %s", target, str(exc) or repr(exc)
+                )
                 result = ActionResult(
                     command_id=command.command_id,
                     action_id=command.action_id,
