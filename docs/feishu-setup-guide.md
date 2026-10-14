@@ -25,8 +25,8 @@ OrgPilot 支持 **WebSocket 长连接（官方推荐，零公网依赖）** 与 
    - `im:message.p2p_msg:readonly`（读取单聊消息）
    - `im:message.group_at_msg:readonly`（读取群聊中 @机器人的消息）
    - `task:task:v2` / `task:task:v2:readonly`（创建与更新飞书任务）
-   - `contact:user.id:readonly`（通过手机号或邮箱获取用户 ID，`orgpilot team import` 用它把成员邮箱换成 open_id）
-3. 在 **“权限管理”→“数据权限”/“通讯录权限范围”** 中，把团队成员所在的部门或人员加入可访问范围。范围外的成员查不到 open_id，导入会中止并列出这些邮箱；
+   - `contact:user.id:readonly`（通过手机号或邮箱获取用户 ID，`orgpilot team import` 用它把成员的邮箱或手机号换成 open_id）
+3. 在 **“权限管理”→“数据权限”/“通讯录权限范围”** 中，把团队成员所在的部门或人员加入可访问范围。范围外的成员查不到 open_id，导入会中止并列出这些成员；
 4. 开通权限后，点击右上角 **“创建版本”** 并发布。
 
 ---
@@ -84,12 +84,14 @@ uv run orgpilot start-feishu-ws
 
 机器人只处理名单里成员的私聊消息，名单外的人会收到“请联系项目负责人”的提示。
 
-1. 复制示例文件并填写真实成员和任务（`team.yaml` 已被 Git 忽略，因为里面有同事的邮箱）：
+1. 复制示例文件并填写真实成员和任务（`team.yaml` 已被 Git 忽略，因为里面有同事的邮箱和手机号）：
    ```powershell
    Copy-Item team.example.yaml team.yaml
    ```
    - `project` 必须等于 `ORGPILOT_FEISHU_PROJECT_ID`；
-   - `email` 填飞书个人资料里的 **“邮箱”**。**飞书企业邮箱查不到 open_id**；
+   - 每个成员填 `email` 或 `mobile`，也可以两个都填（先按邮箱查，查不到再按手机号查）；
+   - `email` 必须是**飞书账号绑定的邮箱**。在管理后台填写的“工作邮箱 / 企业邮箱”查不到（2026-10-14 实测）；用手机号注册、没有绑定邮箱的成员，直接填 `mobile`；
+   - `mobile` 中国大陆号码直接写 11 位数字，其他国家和地区写 `+区号`；
    - 至少一名成员的 `role` 为 `pm`：只有 pm 能发起全员同步、接收改期审批。
 2. 先预览，确认无误后再写入：
    ```powershell

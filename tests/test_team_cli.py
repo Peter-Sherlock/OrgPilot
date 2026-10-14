@@ -19,8 +19,8 @@ REAL_TEAM_DIRECTORY = cli._team_directory
 DIRECTORY = {
     "wang@example.com": "ou_wang",
     "alice@example.com": "ou_alice",
-    "bob@example.com": "ou_bob",
 }
+MOBILES = {"18000000002": "ou_bob"}  # team.example.yaml gives bob a mobile only
 
 
 @pytest.fixture
@@ -30,7 +30,9 @@ def team_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("ORGPILOT_FEISHU_PROJECT_ID", "feishu-project")
     monkeypatch.delenv("ORGPILOT_DEMO_MODE", raising=False)
     monkeypatch.setattr(
-        cli, "_team_directory", lambda settings: MockFeishuClient(email_directory=DIRECTORY)
+        cli,
+        "_team_directory",
+        lambda settings: MockFeishuClient(email_directory=DIRECTORY, mobile_directory=MOBILES),
     )
     roster = tmp_path / "team.yaml"
     shutil.copy(EXAMPLE, roster)

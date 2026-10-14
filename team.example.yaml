@@ -1,13 +1,14 @@
 # OrgPilot team roster (ADR-0009). Copy to team.yaml, fill in real members, then:
 #   uv run orgpilot team import team.yaml --dry-run
 #   uv run orgpilot team import team.yaml
-# team.yaml is git-ignored because it holds colleagues' emails.
+# team.yaml is git-ignored because it holds colleagues' emails and mobiles.
 
 project: feishu-project      # must equal ORGPILOT_FEISHU_PROJECT_ID (or --project)
 
 members:                     # key = short alias, used only inside this file
   wang:
-    email: wang@example.com  # the "邮箱" on the Feishu profile, not a Feishu enterprise mailbox
+    email: wang@example.com  # the account's email; a "work email" set in the admin console
+                             # is NOT found. Give email, mobile, or both (email is tried first).
     name: 王鹏飞
     role: pm                 # only pm starts team syncs and receives approvals
   alice:
@@ -15,7 +16,7 @@ members:                     # key = short alias, used only inside this file
     name: 支付工程师 Alice
     role: engineer           # any other role is a display label
   bob:
-    email: bob@example.com
+    mobile: 18000000002      # mainland numbers without +86; others as +<country code>...
     name: 前端工程师 Bob
     role: engineer
 

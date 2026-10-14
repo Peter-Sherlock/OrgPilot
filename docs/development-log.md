@@ -1,5 +1,39 @@
 # 开发记录
 
+## 2026-10-14：P-1 实测修订——手机号标识、测试隔离 `.env`、接口报错提示（分支 `feat/team-onboarding`）
+
+在飞书「测试企业」中用单账号做实测，在导入第一步就发现问题。
+
+### 实测发现
+
+- **查不到时的返回格式**：接口返回 `code: 0`，对应条目只有 `{"email": "..."}`、没有 `user_id`，而不是省略这一条。ADR 初稿里“文档未说明、待确认”的问题至此确认；代码原本对两种情况都按未解析处理，行为正确；
+- **只靠邮箱在手机号注册的租户里不可用**：测试账号是手机号注册的，资料里没有账号邮箱。在管理后台把同一个 QQ 邮箱填进“工作邮箱（Work email）”后，按邮箱仍查不到；按手机号能直接查到 open_id。“工作邮箱不算账号邮箱”是根据现象推断的，没有拿到字段级的直接证据；
+- **开发者的 `.env` 会泄漏进测试**：`OrgPilotSettings.from_env` 把 `./.env` 写进 `os.environ`，并且在整个进程里一直生效。worktree 里放了实测凭据后，`test_import_requires_feishu_credentials` 先调用了 `monkeypatch.undo()`，把防护也一起撤掉了，结果**真实调用了一次 `batch_get_id`**（只读，查询的是 example.com 示例邮箱，没有写入数据，也没有发消息）。
+
+### 修复与改动
+
+- `test`：`tests/conftest.py` 增加自动生效的 fixture，屏蔽 `.env` 加载，只有 `.env` 解析器自己的测试通过 `real_dotenv` 标记豁免；凭据测试改为显式恢复真实的 `_team_directory`，不再用 `undo()`；
+- `feat(team)`：成员可以填 `email`、`mobile` 或两个都填；先按邮箱查，查不到再按手机号查，两者指向不同用户时报错。手机号去掉空格、横线和 `+86` 后保存并检查重复，和邮箱放在同一个 `batch_get_id` 请求里；不写入事件，错误信息里中间四位打码；
+- `fix(cli)`：接口报错（如 `Access denied`）时输出接口信息和要检查的权限，不再抛出 Python 异常；
+- 文档：ADR-0009 增加“实测修订”一节；配置指南说明邮箱字段的坑和 `mobile` 的写法；`team.example.yaml` 增加手机号示例。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS
+pytest: 379 passed（worktree 中存在真实 .env 时运行，测试未读取它）
+coverage: 91.71% branch-aware total coverage (fail_under=90%)
+ruff check: All checks passed
+git diff --check: PASS
+```
+
+### 仍未验证
+
+- 实测只走到导入预览这一步，失败原因已定位，之后的步骤（导入、私聊、`/同步`、审批、三方比对）待按手机号重跑；
+- 名单内第二个真实账号的收发未在真实租户中验证（单账号实测），该逻辑由自动化端到端测试覆盖。
+
+---
+
 ## 2026-10-13：P-1 团队接入——team.yaml 名单导入（分支 `feat/team-onboarding`，ADR-0009）
 
 ### 已实现
