@@ -165,3 +165,18 @@ async def test_imported_members_chat_and_pm_syncs_their_owners(
         assert set(session.member_probes) == {"ou_alice", "ou_bob"}
     finally:
         await db.close()
+
+
+def test_import_reports_feishu_api_errors_without_traceback(
+    team_env: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class DeniedDirectory:
+        async def batch_get_open_ids(self, emails=(), mobiles=()) -> dict[str, str]:
+            raise RuntimeError("Feishu batch get user id failed: Access denied")
+
+    monkeypatch.setattr(cli, "_team_directory", lambda settings: DeniedDirectory())
+
+    assert _run(monkeypatch, "import", str(team_env)) == 1
+    err = capsys.readouterr().err
+    assert "调用飞书接口失败：Feishu batch get user id failed: Access denied" in err
+    assert "contact:user.id:readonly" in err

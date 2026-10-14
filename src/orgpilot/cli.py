@@ -547,6 +547,8 @@ def _team_import(path: Path, project: str | None, dry_run: bool) -> int:
     import asyncio
     from datetime import UTC, datetime
 
+    import httpx
+
     from orgpilot.config import OrgPilotSettings
     from orgpilot.gateway.service import GatewayService
     from orgpilot.storage.database import Database
@@ -577,6 +579,15 @@ def _team_import(path: Path, project: str | None, dry_run: bool) -> int:
             )
         except TeamImportError as exc:
             _print_team_errors(exc.errors)
+            return 1
+        except (RuntimeError, httpx.HTTPError) as exc:
+            # A Feishu API error (e.g. Access denied) is a setup problem, not a crash.
+            _print_team_errors(
+                [
+                    f"调用飞书接口失败：{exc}",
+                    "如果是 Access denied，确认应用已开通 contact:user.id:readonly 并已生效",
+                ]
+            )
             return 1
         finally:
             await db.close()
