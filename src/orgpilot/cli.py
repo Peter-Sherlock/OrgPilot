@@ -582,10 +582,12 @@ def _team_import(path: Path, project: str | None, dry_run: bool) -> int:
             return 1
         except (RuntimeError, httpx.HTTPError) as exc:
             # A Feishu API error (e.g. Access denied) is a setup problem, not a crash.
+            # httpx timeouts stringify to "", so fall back to the exception type.
             _print_team_errors(
                 [
-                    f"调用飞书接口失败：{exc}",
-                    "如果是 Access denied，确认应用已开通 contact:user.id:readonly 并已生效",
+                    f"调用飞书接口失败：{str(exc) or type(exc).__name__}",
+                    "如果是 Access denied，确认应用已开通 contact:user.id:readonly 并已生效；"
+                    "网络超时可以直接重试",
                 ]
             )
             return 1

@@ -14,14 +14,14 @@
 
 - `test`：`tests/conftest.py` 增加自动生效的 fixture，屏蔽 `.env` 加载，只有 `.env` 解析器自己的测试通过 `real_dotenv` 标记豁免；凭据测试改为显式恢复真实的 `_team_directory`，不再用 `undo()`；
 - `feat(team)`：成员可以填 `email`、`mobile` 或两个都填；先按邮箱查，查不到再按手机号查，两者指向不同用户时报错。手机号去掉空格、横线和 `+86` 后保存并检查重复，和邮箱放在同一个 `batch_get_id` 请求里；不写入事件，错误信息里中间四位打码；
-- `fix(cli)`：接口报错（如 `Access denied`）时输出接口信息和要检查的权限，不再抛出 Python 异常；
+- `fix(cli)`：接口报错（如 `Access denied`）时输出接口信息和要检查的权限，不再抛出 Python 异常；httpx 超时异常的消息是空字符串，这时改为显示异常类型（实测中遇到过一次 10 秒超时，重试即成功）；
 - 文档：ADR-0009 增加“实测修订”一节；配置指南说明邮箱字段的坑和 `mobile` 的写法；`team.example.yaml` 增加手机号示例。
 
 ### 验证状态
 
 ```text
 orgpilot replay --all: 9/9 PASS
-pytest: 379 passed（worktree 中存在真实 .env 时运行，测试未读取它）
+pytest: 380 passed（worktree 中存在真实 .env 时运行，测试未读取它）
 coverage: 91.71% branch-aware total coverage (fail_under=90%)
 ruff check: All checks passed
 git diff --check: PASS
@@ -29,7 +29,7 @@ git diff --check: PASS
 
 ### 仍未验证
 
-- 实测只走到导入预览这一步，失败原因已定位，之后的步骤（导入、私聊、`/同步`、审批、三方比对）待按手机号重跑；
+- 按手机号重跑预览已通过：真实租户里邮箱查不到后回退到手机号，计划为 1 个成员、2 个任务、3 个事件。之后的步骤（正式导入、私聊、`/同步`、审批、三方比对）待执行；
 - 名单内第二个真实账号的收发未在真实租户中验证（单账号实测），该逻辑由自动化端到端测试覆盖。
 
 ---

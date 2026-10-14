@@ -182,3 +182,20 @@ def test_import_reports_feishu_api_errors_without_traceback(
     err = capsys.readouterr().err
     assert "调用飞书接口失败：Feishu batch get user id failed: Access denied" in err
     assert "contact:user.id:readonly" in err
+
+
+def test_import_names_network_errors_that_have_no_message(
+    team_env: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import httpx
+
+    class TimingOutDirectory:
+        async def batch_get_open_ids(self, emails=(), mobiles=()) -> dict[str, str]:
+            raise httpx.ReadTimeout("")
+
+    monkeypatch.setattr(cli, "_team_directory", lambda settings: TimingOutDirectory())
+
+    assert _run(monkeypatch, "import", str(team_env)) == 1
+    err = capsys.readouterr().err
+    assert "调用飞书接口失败：ReadTimeout" in err
+    assert "网络超时可以直接重试" in err
