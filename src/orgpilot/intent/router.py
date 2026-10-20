@@ -6,6 +6,11 @@ intent classification (layer 1; transient errors retried once) → guardrails
 and handlers (layer 2). The router owns the single reply send per message and
 records every outcome in the persistent message log, which also feeds the
 "recent turns" conversation context.
+
+In-flight conversation state survives a restart (ADR-0013): the first turn that
+touches a project restores its dialogue state from SQL, and every turn ends by
+checkpointing the dialogue state and the project's sync sessions in one write,
+BEFORE the processed-message row that marks the message as handled.
 """
 
 import asyncio
@@ -131,6 +136,29 @@ class MessageRouter:
             service, self.dialogue, self.settings.intent_confidence_threshold
         )
         self.handlers.bind_session_registrar(self.register_probe_clarifications)
+        self._restored_projects: set[str] = set()
+
+    # ------------------------------------------------------------- persistence
+
+    async def restore(self, project_id: str) -> None:
+        """Loads the project's persisted dialogue state once per router (ADR-0013).
+
+        Entries registered in memory before this runs are newer and are kept.
+        """
+        if project_id in self._restored_projects:
+            return
+        snapshot = await self.service.conversation_store.load_dialogue(project_id)
+        if snapshot is not None:
+            self.dialogue.restore_project(project_id, snapshot)
+        self._restored_projects.add(project_id)
+
+    async def checkpoint(self, project_id: str) -> None:
+        """Persists the project's dialogue state and sync sessions (ADR-0013).
+
+        Turns call this themselves; a caller that changes dialogue state through
+        the synchronous ``register_*`` methods outside a turn calls it after.
+        """
+        await self.service.save_conversation_state(project_id, self.dialogue)
 
     # ------------------------------------------------------------- public API
 
@@ -193,12 +221,15 @@ class MessageRouter:
         occurred_at: datetime | None = None,
     ) -> Any:
         """Public sync entry: starts the session and registers probe clarifications."""
+        await self.restore(project_id)
         session = await self.service.start_progress_sync(
             project_id,
             initiated_by=initiated_by,
             occurred_at=occurred_at,
         )
         self.register_probe_clarifications(project_id, session, occurred_at=occurred_at)
+        # The session and its probe questions are persisted together (ADR-0013).
+        await self.checkpoint(project_id)
         return session
 
     def register_pending_sync_confirmation(
@@ -245,14 +276,21 @@ class MessageRouter:
                 data={"previous_msg": previous_msg, "intent_summary": {}},
             )
 
-        outcome = await self._route(
-            project_id=project_id,
-            sender_id=sender_id,
-            message_id=message_id,
-            text=text,
-            occurred_at=occurred_at,
-            chat_type=chat_type,
-        )
+        await self.restore(project_id)
+        try:
+            outcome = await self._route(
+                project_id=project_id,
+                sender_id=sender_id,
+                message_id=message_id,
+                text=text,
+                occurred_at=occurred_at,
+                chat_type=chat_type,
+            )
+        finally:
+            # The database mirrors whatever this process now holds in memory,
+            # even when routing failed part-way; the processed-message row below
+            # stays the turn's last write.
+            await self.checkpoint(project_id)
 
         intent_summary = outcome.data.get("intent_summary", {})
         await self.messages.record_outcome(
@@ -281,6 +319,25 @@ class MessageRouter:
         now: datetime,
     ) -> dict[str, Any]:
         """Handles sync_confirm / sync_cancel card button callbacks in place."""
+        await self.restore(project_id)
+        try:
+            return await self._sync_card_action(
+                project_id=project_id,
+                action_value=action_value,
+                operator_id=operator_id,
+                now=now,
+            )
+        finally:
+            await self.checkpoint(project_id)
+
+    async def _sync_card_action(
+        self,
+        *,
+        project_id: str,
+        action_value: dict[str, Any],
+        operator_id: str,
+        now: datetime,
+    ) -> dict[str, Any]:
         action = action_value.get("action")
         requested_at = _parse_iso(action_value.get("requested_at"))
         confirmation = self.dialogue.get_pending_sync_confirmation(

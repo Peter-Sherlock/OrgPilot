@@ -38,7 +38,9 @@ LLM 声明抽取引擎 (`src/orgpilot/extraction/`，`/messages` API 的旧路�
         ↓
 SQL 异步持久化存储 (`src/orgpilot/storage/`)
         ├── SqlEventStore (基于 (project_id, event_id) 唯一索引与 SHA-256 哈希校验的 Append-only 幂等事件日志)
-        └── SqlStateStore (OrgState / CaseLedger / ApprovalManager 快照持久化与跨进程瞬时恢复)
+        ├── SqlStateStore (OrgState / CaseLedger / ApprovalManager 快照持久化与跨进程瞬时恢复)
+        ├── SqlMessageStore (已处理消息：消息级幂等 + 最近对话轮次)
+        └── SqlConversationStore (待回答追问、待确认卡片与同步会话快照，重启后恢复，ADR-0013)
         ↓
 确定性状态投影 (`OrgProjector`)
         ↓
@@ -73,7 +75,7 @@ Case 账本对齐与消除 (`CaseLedger`)
 | `team` | `team.yaml` 解析校验、邮箱 / 手机号解析、导入差异计划（三方比对）与全有或全无写入 | `TeamSpec`, `plan_import`, `import_team` |
 | `gateway` | FastAPI 异步事件网关、Webhook 路由、生命周期与 REST 服务；网关和独立长连接监听器共用同一套装配 | `create_app`, `build_gateway_service`, `GatewayService` |
 | `intent` | 分层意图路由、意图客户端（启发式 / LLM / oracle）、护栏、对话状态、意图评测 | `MessageRouter`, `LLMIntentClient`, `DialogueStateStore` |
-| `storage` | SQLAlchemy 2.0 异步数据库持久化、幂等事件表、状态与 Case 快照 | `Database`, `SqlEventStore`, `SqlStateStore`, `Base` |
+| `storage` | SQLAlchemy 2.0 异步数据库持久化、幂等事件表、状态与 Case 快照、已处理消息、对话状态与同步会话快照 | `Database`, `SqlEventStore`, `SqlStateStore`, `SqlMessageStore`, `SqlConversationStore`, `Base` |
 | `extraction` | 自然语言消息结构化抽取、防幻觉反查、相对时间解析、离线评测与可选在线客户端 | `ClaimExtractor`, `GroundingVerifier`, `TemporalResolver`, `MockLLMClient`, `AnthropicCompatibleLLMClient` |
 | `events` | 版本化事件契约、不可变信封、反序列化、内存幂等事件日志 | `OrgEvent`, `InMemoryEventLog`, `parse_event` |
 | `domain` | 领域模型、严格校验、枚举词汇、稳定领域异常、可注入时钟 | `OrgState`, `CoordinationCase`, `ActionCommand`, `ActionResult`, `ApprovalRequest`, `Clock` |
@@ -100,8 +102,16 @@ Case 账本对齐与消除 (`CaseLedger`)
 
 ### 3. 时间来源
 - 依赖"现在"的判断（审批过期、同步会话超时、追问 / 确认卡片的有效期、生成事件的时间戳）都从注入的 `Clock` 读取：生产用 `SystemClock`，测试和回放用 `FrozenClock`，同一场景在任何日期运行结果一致（`tests/test_clock_determinism.py`）；
+- 重启后恢复的追问、确认卡片和同步会话保留原来的时间戳，过期和超时仍按"原时间戳 + 当前 `Clock`"判断，不因重启重新计时；
 - 有意保留系统时间的：飞书 token 过期判断、存储层的元数据时间戳、评测报告与录制文件的生成时间。
 
 ### 4. 改期提议的载荷约定
 - `PROPOSE_RESCHEDULE` / `UPDATE_TASK` 的 payload 以 `new_deadline` 为唯一的截止时间键，另带 `task_title` 和 `impacted_tasks`（下游任务标题）供卡片展示；
 - 适配器缺少 `new_deadline` 时返回失败，不会用当前时间代替。
+
+### 5. 重启后恢复什么（ADR-0013）
+- **从事件库重放**：组织状态（以 `state_snapshots` 为重放缓存）、协调事项、审批；每个请求都重新构建 Agent；
+- **从快照恢复**：`DialogueStateStore` 的待回答追问与待确认卡片（`dialogue_snapshots`，每项目一行），`ProgressSyncCoordinator` 的同步会话（`sync_sessions`，每会话一行，按发起顺序加载）；已处理消息（`processed_messages`）本来就在库里；
+- **写入时机**：路由每处理完一条消息、一次同步卡片回调或一次 `start_sync`，就把该项目的对话状态和同步会话在一个事务里写入，写在 `processed_messages` 记录之前；内容没变时不写。REST `/sync` 启动会话后单独保存；
+- **读取时机**：协调器第一次为某项目构建时加载会话；路由第一次处理某项目时加载对话状态，加载前已登记在内存里的条目优先；
+- **仍只在内存**：LLM 意图客户端的花费累计 `spent_usd`（预算按进程计）和调用指标、飞书 tenant token 缓存、适配器 `audit_log`。发送消息与保存状态不是同一个事务，恰好在两者之间崩溃时探针或简报可能重发（至少一次）。

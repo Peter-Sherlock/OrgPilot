@@ -53,7 +53,7 @@ PM 发 `/同步`（或用自然语言请求同步，这时要先点确认卡片�
 | 可回放协调内核（事件 → 投影 → 依赖影响 → 协调事项 → 策略） | ✅ 已验证 | 9 个 ground-truth 场景回放通过（4 个 P0 + 5 个 M1） |
 | Mock 闭环 Agent（CaseLedger、三阶段动作、审批门禁、有界循环） | ✅ 已验证 | 同上 |
 | 分层意图识别（ADR-0008 第 1–3 步） | ✅ 离线评测通过 | DeepSeek V4.1 Flash，提示词已冻结，见[评测](#评测) |
-| SQL 持久化 + FastAPI 网关 | 🟡 原型 | 默认 SQLite、单实例；PostgreSQL 没做过环境验证 |
+| SQL 持久化 + FastAPI 网关 | 🟡 原型 | 默认 SQLite、单实例；重启后进行中的对话与同步会话可恢复（ADR-0013，有重启测试）；PostgreSQL 没做过环境验证 |
 | 飞书接入（Webhook、WebSocket 长连接、交互卡片） | 🟡 代码完成 | 报延期 → 审批卡片 → 批准改期的整条链路有端到端测试（Mock 飞书客户端）；真实租户里只做过单账号冒烟，演示步骤见 [`docs/feishu-demo-runbook.md`](docs/feishu-demo-runbook.md) |
 | 团队名单导入 `team.yaml`（ADR-0009） | 🟡 预览已实测 | 真实租户里预览导入通过；正式导入未验证 |
 | Web 控制台（DAG、解释时间线、审批台、多角色沙箱聊天） | ✅ 可本地演示 | Mock 模式下不需要任何凭据 |
@@ -160,7 +160,8 @@ PM 批准改期后，更新的是 OrgPilot 里的任务截止时间。名单导�
 
 ## 已知限制
 
-- 对话状态（待回答的追问、待确认的同步卡片）和进行中的同步会话只存在内存里，服务重启会丢失；
+- 重启后，待回答的追问、待确认的同步卡片和进行中的同步会话会从数据库恢复（ADR-0013），但发消息和保存状态不在同一个事务里：
+  恰好在两者之间崩溃时，探针或简报可能重发一次。LLM 花费预算（`--max-spend-usd`）只在进程内累计，重启后清零；
 - 只处理私聊，群聊消息直接拒收；飞书多维表格和日历还没接入；
 - claim 合并规则（ADR-0008 第 4 步）没实现；ADR-0008 登记了 7 个待修的意图识别已知问题；
 - 单实例部署，PostgreSQL 未验证；
@@ -192,6 +193,7 @@ PM 批准改期后，更新的是 OrgPilot 里的任务截止时间。名单导�
 - [ADR-0007](docs/adr/0007-github-integration-and-pr-only-permission.md) GitHub 集成与仅 PR 写权限（提案）
 - [ADR-0008](docs/adr/0008-layered-intent-recognition.md) 分层意图识别
 - [ADR-0009](docs/adr/0009-team-onboarding-and-roster-import.md) 团队接入与名单导入
+- [ADR-0013](docs/adr/0013-persist-in-flight-conversations.md) 进行中的对话状态与同步会话持久化（0010–0012 为另一分支上的草稿预留）
 
 ## 代码结构
 

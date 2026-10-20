@@ -1,5 +1,61 @@
 # 开发记录
 
+## 2026-10-20：进行中的对话与同步会话重启后恢复（分支 `feat/conversation-persistence`，ADR-0013）
+
+补上同日上一条记录推迟的“对话状态持久化”，按当时的结论和同步会话一起做。
+
+### 改动
+
+- `storage/conversation_store.py`：新增 `SqlConversationStore` 和两张表。`dialogue_snapshots` 每个项目一行，
+  存待回答的追问和待确认的同步卡片；`sync_sessions` 每个会话一行，自增 `id` 保留发起顺序。一次 `save`
+  在同一个事务里写两者，内容没变时不写；
+- `MessageRouter`：第一次处理某个项目时加载对话状态；`handle_message`、`handle_sync_card_action`、
+  `start_sync` 结束时保存（路由中途抛错也保存），保存在 `processed_messages` 记录之前；
+- `GatewayService`：只加装配——`conversation_store`、`get_sync_coordinator` 构建协调器时加载会话、
+  `save_conversation_state`（加锁导出后写入）；`webhook.py` 没有改动。REST `/sync` 启动会话后单独保存；
+- `DialogueStateStore` / `ProgressSyncCoordinator`：只加导出与恢复方法，接口仍是同步的，路由行为不变；
+- 持久化的时间必须带时区，否则 `ValueError`；加载时不判断过期、不改时间戳，过期和超时仍由原时间戳和
+  `service.clock` 决定；
+- 读不出来的快照（例如以后删了模型字段）记 warning 后按不存在处理，不会让该项目之后的每条消息都报错。
+
+### 取舍（详见 ADR-0013）
+
+- 选“每轮结束时整体保存”而不是“每次调用即写”：处理器和协调器大量原地修改条目（`reask_count += 1`、
+  `probe.status = ...`），评测工具也直接改 `coordinator._sessions`，逐处改成显式更新的改动面大，漏一处
+  就是只在重启后出现的缺陷；
+- 没有用事件溯源：这些是会过期的对话层临时状态，不是组织事实。
+
+### 新增测试
+
+- `tests/test_conversation_restart.py`（16 个，文件型 SQLite + `FrozenClock`）：追问、确认卡片（点按钮 /
+  回复“好的”）、`/同步` 中途重启后收敛出简报，每个流程都与不重启的结果逐项比对；过期的追问、卡片和
+  空闲会话在重启后仍按原时间过期；经 `build_gateway_service` + 飞书 webhook 的同一场景；时间往返、
+  拒绝不带时区的时间、会话顺序、内存条目优先、读不出来的快照；
+- 用两个故意改坏的版本核对区分度：完全不恢复时 10 个测试失败；恢复时把时间戳重置为当前时刻时，
+  4 个过期 / 超时测试失败。
+
+### 仍未覆盖（如实标注）
+
+- **至少一次**：副作用先于保存。在“简报已发、快照未写”之间崩溃，重启后会再发一次简报；探针已发出、
+  会话未保存时崩溃，需要重新 `/同步`，成员收到两遍探针；
+- **仍只在内存**：`LLMIntentClient.spent_usd`（`--max-spend-usd` 按进程计，重启清零）和调用指标、飞书
+  tenant token 缓存、适配器 `audit_log`。意图层没有 LLM 响应缓存；
+- 单写者假设：多实例同时写同一个库会互相覆盖对话快照；已完成的会话不清理；
+- 真实租户里没有做过“演示中途重启”的验证，只有自动化测试。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS
+pytest: 412 passed, coverage 92.34%（fail_under=90）
+ruff check: All checks passed
+意图评测离线回放（c9850dec6655）：dev 97/102、test 53/58、对话 10/10；与 origin/main 的报告逐样本一致（只差延迟）
+tests/test_feishu_demo_script.py: 2 passed
+git diff --check: PASS
+```
+
+---
+
 ## 2026-10-20：演示前收尾——修复审批改期链路、注入 Clock（分支 `feat/demo-readiness`）
 
 准备在真实飞书租户录演示前，逐段核对"报延期 → 审批卡片 → 批准改期"的代码路径。这条链路在飞书
