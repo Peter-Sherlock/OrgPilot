@@ -1,7 +1,50 @@
-"""Feishu 2.0 Interactive Card JSON generators for inquiry, approval, and notifications."""
+"""Feishu 2.0 Interactive Card JSON generators for inquiry, approval, and notifications.
 
+Every user-derived value placed into a ``lark_md`` field goes through
+``escape_lark_md``; the card's own markup (``**``, backticks, ``\\n``) is written
+around the escaped values. ``plain_text`` fields and button ``value`` payloads are
+not Markdown and stay raw.
+"""
+
+from collections.abc import Iterable
 from datetime import datetime
 from typing import Any
+
+# Feishu's 特殊字符转义说明 table: characters that hit Markdown syntax must be
+# written as HTML entities to show literally.
+# https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/content-components/rich-text
+# The table is on the 富文本组件 (``markdown`` tag) page; the 普通文本组件 page
+# for ``lark_md`` documents no escaping of its own. Only the characters that
+# drive lark_md's documented syntax are escaped: links ``[..](..)``, tags
+# ``<at>``/``<font>``/``<a>``, ``*``/``~`` emphasis, and backticks plus ``\``,
+# which could break out of the card's own code spans. ``_``, ``-``, ``:`` and
+# ``/`` stay as they are because member ids, task ids and ISO times use them.
+# ``&`` is escaped first so a literal entity in the input shows as typed.
+_LARK_MD_ESCAPES = str.maketrans(
+    {
+        "&": "&#38;",
+        "<": "&#60;",
+        ">": "&#62;",
+        "*": "&#42;",
+        "~": "&sim;",
+        "[": "&#91;",
+        "]": "&#93;",
+        "`": "&#96;",
+        "\\": "&#92;",
+        # A newline would let a value start its own line and fake a card row.
+        "\r": " ",
+        "\n": " ",
+    }
+)
+
+
+def escape_lark_md(value: Any) -> str:
+    """Renders an untrusted value as literal text inside a ``lark_md`` field."""
+    return str(value).translate(_LARK_MD_ESCAPES)
+
+
+def _code_list(values: Iterable[Any], separator: str = ", ") -> str:
+    return separator.join(f"`{escape_lark_md(v)}`" for v in values)
 
 
 def format_deadline(value: Any, fallback: str = "未指定") -> str:
@@ -16,14 +59,15 @@ def format_deadline(value: Any, fallback: str = "未指定") -> str:
 
 def build_inquiry_card(task_id: str, title: str, reason: str | None = None) -> dict[str, Any]:
     """Generates an inquiry card asking a team member for estimated recovery time."""
+    reason_md = escape_lark_md(reason) if reason else "检测到潜在阻塞或进度滞后风险"
     elements: list[dict[str, Any]] = [
         {
             "tag": "div",
             "text": {
                 "tag": "lark_md",
                 "content": (
-                    f"**任务**：`{task_id}` {title}\n"
-                    f"**风险发现**：{reason or '检测到潜在阻塞或进度滞后风险'}\n\n"
+                    f"**任务**：`{escape_lark_md(task_id)}` {escape_lark_md(title)}\n"
+                    f"**风险发现**：{reason_md}\n\n"
                     f"为了评估对下游依赖的影响，请回复或更新预计可恢复/完成的时间（例如：*“明天下午5点前搞定”*）。"
                 ),
             },
@@ -60,9 +104,7 @@ def build_approval_card(
     risk_level: str = "HIGH",
 ) -> dict[str, Any]:
     """Generates an interactive approval card with [Approve] and [Reject] action buttons."""
-    impacted_desc = (
-        ", ".join(f"`{t}`" for t in impacted_tasks) if impacted_tasks else "无直接影响任务"
-    )
+    impacted_desc = _code_list(impacted_tasks) if impacted_tasks else "无直接影响任务"
 
     elements: list[dict[str, Any]] = [
         {
@@ -72,18 +114,24 @@ def build_approval_card(
                     "is_short": True,
                     "text": {
                         "tag": "lark_md",
-                        "content": f"**受影响任务**\n`{task_id}` {task_title}",
+                        "content": (
+                            f"**受影响任务**\n`{escape_lark_md(task_id)}` "
+                            f"{escape_lark_md(task_title)}"
+                        ),
                     },
-                },
-                {
-                    "is_short": True,
-                    "text": {"tag": "lark_md", "content": f"**风险等级**\n`{risk_level}`"},
                 },
                 {
                     "is_short": True,
                     "text": {
                         "tag": "lark_md",
-                        "content": f"**建议新截止时间**\n`{proposed_deadline_str}`",
+                        "content": f"**风险等级**\n`{escape_lark_md(risk_level)}`",
+                    },
+                },
+                {
+                    "is_short": True,
+                    "text": {
+                        "tag": "lark_md",
+                        "content": f"**建议新截止时间**\n`{escape_lark_md(proposed_deadline_str)}`",
                     },
                 },
                 {
@@ -140,10 +188,9 @@ def build_approval_updated_card(
 ) -> dict[str, Any]:
     """Generates an in-place updated card replacing action buttons with final decision status."""
     is_approved = decision.lower() == "approved"
+    decided_by = f"审批人：{escape_lark_md(approver_name)}，时间：{escape_lark_md(decided_at_str)}"
     status_text = (
-        f"✅ **已批准**（审批人：{approver_name}，时间：{decided_at_str}）"
-        if is_approved
-        else f"❌ **已拒绝**（审批人：{approver_name}，时间：{decided_at_str}）"
+        f"✅ **已批准**（{decided_by}）" if is_approved else f"❌ **已拒绝**（{decided_by}）"
     )
     template_color = "green" if is_approved else "grey"
 
@@ -155,14 +202,17 @@ def build_approval_updated_card(
                     "is_short": True,
                     "text": {
                         "tag": "lark_md",
-                        "content": f"**受影响任务**\n`{task_id}` {task_title}",
+                        "content": (
+                            f"**受影响任务**\n`{escape_lark_md(task_id)}` "
+                            f"{escape_lark_md(task_title)}"
+                        ),
                     },
                 },
                 {
                     "is_short": True,
                     "text": {
                         "tag": "lark_md",
-                        "content": f"**目标调整时间**\n`{proposed_deadline_str}`",
+                        "content": f"**目标调整时间**\n`{escape_lark_md(proposed_deadline_str)}`",
                     },
                 },
             ],
@@ -195,9 +245,7 @@ def build_notification_card(
     approver_name: str,
 ) -> dict[str, Any]:
     """Generates a broadcast notification card for group announcements."""
-    impacted_desc = (
-        ", ".join(f"`{t}`" for t in impacted_tasks) if impacted_tasks else "无其他直接影响任务"
-    )
+    impacted_desc = _code_list(impacted_tasks) if impacted_tasks else "无其他直接影响任务"
 
     elements: list[dict[str, Any]] = [
         {
@@ -206,8 +254,9 @@ def build_notification_card(
                 "tag": "lark_md",
                 "content": (
                     f"**排期变更通知**\n"
-                    f"任务 `{task_id}` （{task_title}）已由 **{approver_name}** 审批通过，"
-                    f"截止时间调整至 `{new_deadline_str}`。\n\n"
+                    f"任务 `{escape_lark_md(task_id)}` （{escape_lark_md(task_title)}）"
+                    f"已由 **{escape_lark_md(approver_name)}** 审批通过，"
+                    f"截止时间调整至 `{escape_lark_md(new_deadline_str)}`。\n\n"
                     f"**下游受波及任务**：{impacted_desc}\n"
                     f"请相关责任人及时知悉并同步排期。"
                 ),
@@ -274,12 +323,13 @@ def build_executive_briefing_card(
     if risks:
         risk_md_lines = ["**⚠️ 关键拓扑阻塞与连锁影响**："]
         for r in risks:
-            src_title = r.get("source_task_title") or r.get("source_task_id")
-            owner = r.get("owner_name", "负责人")
+            src_title = escape_lark_md(r.get("source_task_title") or r.get("source_task_id"))
+            owner = escape_lark_md(r.get("owner_name", "负责人"))
+            health = escape_lark_md(r.get("health_status"))
             impacted = r.get("cascading_impact_tasks", [])
-            impacted_str = ", ".join(f"`{t}`" for t in impacted) if impacted else "无直接下游"
+            impacted_str = _code_list(impacted) if impacted else "无直接下游"
             risk_md_lines.append(
-                f"• **`{src_title}`** (@{owner})：处于 `{r.get('health_status')}` 状态\n"
+                f"• **`{src_title}`** (@{owner})：处于 `{health}` 状态\n"
                 f"  ↳ **波及下游关键路径**：{impacted_str}"
             )
         elements.append(
@@ -290,11 +340,12 @@ def build_executive_briefing_card(
         )
         elements.append({"tag": "hr"})
 
-    # Recommendations
+    # Recommendations are plain sentences from SyncCoordinator that embed member
+    # display names, so each one is escaped whole.
     recs = briefing.get("recommended_actions", [])
     if recs:
         recs_md = "**💡 智能体协同建议**：\n" + "\n".join(
-            f"{idx + 1}. {act}" for idx, act in enumerate(recs)
+            f"{idx + 1}. {escape_lark_md(act)}" for idx, act in enumerate(recs)
         )
         elements.append(
             {
@@ -341,14 +392,14 @@ def build_sync_confirmation_card(
     explicitly (LABELING.md R8). Buttons carry the initiator and request time so
     the callback can enforce initiator-only confirmation and card expiry.
     """
-    listing = "、".join(f"`{member_id}`" for member_id in member_ids) or "（无待询问成员）"
+    listing = _code_list(member_ids, separator="、") or "（无待询问成员）"
     elements: list[dict[str, Any]] = [
         {
             "tag": "div",
             "text": {
                 "tag": "lark_md",
                 "content": (
-                    f"**发起人**：`{initiated_by}`\n"
+                    f"**发起人**：`{escape_lark_md(initiated_by)}`\n"
                     f"**将询问的成员**：{listing}\n\n"
                     "确认后将向以上成员逐一发送 1 对 1 进度探针，并在全员收敛后生成决策简报。"
                 ),
@@ -393,7 +444,11 @@ def build_sync_confirmation_card(
 
 
 def build_sync_closed_card(status_text: str, note: str) -> dict[str, Any]:
-    """Generates the in-place updated card after confirm/cancel/expiry."""
+    """Generates the in-place updated card after confirm/cancel/expiry.
+
+    ``note`` is shown as literal text: callers build it from operator ids and
+    session summaries, so it is escaped whole rather than trusted as Markdown.
+    """
     return {
         "kind": "sync_confirmation",
         "config": {"wide_screen_mode": True},
@@ -404,7 +459,7 @@ def build_sync_closed_card(status_text: str, note: str) -> dict[str, Any]:
         "elements": [
             {
                 "tag": "div",
-                "text": {"tag": "lark_md", "content": note},
+                "text": {"tag": "lark_md", "content": escape_lark_md(note)},
             },
             {
                 "tag": "note",
