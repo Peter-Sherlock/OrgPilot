@@ -1,5 +1,56 @@
 # 开发记录
 
+## 2026-10-20：接入 GitHub Actions CI（分支 `claude/modest-dubinsky-3c1c14`）
+
+此前仓库没有 `.github/`，PR 上看不到任何检查，测试也只在 Windows 上跑过。新增
+`.github/workflows/ci.yml`：push 到 `main` 和每个 PR 触发，ubuntu-latest + Python 3.12，
+`astral-sh/setup-uv@v10.3.0`，`uv sync --locked`。
+
+### 检查步骤
+
+1. `uv run ruff check .`（不含 `ruff format --check`：main 上有已知格式欠账，如 `intent/router.py`，不在本次范围）；
+2. `uv run pytest --cov=orgpilot --cov-report=term-missing`，覆盖率门槛沿用 pyproject 的 `fail_under = 90`；
+3. `uv run orgpilot replay --all`；
+4. 意图评测离线回放（冻结提示词 `c9850dec6655`）：dev、test、多轮对话三条 `eval-intent --client llm --replay`。
+
+### 实施中的决策
+
+- **评测命令不会因分数变化而失败**：`--client llm --replay` 只在缺录制时返回 1，分数怎么变都返回 0
+  （单条样本评测本来就是 "no pass gate"，对话评测的门槛只作用于 oracle 和 heuristic）。工作流里加了
+  显式核对：从输出中匹配 `Samples` / `Failures` / `Conversations` 三行，与 `BASELINE.md` 的冻结结果
+  （dev 97/102、test 53/58、对话 10/10）逐项比较，不一致即失败；输出格式变了也会失败，不会静默通过。
+  只比较冻结的通过数，不另设阈值；以后改提示词或数据集时，`BASELINE.md` 与工作流里的数字要一起改；
+- **核对本身验证过会失败**：本地把一条录制的意图从 `request_sync` 改成 `chitchat`，dev 变成 96/102，
+  步骤报错退出；挪走一条录制，CLI 报"回放失败"返回 1，经 `pipefail` 让步骤失败；
+- **回放不联网（已验证）**：`_exchange` 在 replay 模式下读完录制就返回，不会走到 HTTP；单元测试
+  `test_replay_mode_reads_recordings_and_fails_on_miss` 用一个一调用就报错的 transport 覆盖了这一点。
+  另外在本地用 socket 守卫（拦截所有非回环地址的 connect 与 DNS 解析）跑完三条命令，记录到的外连
+  尝试为 0；对照组里同一个守卫能拦下一次 httpx 请求。CI 不用任何 secret，`DEEPSEEK_API_KEY=dummy`
+  只为通过配置校验。
+
+### Linux 上的结果
+
+测试第一次在 Linux 上跑，396 个全部通过，没有出现需要修的平台问题，
+所以本分支没有改任何源码或测试。CI 上覆盖率 92.33%，比 Windows 本地的 91.94% 略高；pytest 只剩
+2 条 warning，都是 `lark_oapi` 自身的 DeprecationWarning。
+
+### 验证状态
+
+```text
+本地（Windows，Python 3.14）：ruff 通过；replay 9/9 PASS；pytest 396 passed，coverage 91.94%；
+意图评测离线回放 dev 97/102、test 53/58、对话 10/10，与冻结结果一致
+CI（ubuntu-24.04，CPython 3.12.3）：ruff 通过；pytest 396 passed，coverage 92.33%；replay 9/9 PASS；
+意图评测离线回放 dev 97/102、test 53/58、对话 10/10，与冻结结果一致；job 耗时 1 分 13 秒
+```
+
+### 已知事项
+
+- GitHub 提示 `ubuntu-latest` 自 2026-10-19 起逐步迁到 Ubuntu 26，本次仍跑在 24.04 上；
+  工作流用的是 `ubuntu-latest`，迁移后第一次跑如果出问题，再考虑固定版本；
+- 只固定了 action 的版本（`actions/checkout@v7.0.1`、`astral-sh/setup-uv@v10.3.0`），uv 本身取最新版。
+
+---
+
 ## 2026-10-20：演示前收尾——修复审批改期链路、注入 Clock（分支 `feat/demo-readiness`）
 
 准备在真实飞书租户录演示前，逐段核对"报延期 → 审批卡片 → 批准改期"的代码路径。这条链路在飞书
