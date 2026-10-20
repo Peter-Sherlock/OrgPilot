@@ -1,5 +1,117 @@
 # 开发记录
 
+## 2026-10-20：修复控制台 DAG 不渲染、网页审批必然 403（分支 `fix/console-dag-and-approvals`）
+
+即下一条记录"发现但未修"的前两项，两个问题在 main 上本来就存在。本分支基于 `fix/console-xss-escaping`
+（PR #7），保留它的全部转义。
+
+### 修复
+
+- **DAG 面板**：只改控制台，`/dag` 不动。响应本来就给每个节点带了 `layer`，布局不需要新字段。
+  `loadDag` 改读 `summary.total_tasks/completed_count/on_track_count/at_risk_count/delayed_count`；
+  `renderDagSvg` 改用 `nodes[].task_id/layer/health_status/is_critical_path` 和
+  `edges[].from_task/to_task`；状态按小写枚举值比较（`delayed`、`done`）。原代码比较的
+  `'DELAYED'`、`'COMPLETED'` 一个大小写不对，一个在 `WorkflowStatus` 里根本不存在；
+- 节点配色：已完成紫、延期红、风险或被上游延期波及（`is_at_risk`）或 `blocked` 琥珀、正常绿，新增
+  "未上报"灰。新建任务的健康度是 `unknown`，原来默认画成绿色，看起来像"正常"。健康度卡片副标题
+  显示未上报的任务数；
+- 节点抽屉：状态显示中文标签，阻塞原因读 `blockers` 列表，截止时间后附预计完成时间；
+- **审批 403**：新增 `GET /api/v1/projects/{pid}/console-context`，返回控制台的操作人，即项目 PM
+  （role 为 `pm` 的成员按 id 排序取第一个）。选取逻辑从 `CoordinationService._find_pm_targets`
+  抽成 `pm_member_ids`，两处共用，保证操作人就是协调器给改期请求指定的审批人。控制台拿它作
+  `approver_id`，浏览器不再自己决定审批人；项目没有 PM、或请求的审批人不是当前操作人时按钮置灰；
+- 服务端校验不变：审批人必须等于请求指定的审批人，否则仍是 403。控制台原来忽略响应、静默刷新，
+  现在把失败原因显示在审批面板上。
+
+### 新增测试
+
+- `tests/test_console_api_contract.py`（5 个）：`/dag` 真实响应必须带齐控制台读取的字段，字段清单
+  同时反查 `index.html`，防止清单和控制台脱节；控制台比较的状态字符串必须是 `HealthStatus` /
+  `WorkflowStatus` 的合法值；`/console-context` 返回 PM，用它提交审批得到 200；没有 PM 时操作人
+  为空；
+- 其中的 Node 行为测试用真实 API 响应驱动真实控制台脚本：`loadDag`、`loadApprovals`、点击批准，
+  断言没有异常、统计卡片数字、SVG 节点和边的数量、发出的 `approver_id`，再把控制台实际发出的
+  请求体回放到真实接口，得到 200。对修复前的 `index.html` 运行，5 个里 3 个失败；
+- `test_console_escaping.py` 的 DAG 夹具改成真实 `/dag` 的形状。原夹具用的恰好是错误字段名，所以
+  XSS 测试没能暴露这个问题。
+
+### 手动验证
+
+mock 适配器、端口 8011、临时 SQLite：重置沙箱，经 API 让 Alice 报延期。真实浏览器里 DAG 画出 3 个
+节点、2 条边，支付 SDK 红色、下游两个琥珀色、被波及的边为红色；统计卡片为总数 3、延期 1、未上报 2；
+连接状态"已连接"，控制台没有 JS 报错。点击"批准改期"：`POST .../decision` 返回 200，待审批归零。
+在页面里以 `mallory` 调用审批，面板显示 403 原因。
+
+### 未做（如实标注）
+
+- 控制台没有登录，操作人就是项目 PM：能打开控制台的人就能以 PM 身份审批。唯一的边界是
+  `ORGPILOT_API_TOKEN`，但控制台的 `fetch` 不带 `Authorization` 头，一旦设置 token，控制台全部
+  401。这是原有问题，本次未改；
+- PR #7 合入 main 之前，本分支的 PR diff 会包含它的提交。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS
+pytest: 420 passed（新增 5 个）, coverage 91.96%（fail_under=90）
+ruff check: All checks passed
+```
+
+---
+
+## 2026-10-20：修复 Web 控制台存储型 XSS（分支 `fix/console-xss-escaping`）
+
+控制台用 `innerHTML` 模板拼 DOM，任务标题、成员名、消息原文都未转义直接插值。这些数据来自飞书用户
+和 `team.yaml`：成员私聊机器人发一句 `<img src=x onerror=...>`，脚本就会在 PM 打开的控制台里执行。
+
+### 修复
+
+- 新增唯一的 `escapeHtml`（转义 `& < > " '`），套在全部 20 处数据插值上：聊天气泡（发送人、消息
+  原文）、简报卡片（标题、三个计数、关键路径行、每条建议）、DAG 节点（标题、负责人、工作流状态）、
+  时间线（类别、标题、时间、描述）、审批面板（任务、审批人、新截止时间）；
+- DAG 标题先截断再转义，避免把 `&amp;` 这类实体截成半个；
+- 审批按钮原来是 `onclick="decideApproval('${id}', ...)"`。属性值里的实体会先被浏览器解码再当 JS
+  执行，`escapeHtml` 挡不住这个上下文，改为 `data-decision` 加 JS 绑定；
+- 页面内部算出的常量（颜色、Tailwind 类、静态 `<circle>`）不转义，列在测试的白名单里。正常数据下
+  渲染结果不变。
+
+### 新增测试
+
+- `tests/test_console_escaping.py`：解析 `index.html` 内联脚本，凡是赋给 `innerHTML`/`outerHTML`、
+  传给 `insertAdjacentHTML`、或本身含 HTML 标签的模板，每个 `${...}` 都必须是 `escapeHtml(...)`
+  或白名单常量；事件处理器和 URL 属性里禁止插值；sink 只能接字面量，不能再拼接。另有 17 个用例
+  检验检查器本身能抓出违规写法。对 main 上的旧文件运行，报出 24 处；
+- 行为测试：用 Node 跑真实渲染函数（桩 DOM），六个面板灌入恶意数据，断言没有 `img`/`script`
+  元素、没有 `on*` 属性，原文作为文本显示。本机没有 Node 时跳过。
+
+### 手动验证
+
+mock 适配器、端口 8010、临时 SQLite：经 API 写入标题含 `<img onerror>` 的任务、经沙箱输入框发送
+含 HTML 的消息。聊天、时间线、审批、简报卡片都按原文显示，`onerror` 计数器始终为 0；DAG 节点在
+真实浏览器的 SVG 里同样按文本显示。
+
+### 发现但未修（如实标注）
+
+- **DAG 面板在 main 上本来就渲染不出来**：控制台读 `health_distribution`、`completed_tasks`、
+  `nodes[].id/health/level`、`edges[].source/target`，`/dag` 实际返回 `summary`、
+  `nodes[].task_id/health_status`、`edges[].from_task/to_task`。`loadDag` 每 5 秒抛一次异常，
+  DAG 和三个统计卡片一直是空的。与本次修复无关，未改；
+- **控制台审批必然 403**：`decideApproval` 写死 `approver_id: 'pm_web_operator'`，不是任何审批人；
+- **飞书卡片 `lark_md` 注入**：`feishu/cards.py` 把任务标题、阻塞原因、成员名、建议原文直接拼进
+  `lark_md`。飞书客户端不执行脚本，所以不是 XSS，但可以伪造链接、加粗、`<at>` 提醒。转义规则需要
+  在真实租户上核对，本次未改。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS
+pytest: 415 passed（新增 19 个，含 Node 行为测试）, coverage 91.94%（fail_under=90）
+ruff check: All checks passed
+git diff --check: PASS
+```
+
+---
+
 ## 2026-10-20：演示前收尾——修复审批改期链路、注入 Clock（分支 `feat/demo-readiness`）
 
 准备在真实飞书租户录演示前，逐段核对"报延期 → 审批卡片 → 批准改期"的代码路径。这条链路在飞书

@@ -18,7 +18,7 @@ from orgpilot.extraction.extractor import ClaimExtractor
 from orgpilot.feishu.adapter import FeishuCollaborationAdapter
 from orgpilot.feishu.client import AsyncFeishuClient, FeishuClient
 from orgpilot.feishu.ws import FeishuWebSocketListener
-from orgpilot.gateway.routes import approvals, cases, coordination, dag, events, feishu
+from orgpilot.gateway.routes import approvals, cases, console, coordination, dag, events, feishu
 from orgpilot.gateway.service import GatewayService
 from orgpilot.intent.router import MessageRouter
 from orgpilot.storage.database import Database
@@ -161,6 +161,7 @@ def create_app(
     app.include_router(cases.router)
     app.include_router(approvals.router)
     app.include_router(coordination.router)
+    app.include_router(console.router)
     app.include_router(feishu.router)
     app.include_router(dag.router)
 
