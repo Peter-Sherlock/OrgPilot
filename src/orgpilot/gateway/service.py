@@ -13,7 +13,7 @@ from orgpilot.agent.loop import CoordinationAgent
 from orgpilot.coordination.directives import DirectiveManager, DirectiveNotice
 from orgpilot.coordination.sync_coordinator import ProgressSyncCoordinator
 from orgpilot.coordination.tasks import TaskManager, TaskOutcome
-from orgpilot.domain.enums import ApprovalStatus, MessageIntent
+from orgpilot.domain.enums import ActionType, ApprovalStatus, CoordinationCaseStatus, MessageIntent
 from orgpilot.domain.models import ActionCommand, AgentTurnTrace
 from orgpilot.domain.sync_models import SyncSession
 from orgpilot.events.log import AppendResult
@@ -30,7 +30,7 @@ from orgpilot.extraction.models import MessageContext
 from orgpilot.gateway.outbox import OutboxDispatcher
 from orgpilot.storage.database import Database
 from orgpilot.storage.event_store import SqlEventStore
-from orgpilot.storage.outbox_store import SqlOutboxStore
+from orgpilot.storage.outbox_store import OUTBOX_DEAD, OUTBOX_DELIVERED, SqlOutboxStore
 from orgpilot.storage.state_store import SqlStateStore
 
 logger = logging.getLogger("orgpilot.gateway.service")
@@ -66,6 +66,7 @@ class GatewayService:
         directive_escalation_minutes: int = 1440,
         outbox_max_attempts: int = 3,
         outbox_retry_seconds: int = 30,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.db = db
         self.event_store = SqlEventStore(db)
@@ -83,8 +84,14 @@ class GatewayService:
         self.adapter_factory = adapter_factory or (
             lambda project_id: MockCollaborationAdapter(project_id=project_id)
         )
+        self._clock = clock or (lambda: datetime.now(UTC))
         self._sync_coordinators: dict[str, ProgressSyncCoordinator] = {}
         self._project_locks: dict[str, asyncio.Lock] = {}
+
+    def now(self) -> datetime:
+        """Returns the service clock, injectable for deterministic boundary tests."""
+        value = self._clock()
+        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
     def _project_lock(self, project_id: str) -> asyncio.Lock:
         """Serializes coordination turns per project so concurrent member
@@ -114,6 +121,7 @@ class GatewayService:
         agent = CoordinationAgent(
             project_id=project_id,
             adapter=self.adapter_factory(project_id),
+            defer_outbound=True,
         )
         events = await self.event_store.get_events(project_id)
 
@@ -173,6 +181,14 @@ class GatewayService:
         for event in generated_events:
             await self.event_store.append(event)
         await self._settle_turn_outbound(agent, current_time)
+        trace = trace.model_copy(
+            update={
+                "active_case_ids": tuple(
+                    case.case_id for case in agent.case_ledger.get_active_cases()
+                ),
+                "termination_reason": agent.current_termination_reason(),
+            }
+        )
         await self.save_agent_state(agent)
         return trace, generated_events
 
@@ -180,13 +196,26 @@ class GatewayService:
         """Settles the agent turn's transports into the outbox.
 
         Commands the adapter confirmed inline become durable delivery-ledger rows;
-        transport failures become pending rows that the outbox sweep retries, so a
-        failed probe or card is eventually delivered instead of being lost.
+        retryable transport failures remain pending for the outbox sweep, while
+        permanent failures become dead letters and update the affected case.
         """
         delivery_events: list[OrgEvent] = []
-        now = datetime.now(UTC)
+        now = self.now()
         for command, delivered, _error in agent.pop_turn_outbound():
-            if delivered:
+            if delivered is None:
+                delivery_events.extend(
+                    await self.outbox_dispatcher.enqueue_and_deliver(
+                        agent.project_id, command, agent.adapter
+                    )
+                )
+                status = await self.outbox_store.status_of(
+                    agent.project_id, command.idempotency_key
+                )
+                if command.action_type is ActionType.UPDATE_TASK and status != OUTBOX_DELIVERED:
+                    self._mark_task_execution_failed(agent, command, ts)
+                elif status == OUTBOX_DEAD:
+                    self._mark_command_delivery_dead(agent, command, ts)
+            elif delivered:
                 delivery_events.extend(
                     await self.outbox_dispatcher.record_pre_delivered(agent.project_id, command)
                 )
@@ -199,10 +228,60 @@ class GatewayService:
                 )
         await self._persist_delivery_events(agent, delivery_events)
 
+    async def _deliver_deferred_commands(
+        self, agent: CoordinationAgent, commands: list[ActionCommand]
+    ) -> None:
+        delivery_events: list[OrgEvent] = []
+        for command in commands:
+            delivery_events.extend(
+                await self.outbox_dispatcher.enqueue_and_deliver(
+                    agent.project_id, command, agent.adapter
+                )
+            )
+        await self._persist_delivery_events(agent, delivery_events)
+
+    @staticmethod
+    def _mark_task_execution_failed(
+        agent: CoordinationAgent, command: ActionCommand, current_time: datetime
+    ) -> None:
+        for case in agent.case_ledger.get_all_cases():
+            if any(item.command_id == command.command_id for item in case.executed_commands):
+                agent.case_ledger.transition(
+                    case.case_id,
+                    CoordinationCaseStatus.ESCALATED,
+                    current_time,
+                    terminal_reason="approved task update execution failed",
+                    candidate_actions=(),
+                )
+
+    @staticmethod
+    def _mark_command_delivery_dead(
+        agent: CoordinationAgent, command: ActionCommand, current_time: datetime
+    ) -> None:
+        case_ids = {
+            case.case_id
+            for case in agent.case_ledger.get_all_cases()
+            if any(item.command_id == command.command_id for item in case.executed_commands)
+        }
+        case_ids.update(
+            request.case_id
+            for request in agent.approval_manager.get_all_requests()
+            if request.proposed_command.command_id == command.command_id
+        )
+        for case_id in case_ids:
+            if agent.case_ledger.get_case(case_id) is not None:
+                agent.case_ledger.transition(
+                    case_id,
+                    CoordinationCaseStatus.ESCALATED,
+                    current_time,
+                    terminal_reason=f"{command.action_type.value} delivery failed permanently",
+                    candidate_actions=(),
+                )
+
     async def _persist_delivery_events(
         self, agent: CoordinationAgent, delivery_events: list[OrgEvent]
     ) -> None:
-        """Projects and persists directive delivery ledger events.
+        """Projects and persists delivery-ledger and adapter-generated events.
 
         Delivery timestamps are clamped forward to the directive's last known
         event time: replay sorts by occurred_at, so a delivery stamped with the
@@ -212,7 +291,8 @@ class GatewayService:
         state = agent.projector.state
         clamped: list[OrgEvent] = []
         for evt in delivery_events:
-            directive = state.directives.get(evt.payload.directive_id)
+            directive_id = getattr(evt.payload, "directive_id", None)
+            directive = state.directives.get(directive_id) if directive_id else None
             if directive is not None and evt.occurred_at < directive.last_update_at:
                 evt = evt.model_copy(
                     update={
@@ -226,6 +306,37 @@ class GatewayService:
                 agent.projector.apply(evt)
         for evt in clamped:
             await self.event_store.append(evt)
+        self._settle_retried_task_updates(agent, clamped)
+
+    @staticmethod
+    def _settle_retried_task_updates(agent: CoordinationAgent, events: list[OrgEvent]) -> None:
+        """Closes an execution-failed case only after its retried task event exists."""
+        update_refs = {
+            evt.source_ref
+            for evt in events
+            if evt.event_type == "task.updated" and evt.source_ref is not None
+        }
+        if not update_refs:
+            return
+        for case in agent.case_ledger.get_all_cases():
+            if (
+                case.status is not CoordinationCaseStatus.ESCALATED
+                or case.terminal_reason != "approved task update execution failed"
+            ):
+                continue
+            matching = any(
+                f"command:{command.command_id}" in update_refs
+                or f"adapter:command:{command.command_id}" in update_refs
+                for command in case.executed_commands
+            )
+            if matching:
+                agent.case_ledger.transition(
+                    case.case_id,
+                    new_status=CoordinationCaseStatus.RESOLVED,
+                    current_time=max(evt.occurred_at for evt in events),
+                    terminal_reason="approved task update succeeded after retry",
+                    candidate_actions=(),
+                )
 
     async def save_agent_state(self, agent: CoordinationAgent) -> None:
         """Persists current state snapshot, active cases, and approvals."""
@@ -293,7 +404,7 @@ class GatewayService:
         source_ref: str | None,
         auto_run_turn: bool,
     ) -> MessageIngestResult:
-        ts = occurred_at or datetime.now(UTC)
+        ts = occurred_at or self.now()
         agent = await self.get_or_replay_agent(project_id)
 
         ingest_events: list[OrgEvent] = []
@@ -505,7 +616,7 @@ class GatewayService:
         async with self._project_lock(project_id):
             agent = await self.get_or_replay_agent(project_id)
             manager = self._task_manager_for(agent)
-            now = datetime.now(UTC)
+            now = self.now()
             aggregated: TaskOutcome | None = None
             dirty = False
             for request in agent.approval_manager.get_all_requests():
@@ -552,9 +663,7 @@ class GatewayService:
         async with self._project_lock(project_id):
             agent = await self.get_or_replay_agent(project_id)
             manager = self._directive_manager_for(agent)
-            outcome = manager.remind_open_directives(
-                agent.projector.state, operator_id, datetime.now(UTC)
-            )
+            outcome = manager.remind_open_directives(agent.projector.state, operator_id, self.now())
             if outcome.kind == "none":
                 return MessageIngestResult(
                     is_actionable=False,
@@ -591,23 +700,53 @@ class GatewayService:
     async def sweep_outbox(self) -> int:
         """Delivers due pending outbox commands for every project.
 
-        Called by the background sweep and once at startup, which recovers
-        commands that a crash stranded between "event persisted" and "sent".
+        Called by the background sweep and once at startup, which resumes commands
+        already persisted as pending before a process interruption.
         """
-        now = datetime.now(UTC)
+        now = self.now()
         swept = 0
         for project_id in await self.outbox_store.due_projects(now):
             try:
                 async with self._project_lock(project_id):
                     agent = await self.get_or_replay_agent(project_id)
+                    due_commands = await self.outbox_store.due_commands(project_id, now)
                     delivery_events = await self.outbox_dispatcher.execute_due(
                         project_id, agent.adapter, now=now
                     )
                     await self._persist_delivery_events(agent, delivery_events)
+                    for command in due_commands:
+                        if (
+                            await self.outbox_store.status_of(project_id, command.idempotency_key)
+                            == OUTBOX_DEAD
+                        ):
+                            self._mark_command_delivery_dead(agent, command, now)
                     await self.save_agent_state(agent)
                 swept += 1
             except Exception:
                 logger.exception("Outbox sweep failed for project %s", project_id)
+        return swept
+
+    async def sweep_directive_timeouts(self) -> int:
+        """Runs reminder/escalation policy without waiting for another chat message."""
+        now = self.now()
+        swept = 0
+        for project_id in await self.event_store.list_project_ids():
+            try:
+                async with self._project_lock(project_id):
+                    agent = await self.get_or_replay_agent(project_id)
+                    manager = self._directive_manager_for(agent)
+                    outcome = manager.sweep_timeouts(agent.projector.state, now)
+                    if not outcome.events:
+                        continue
+                    for event in outcome.events:
+                        if agent.event_log.append(event) is AppendResult.APPENDED:
+                            agent.projector.apply(event)
+                        await self.event_store.append(event)
+                    await self._deliver_deferred_commands(agent, outcome.outbound)
+                    await self.save_agent_state(agent)
+                    swept += len(outcome.events)
+            except Exception:
+                logger.exception("Directive timeout sweep failed for project %s", project_id)
         return swept
 
     async def outbox_overview(self, project_id: str) -> dict[str, Any]:
@@ -630,6 +769,8 @@ class GatewayService:
                 adapter=agent.adapter,
                 extractor=self.extractor,
                 reference_timezone=self.reference_timezone,
+                defer_outbound=True,
+                clock=self.now,
             )
             coordinator.restore_sessions(await self.state_store.load_sync_sessions(project_id))
             self._sync_coordinators[project_id] = coordinator
@@ -642,14 +783,16 @@ class GatewayService:
         custom_intro: str | None = None,
     ) -> SyncSession:
         """Starts a distributed progress sync session with active task owners."""
-        coordinator = await self.get_sync_coordinator(project_id)
-        # Ensure latest state
-        agent = await self.get_or_replay_agent(project_id)
-        coordinator.agent = agent
-        coordinator.adapter = agent.adapter
-        session = coordinator.start_sync_session(project_id, initiated_by, custom_intro)
-        await self.state_store.save_sync_sessions(project_id, coordinator.all_sessions())
-        return session
+        async with self._project_lock(project_id):
+            coordinator = await self.get_sync_coordinator(project_id)
+            agent = await self.get_or_replay_agent(project_id)
+            coordinator.agent = agent
+            coordinator.adapter = agent.adapter
+            session = coordinator.start_sync_session(project_id, initiated_by, custom_intro)
+            await self.state_store.save_sync_sessions(project_id, coordinator.all_sessions())
+            await self._deliver_deferred_commands(agent, coordinator.pop_outbound_commands())
+            await self.save_agent_state(agent)
+            return session
 
     async def handle_sync_member_reply(
         self,
@@ -687,7 +830,9 @@ class GatewayService:
             for evt in coordinator.agent.event_log.all():
                 await self.event_store.append(evt)
 
-            await self.state_store.save_state(coordinator.agent.projector.state)
+            await self._settle_turn_outbound(agent, occurred_at or self.now())
+            await self._deliver_deferred_commands(agent, coordinator.pop_outbound_commands())
+            await self.save_agent_state(agent)
             await self.state_store.save_sync_sessions(project_id, coordinator.all_sessions())
         return converged, clarification_q, active_session
 
@@ -708,6 +853,8 @@ class GatewayService:
 
             for evt in coordinator.agent.event_log.all():
                 await self.event_store.append(evt)
-            await self.state_store.save_state(coordinator.agent.projector.state)
+            await self._settle_turn_outbound(agent, self.now())
+            await self._deliver_deferred_commands(agent, coordinator.pop_outbound_commands())
+            await self.save_agent_state(agent)
             await self.state_store.save_sync_sessions(project_id, coordinator.all_sessions())
             return active_session

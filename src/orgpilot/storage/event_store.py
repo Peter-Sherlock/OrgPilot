@@ -124,6 +124,12 @@ class SqlEventStore:
                 events.append(parse_event(raw_event_dict))
             return events
 
+    async def list_project_ids(self) -> list[str]:
+        """Lists projects present in the authoritative event log."""
+        async with self.db.session() as session:
+            stmt = select(EventRecord.project_id).distinct().order_by(EventRecord.project_id)
+            return list((await session.execute(stmt)).scalars().all())
+
     async def count(self, project_id: str | None = None) -> int:
         """Returns total number of events recorded."""
         async with self.db.session() as session:

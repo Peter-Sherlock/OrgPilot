@@ -82,9 +82,27 @@ uv run orgpilot feishu-preflight
 uv run orgpilot feishu-preflight --online-auth
 ```
 
-该命令只申请 `tenant_access_token`，不显示令牌、不发送消息、不更新任务。只有进入已授权的
-真实验收窗口时，才临时设置 `ORGPILOT_FEISHU_ALLOW_WRITES=true`；结束后立即恢复为 false。
-完整步骤与证据要求见 `docs/feishu-live-acceptance.md`。
+该命令只申请 `tenant_access_token`，不显示令牌、不发送消息、不更新任务。L2 使用下面的一次性
+命令时环境总闸继续保持 false；只有另行授权全功能网关或 L3 动作时才临时设为 true，结束后
+立即恢复。完整步骤与证据要求见 `docs/feishu-live-acceptance.md`。
+
+单目标 L2 验收应优先使用一次性命令，并让环境写入总闸继续保持关闭：
+
+```powershell
+uv run orgpilot feishu-l2-smoke `
+  --project-id "feishu-l2-<日期>-<随机码>" `
+  --timeout-seconds 300 `
+  --confirm-single-reply
+```
+
+先确认测试者准备好，再运行命令；出现 `[READY]` 后复制程序生成的随机挑战到机器人私聊。
+只会尝试一次固定文本回复，不执行任务、不调用模型，也不读写业务数据库。脱敏结果保存在
+`var/feishu-acceptance/`；`api_accepted` 仍需人工确认可见，`unknown` 必须先核对再决定是否重测。
+
+若命令显示 WebSocket 已连接但收件超时，依次只读核对：当前机器人是否对应 `.env` 中的
+App ID、是否使用长连接订阅 `im.message.receive_v1`、是否已开通单聊消息读取与应用身份发消息
+权限、包含这些配置的版本是否已发布/审核，以及发送者是否在应用可见范围内。未经核对不要反复
+扩大监听范围或打开全局写入闸门。
 
 #### 启动方式 A：启动全功能网关（Web 看板 + 飞书 WebSocket 长连接）
 ```powershell

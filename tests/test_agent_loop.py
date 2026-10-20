@@ -191,8 +191,9 @@ def test_agent_run_turn_direct_update_task_action_approval() -> None:
     agent.approval_manager.approve(req.approval_id, "carol", NOW + timedelta(minutes=5))
 
     trace, _ = agent.run_turn([], NOW + timedelta(minutes=6))
-    assert trace.termination_reason is AgentTerminationReason.ALL_RESOLVED
-    assert case.status is CoordinationCaseStatus.RESOLVED
+    assert trace.termination_reason is AgentTerminationReason.ESCALATED
+    assert case.status is CoordinationCaseStatus.ESCALATED
+    assert case.terminal_reason == "approved task update execution failed"
 
 
 class _ExplodingAdapter(MockCollaborationAdapter):

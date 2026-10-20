@@ -317,7 +317,7 @@ class FeishuWebhookHandler:
         approval_id = action_val.get("approval_id")
 
         operator = event_data.get("operator", {}).get("open_id")
-        now = datetime.now(UTC)
+        now = self.service.now()
 
         if not approval_id:
             return {"code": 400, "msg": "missing approval_id in button value"}
@@ -333,10 +333,13 @@ class FeishuWebhookHandler:
         if req.approver_id != operator:
             return {"code": 403, "msg": f"operator {operator} is not the designated approver"}
 
-        if decision == "approved":
-            agent.approval_manager.approve(approval_id, operator, now)
-        else:
-            agent.approval_manager.reject(approval_id, operator, "declined via card", now)
+        try:
+            if decision == "approved":
+                agent.approval_manager.approve(approval_id, operator, now)
+            else:
+                agent.approval_manager.reject(approval_id, operator, "declined via card", now)
+        except ValueError as exc:
+            return {"code": 409, "msg": str(exc)}
 
         # Run turn to execute task update or escalation
         turn_trace, _ = await self.service.run_agent_turn(agent, [], now)

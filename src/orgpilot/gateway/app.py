@@ -4,8 +4,9 @@ import asyncio
 import contextlib
 import hmac
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -28,6 +29,7 @@ logger = logging.getLogger("orgpilot.gateway.app")
 def create_app(
     db: Database | None = None,
     settings: OrgPilotSettings | None = None,
+    clock: Callable[[], datetime] | None = None,
 ) -> FastAPI:
     """Creates and configures the FastAPI event gateway application."""
     runtime_settings = settings or OrgPilotSettings.from_env()
@@ -61,6 +63,7 @@ def create_app(
         directive_escalation_minutes=runtime_settings.directive_escalation_minutes,
         outbox_max_attempts=runtime_settings.outbox_max_attempts,
         outbox_retry_seconds=runtime_settings.outbox_retry_seconds,
+        clock=clock,
     )
     ws_listener: FeishuWebSocketListener | None = None
     outbox_task: asyncio.Task | None = None
@@ -95,8 +98,9 @@ def create_app(
         if writes_enabled:
             try:
                 await gateway_service.sweep_outbox()
+                await gateway_service.sweep_directive_timeouts()
             except Exception:
-                logger.exception("Startup outbox sweep failed")
+                logger.exception("Startup maintenance sweep failed")
         else:
             logger.warning(
                 "Feishu write gate is closed; WebSocket listener and outbox sweep are disabled"
@@ -107,8 +111,9 @@ def create_app(
                 await asyncio.sleep(runtime_settings.outbox_sweep_seconds)
                 try:
                     await gateway_service.sweep_outbox()
+                    await gateway_service.sweep_directive_timeouts()
                 except Exception:
-                    logger.exception("Outbox sweep failed")
+                    logger.exception("Maintenance sweep failed")
 
         if writes_enabled:
             outbox_task = asyncio.create_task(outbox_sweeper(), name="outbox-sweeper")

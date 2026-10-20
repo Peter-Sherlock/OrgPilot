@@ -1,8 +1,10 @@
 """Tests for Feishu WebSocket long connection listener and event dispatching."""
 
+import asyncio
 import json
 from datetime import UTC, datetime
 
+import lark_oapi as lark
 import pytest
 from lark_oapi.api.im.v1.model.event_message import EventMessage
 from lark_oapi.api.im.v1.model.event_sender import EventSender
@@ -26,6 +28,8 @@ from orgpilot.events.models import (
     TaskCreatedEvent,
     TaskCreatedPayload,
 )
+from orgpilot.feishu.acceptance import L2_REPLY, L2Acceptance
+from orgpilot.feishu.client import MockFeishuClient
 from orgpilot.feishu.ws import FeishuWebSocketListener
 from orgpilot.gateway.service import GatewayService
 from orgpilot.storage.database import Database
@@ -149,3 +153,164 @@ async def test_feishu_ws_listener_message_and_card_flow(
     # 6. Test build_event_handler
     handler = listener.build_event_handler()
     assert handler is not None
+
+
+async def test_feishu_ws_listener_suppresses_credential_bearing_info_logs(
+    gateway_service: GatewayService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict = {}
+
+    class FakeClient:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+        def start(self) -> None:
+            import lark_oapi.ws.client as ws_module
+
+            ws_module.loop.run_until_complete(asyncio.Event().wait())
+
+        async def _disconnect(self) -> None:
+            pass
+
+    monkeypatch.setattr(lark.ws, "Client", FakeClient)
+    listener = FeishuWebSocketListener(
+        app_id="cli_test",
+        app_secret="sec_test",
+        acceptance=L2Acceptance("test-long-challenge", MockFeishuClient()),
+    )
+
+    listener.start()
+
+    assert captured["log_level"] is lark.LogLevel.ERROR
+    assert captured["auto_reconnect"] is False
+    assert listener.stop() is True
+    with pytest.raises(RuntimeError, match="single-use"):
+        listener.start()
+
+
+def _text_message(message_id: str, actor_id: str, text: str) -> P2ImMessageReceiveV1:
+    data = P2ImMessageReceiveV1()
+    data.event = P2ImMessageReceiveV1Data()
+    data.event.message = EventMessage()
+    data.event.message.message_type = "text"
+    data.event.message.chat_type = "p2p"
+    data.event.message.message_id = message_id
+    data.event.message.content = json.dumps({"text": text})
+    data.event.sender = EventSender()
+    data.event.sender.sender_type = "user"
+    data.event.sender.sender_id = UserId()
+    data.event.sender.sender_id.open_id = actor_id
+    return data
+
+
+def test_feishu_ws_event_handler_failure_reclaims_service_loop(monkeypatch) -> None:
+    listener = FeishuWebSocketListener(
+        "cli_offline",
+        "unused",
+        acceptance=L2Acceptance("offline-long-challenge", MockFeishuClient()),
+    )
+
+    def fail_handler():
+        raise ValueError("invalid event handler")
+
+    monkeypatch.setattr(listener, "build_event_handler", fail_handler)
+    with pytest.raises(ValueError, match="invalid event handler"):
+        listener.start()
+    assert listener._ws_client is None
+    assert not listener._loop_thread.is_alive()
+    assert listener._loop.is_closed()
+    assert listener.stop() is True
+
+
+async def test_feishu_l2_acceptance_is_challenge_bound_and_single_reply(
+    gateway_service: GatewayService,
+) -> None:
+    challenge = "你好，L2连通测试：9K7M-4Q2X-830A"
+    mock_client = MockFeishuClient()
+    acceptance = L2Acceptance(challenge, mock_client)
+    acceptance.arm(30)
+    listener = FeishuWebSocketListener(
+        app_id="cli_test",
+        app_secret="sec_test",
+        project_id="feishu-l2-test",
+        acceptance=acceptance,
+    )
+
+    await listener.handle_message_event_async(
+        _text_message("om_wrong", "ou_intruder", "你好，但不是挑战码")
+    )
+    assert mock_client.sent_messages == []
+    assert acceptance.snapshot()["filtered"] == {"challenge_mismatch": 1}
+
+    await listener.handle_message_event_async(_text_message("om_match", "ou_live_test", challenge))
+    result = acceptance.wait(0)
+    assert result["reply_status"] == "api_accepted"
+    assert result["user_visible_confirmed"] is False
+    assert len(mock_client.sent_messages) == 1
+    assert mock_client.sent_messages[0]["receive_id"] == "ou_live_test"
+    assert mock_client.sent_messages[0]["content"] == {"text": L2_REPLY}
+    assert mock_client.sent_cards == []
+    assert mock_client.updated_tasks == []
+    assert await gateway_service.event_store.count("feishu-l2-test") == 0
+
+    await listener.handle_message_event_async(
+        _text_message("om_duplicate", "ou_live_test", challenge)
+    )
+    assert len(mock_client.sent_messages) == 1
+
+    card_data = P2CardActionTrigger()
+    card_data.event = P2CardActionTriggerData()
+    card_data.event.action = CallBackAction()
+    card_data.event.action.value = {"action": "approved", "approval_id": "ignored"}
+    assert await listener.handle_card_action_async(card_data) is None
+    assert mock_client.sent_cards == []
+    assert mock_client.updated_tasks == []
+
+
+async def test_feishu_ws_listener_bridges_sdk_loop_to_service_loop(
+    gateway_service: GatewayService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ConnectedFakeClient:
+        def __init__(self, **_kwargs) -> None:
+            self._conn = None
+            self.disconnected = False
+
+        def start(self) -> None:
+            import lark_oapi.ws.client as ws_module
+
+            async def _connected() -> None:
+                self._conn = object()
+
+            ws_module.loop.run_until_complete(_connected())
+            ws_module.loop.run_until_complete(asyncio.Event().wait())
+
+        async def _disconnect(self) -> None:
+            self.disconnected = True
+            self._conn = None
+
+    monkeypatch.setattr(lark.ws, "Client", ConnectedFakeClient)
+    service_loop = asyncio.new_event_loop()
+    listener = FeishuWebSocketListener(
+        app_id="cli_test",
+        app_secret="sec_test",
+        gateway_service=gateway_service,
+        loop=service_loop,
+    )
+
+    client = listener.start()
+    try:
+        assert listener.wait_until_connected(1.0) is True
+
+        async def _value() -> int:
+            return 42
+
+        assert listener._run_coroutine(_value()) == 42
+    finally:
+        assert listener.stop() is True
+        assert client.disconnected is True
+        assert not listener._ws_thread.is_alive()
+        assert listener._ws_loop.is_closed()
+        assert not service_loop.is_running()
+        service_loop.close()

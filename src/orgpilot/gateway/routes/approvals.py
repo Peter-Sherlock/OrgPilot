@@ -1,7 +1,5 @@
 """Human approval listing and decision endpoints."""
 
-from datetime import UTC, datetime
-
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from orgpilot.gateway.schemas import (
@@ -41,7 +39,7 @@ async def submit_approval_decision(
     service: GatewayService = Depends(get_service),
 ) -> ApprovalDecisionResponse:
     """Submits a human approval decision (approved / rejected) and runs next agent turn."""
-    now = datetime.now(UTC)
+    now = service.now()
     agent = await service.get_or_replay_agent(project_id)
 
     req = agent.approval_manager.get_request(approval_id)

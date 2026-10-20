@@ -1,5 +1,188 @@
 # 开发记录
 
+## 2026-09-12：执行可靠性与真实闭环收口（离线）
+
+- 网关 Agent 改为 deferred outbound：询问、审批卡与任务更新先进入 outbox，再调用适配器；
+  进度同步的探针、澄清和决策简报也纳入同一路径。
+- outbox 检查 `ActionResult.status`，显式 `failed/rejected` 不再误记为 delivered。适配器成功
+  产生的任务事件可由重试路径回收并持久化。
+- 审批后的任务更新失败会把 Case 标为 escalated；只有对应 `task.updated` 在重试后真实产生，
+  Case 才恢复为 resolved。API turn trace 在 delivery 结算后刷新，避免界面仍返回 all_resolved。
+- 后台维护循环新增指令超时扫描，不再依赖下一条聊天消息触发自动提醒或升级。
+- 服务时钟支持测试注入，修复固定日期审批测试随时间自然过期的问题；过期飞书卡片返回冲突结果，
+  不再冒泡为未处理异常。
+- 最终全量 **374 passed**，总覆盖率 **91.14%**，达到 90% 门槛；9/9 回放场景与 34 条 Mock
+  抽取评测全部通过。Ruff 检查、227 文件格式检查、`uv lock --check` 与 `git diff --check`
+  通过。全量仍报告 1154 条 warning，Mock 评测不代表真实模型或真实租户验收。
+- 新增 [ADR-0012](adr/0012-outbox-first-execution-truth.md)。真实 L3-A、业务任务写入、多实例与
+  跨存储事务原子性仍未在本阶段证明。
+
+## 2026-09-04：L3-A 单审批卡验收工具（离线实现）
+
+- 新增 `feishu-l3-approval --preview`，可直接核对固定卡片、说明与两个按钮。真实运行使用全新
+  `--run-id feishu-l3-...`、30–300 秒窗口及 `--confirm-single-card`，随机私聊挑战绑定唯一目标。
+- 抽出共享 `AcceptanceWindow`，L2 原单文本行为保留；L3-A 经 SDK 的 operator.open_id 与
+  context.open_message_id 校验按钮回调，并额外绑定本轮审批 ID、run_id 和随机 nonce。
+- 复用 `ApprovalManager` 记录同意/拒绝，测试审批永不 consume、不执行任务。只回调一次 toast，
+  不额外发文本或更新卡片。报告不推断用户可见或回调响应已展示。
+- 新增 `SqlOutboxStore.reserve_once` 条件 UPDATE：单次发送额度在网络请求前原子变为 held。
+  API 成功码和消息 ID 齐备才 settle 为 delivered；超时、异常、取消等不确定结果保持 held，
+  不进入自动 due 查询，但计入待处理数量。一般业务 outbox 的重试策略保持原样。
+- 验收目录使用独立 SQLite 与脱敏 JSON；数据库仅保存合成目标和测试载荷，完整用户/消息 ID、
+  挑战码及回调 nonce 仅在内存。已有目录拒绝复用，业务 `orgpilot.db` 不参与此模式。
+- 测试覆盖：同意/拒绝、伪造身份/消息/审批/nonce、重复与过期、审计或 SQL 写入失败、未知结果
+  不重试、SQLite 并发一次占用及重开后保留、SDK 回调桥接、CLI 预览/配置门禁/完整离线流程。
+  Windows 预览输出固定为 UTF-8，避免中文按钮内容在重定向输出中乱码。
+- 新增 [ADR-0011](adr/0011-isolated-feishu-approval-acceptance.md)，同步架构、开发指南与验收手册。
+- 最终全量 **370 passed**（本阶段新增 47 项），总覆盖率 **91.38%**；L3-A 核心 96%、CLI
+  93%。9/9 回放场景与 34 条 Mock 抽取评测全部通过。Ruff 检查、112 文件格式检查及
+  `git diff --check` 通过；7 份本轮文档的围栏配对与 9 个显式本地链接目标验证通过。
+- 全量仍报告 1118 条 warning；此结果不表示全项目零警告。真实 SDK 生命周期回归继续通过。
+  Windows 命令行预览已实际执行并确认中文可读。最终全量命令：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q --cov=orgpilot --cov-report=term-missing --basetemp .pytest-tmp/l3-approval-final-20260904 --disable-warnings
+```
+
+本轮只实现并离线验证 L3-A 工具，没有连接飞书、没有发送卡片或消息、没有调用付费模型。
+真实 L3-A 待单卡授权与用户可见确认；后续完整业务审批、任务更新和通知仍须分别验收。
+
+## 2026-09-04：SDK 缓存生命周期修复（真实 SDK、离线网络替身）
+
+### 根因与修复
+
+- 先补回归，成功复现 L2 退出时的 `Event loop is closed`、缓存 cron pending 与
+  `ExpiringCache.__del__` 告警：客户端在调用线程创建，缓存任务没有绑定 SDK 工作循环。
+- 将 Client 构造移动到 SDK 工作线程设置循环之后；主线程只等待有界的客户端初始化结果。
+- 首次全量回归另外暴露 SDK 两次 `run_until_complete` 切换期间停止请求丢失的问题；补出固定
+  触发该边界的失败测试，再将停止请求保持到工作线程进入清理阶段。修复后该时序连续 5 次通过，
+  停止意图跨越 SDK 循环切换，并在清理开始后停止继续排队。
+- 停止操作只请求 SDK 主循环结束，清理统一回到 SDK 线程：先取消并等待消息接收协程，
+  再有界断连，再取消并等待缓存、ping 与剩余任务，最后关闭循环并恢复 SDK 模块原循环。
+  不通过全局忽略异常来消除告警；断连失败仍记录安全异常类型且 `stop()` 返回 false。
+- 排队或重复的 SDK 停止请求不再打断已开始的清理；客户端/事件处理器初始化失败会回收自有线程。
+  外部正在运行的业务循环及其任务保留，不由监听器关闭。
+
+### 验证与边界
+
+- 使用本地 **lark-oapi 1.7.3 / Python 3.14.7**；7 个真实 SDK 子进程场景覆盖正常退出、连接
+  失败、构造失败、断连失败、立即停止、连接/消息循环切换点停止、外部循环。
+  使用真实缓存 cron 与 SDK 连接/关闭逻辑，但 HTTP/WS 传输被离线替身替代；阻断外网并断言
+  没有外部请求尝试，Windows asyncio 本机 self-pipe 保留。
+- 另外增加事件处理器初始化失败回收测试；原有消息/卡片回调、跨线程桥接与 L2 单回复门禁保留。
+- 最终全量 **323 passed**、覆盖率 **91.22%**，达到 90% 门槛；9/9 场景回放、34 条 Mock
+  抽取评测全部通过。Ruff 检查通过、108 文件格式通过、`git diff --check` 通过；6 份本轮
+  文档的代码围栏配对与 5 个显式本地链接目标检查通过。
+- 全量仍报告 866 条 warning，未宣称全项目零警告；本轮的缓存析构异常、pending task 和
+  never-awaited 错误通过子进程退出 stdout/stderr 断言检查。最终验证命令：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q --cov=orgpilot --cov-report=term-missing --basetemp .pytest-tmp/sdk-cleanup-final-20260904 --disable-warnings
+.\.venv\Scripts\python.exe -m orgpilot replay --all
+.\.venv\Scripts\python.exe -m orgpilot eval-extraction --provider mock
+```
+
+- 历史 L2 真实收发证据不变；本轮未重连飞书、未发送消息、未调用付费模型，未升级 SDK 或修改
+  `.env`、业务数据库。不把离线生命周期成功写成修复后又完成了真实租户验收。
+- 仍依赖 SDK 私有 `_disconnect` 与接收协程接口；模块级循环按同进程单监听器使用，
+  同步握手阻塞时关闭仍可能超出 join 窗口，必须按 `stop()=false` 处理。
+
+## 2026-09-04：L2 真实单目标收发通过（含用户可见确认）
+
+- 用户在机器人私聊准备好后授权本轮单条固定回复。开始前离线预检通过：飞书适配器、凭证
+  存在、WebSocket 模式、演示注入关闭、全局写闸关闭；未发现其他 OrgPilot 进程。
+- 验收标识：`feishu-l2-20260904-080302-4baeaeb9`；报告创建于 **08:03:14 UTC**，
+  连接就绪后开放 300 秒，约 **08:06:21 UTC** 收到单次 API 接受结果并退出，无重试。
+- 脱敏机器报告：`var/feishu-acceptance/feishu-l2-20260904-080302-4baeaeb9.json`。
+  `connected=true`、`received_messages=1`、`matched_messages=1`、`send_attempts=1`、
+  `reply_status=api_accepted`、`window_closed=true`、`listener_stopped=true`。
+- 用户明确确认“已收到回复”，并再次确认“已发送，已收到固定测试回复”。人工确认单独保存在
+  同目录的 `feishu-l2-20260904-080302-4baeaeb9.user-confirmation.json`；机器报告的
+  `user_visible_confirmed=false` 保留原样，不把人工证据伪装成自动检测结果。
+- 退出后只读进程复核：OrgPilot 相关进程 **0**。`.env` 与 `orgpilot.db` 的 SHA-256
+  和文件长度与运行前一致。未调用 LLM、未执行任务/审批动作；本地报告位于 Git 忽略目录。
+
+### 遗留问题与边界
+
+- 正常主动断开时 SDK 输出 `ConnectionClosedOK`；进程退出又出现 `ExpiringCache.__del__`
+  的 `RuntimeError: Event loop is closed` 和缓存清理任务 pending 告警。进程退出码为 0，
+  无残留监听器，但不能据此宣称资源清理完全无告警。
+- 本地源码显示 SDK 缓存定时任务在 Client 构造时绑定当前事件循环，而客户端在切换到 SDK
+  工作线程循环之前创建；下一步修复循环所有权/缓存任务关闭顺序，并补真实 SDK 的离线生命周期
+  回归，不为消除告警重发已成功消息。
+- 本轮只证明受控单目标文本传输闭环，**不证明 L3 业务审批、任务更新、outbox 送达或生产可靠性**。
+  后续顺序：退出清理修复与离线回归 → 单动作 L3 方案及独立授权 → 受控业务验收。
+
+## 2026-09-04：L2 验收工具安全收口（仅离线验证）
+
+### 复核与修正
+
+- 复核发现原 L2 挑战命中后仍调用通用业务 Webhook，单次消息不等于单次外发。现独立为
+  `L2Acceptance`：只接受私聊用户、有效 open_id 与精确文本，只调用一次固定文本发送；无
+  GatewayService、LLM、业务数据库或 outbox 依赖，不解析挑战中的指令。
+- 原 `stop()` 查找 SDK 不存在的公开 disconnect/stop，可能只 join 等待而未关闭连接。现对
+  当前 SDK 的 `_disconnect` 做线程内清理，再取消自有任务、停止循环并确认线程退出；不能确认
+  则显式报告 false。L2 禁止自动重连。SDK ERROR 与异步异常也只输出安全元数据。
+- 新增本地脱敏报告：发送前持久化消息/目标指纹与单次额度；审计落盘失败不发送。超时/异常
+  请求标记 unknown，不自动重发；API 成功仅标记 api_accepted，不推断用户可见。
+- 默认自动生成随机挑战，在连接就绪后即时输出；报告展示回调收件数、过滤原因、匹配数、发送
+  尝试及关闭结果。先确认测试者准备好再开窗口，避免连续空等。
+- 更新架构、目录/开发指南、升级方案状态与验收手册；M3 代码完成、L2/L3 尚未线上通过、M4/M5
+  仍为后续提案。NL 内核任务事件不等同于飞书 Task 实体 CRUD。
+
+### 本轮验证（2026-09-04）
+
+- 全量测试 **315 passed**，总覆盖率 **91.18%**，达到 90% 门槛；较上一轮 288 项新增 27 项，
+  覆盖单次固定回复、过滤/重复事件、窗口过期、发送未知结果、审计失败、SDK 关闭与关闭异常报告。
+- 全量仍报告 866 条 warning；另行展示 WebSocket 定向测试的 warning，4 项通过，38 条均为
+  pytest-asyncio 事件循环策略 API 与 SDK 内置 protobuf 的弃用提示。本轮未升级这些依赖。
+- 9/9 场景回放通过；34 条 **Mock** 抽取评测通过（F1、意图、接地等 100%，误报 0%），
+  只代表离线确定性回归，本轮没有复测在线模型质量。
+- Ruff 检查通过，107 个文件格式检查通过；`git diff --check` 通过。
+- 7 份本轮涉及的 Markdown 文档通过代码围栏配对检查，4 个显式本地链接目标存在。
+- 使用项目 `.venv`；全量命令为：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q --cov=orgpilot --cov-report=term-missing --basetemp .pytest-tmp/l2-closeout-final-20260904 --disable-warnings
+.\.venv\Scripts\python.exe -m orgpilot replay --all
+.\.venv\Scripts\python.exe -m orgpilot eval-extraction --provider mock
+```
+
+### 验收边界
+
+本轮不连接飞书、不发送消息、不调用付费模型，不修改 `.env` 或业务数据库。不复用过去的
+挑战码，不将离线 Mock 接受误报成 L2 通过。下一步仍是测试者准备后的单目标真实收发。
+
+## 2026-08-30：L2 单目标真实收发（连接通过，事件未达）
+
+### 已实现
+
+- 新增 `orgpilot feishu-l2-smoke` 一次性验收命令：要求高熵精确挑战、全新隔离项目、30–300 秒
+  有界窗口和显式单回复确认；环境写入总闸必须保持关闭，命令只在当前进程内允许最多一条文本
+  回复，其他消息、卡片和任务更新全部忽略。
+- SDK INFO 日志会输出带短期 `access_key`/ticket 的完整 WebSocket URL，现将官方 SDK 日志降为
+  ERROR，并增加回归测试，避免凭证进入终端记录。
+- 修复 WebSocket SDK 回调线程与业务事件循环之间的桥接：原实现可能在 SDK 已运行的线程中再次
+  `run_until_complete` 另一个循环；现为休眠的业务循环启动专用线程，并通过
+  `run_coroutine_threadsafe` 完成同步回调。
+- 增加不泄露连接 URL 的连接就绪探针，L2 先证明真实 WebSocket 已建立，再开始挑战计时。
+
+### 在线验收结果
+
+- 第一次一次性窗口安全超时，零回复；据此发现并修复跨事件循环缺陷。
+- 修复后第二次窗口明确报告真实 WebSocket 连接已建立，但 300 秒内没有观察到完全匹配的挑战
+  事件，因此仍为零回复，L2 **未通过**。
+- 两个隔离项目均为零事件、零 outbox 记录；环境写入闸门继续保持默认关闭，没有卡片或任务写入。
+- 下一步需确认测试者确实向当前 App ID 对应机器人发送精确挑战，并只读核对开发者后台：机器人
+  能力、`im.message.receive_v1` 长连接订阅、单聊读取与应用身份发消息权限、版本发布/审核及可见
+  范围。浏览器插件版本缓存不一致，本轮未能读取登录态后台，不能把这些项宣称为已核验。
+
+### 门禁
+
+288 项测试通过，分支覆盖率 90.53%；定向 24 项通过；场景回放 9/9、离线评测 34 样本全部
+通过；Ruff、格式与 `git diff --check` 通过。L2 代码能力已收敛，真实租户业务收件证据仍缺失，
+禁止进入 L3。
+
 ## 2026-08-30：真实飞书受控验收准备
 
 ### 定位

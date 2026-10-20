@@ -6,9 +6,9 @@ OrgPilot is a stateful organizational coordination agent kernel.
 - **M1**: Mock closed-loop coordination agent (`CaseLedger` state machine, three-phase Action lifecycle, human approval gate, Mock adapter feedback, and bounded agent loop).
 - **M2 prototype**: Grounded claim extraction with an offline deterministic client and an opt-in AIHubMix Anthropic-compatible client.
 - **P1 prototype**: Async SQL persistence and a FastAPI event gateway. Local persistent SQLite is the default; PostgreSQL deployment still requires environment-specific integration validation.
-- **F1 integration layer**: Feishu OpenAPI client, HTTP Webhook handler, adapter, and interactive cards. A real-account smoke test is still required before calling this production-ready.
+- **F1 integration layer**: Feishu OpenAPI client, HTTP Webhook handler, adapter, and interactive cards. A bounded L2 private-text exchange passed on 2026-09-04; real business-action acceptance is still required before calling this production-ready.
 - **W1 Web console**: Embedded Single-Page management console and real-time interactive DAG topology visualizer served directly at `http://localhost:8000/`.
-- **M3 complete**: Role-aware intent routing, event-sourced directive execution (issue → relay → ack → complete → remind → escalate), closed multi-turn clarifications, gated NL task creation/reassignment/deadline changes (grounded proposal → dependency analysis → approval card → task.created/task.updated events → DAG + notifications), and M3-R real-integration reliability (typed adapter contract, transactional outbox with retry/dead-letter/delivery ledger, LLM circuit breaker, per-project ingest serialization, server-bound approval identity, XSS escaping).
+- **M3 complete**: Role-aware intent routing, event-sourced directive execution (issue → relay → ack → complete → remind → escalate), closed multi-turn clarifications, gated NL task creation/reassignment/deadline changes (grounded proposal → dependency analysis → approval card → task.created/task.updated events → DAG + notifications), and M3-R real-integration reliability (typed adapter contract, persistent outbox with retry/dead-letter/delivery ledger, LLM circuit breaker, per-project ingest serialization, server-bound approval identity, XSS escaping).
 
 ---
 
@@ -48,8 +48,22 @@ uv run uvicorn orgpilot.gateway.app:create_app --factory --port 8000
 - Real Feishu mutations are additionally gated by `ORGPILOT_FEISHU_ALLOW_WRITES=true`
   (false by default). Run `uv run orgpilot feishu-preflight` first; add
   `--online-auth` only when a read-only credential check is intended.
+- L2 is an isolated one-shot transport check, not the business gateway. Keep the ambient write
+  gate closed and, only after the tester is ready and a single reply is authorized, run
+  `uv run orgpilot feishu-l2-smoke --project-id feishu-l2-<unique-id> --confirm-single-reply`.
+  Copy the generated challenge after `[READY]` into the bot's private chat. No LLM/business DB/
+  outbox is used; redacted reports go to ignored `var/feishu-acceptance/`. API acceptance still
+  requires user-visible confirmation; unknown outcomes must not be automatically retried.
+  L2 passed on 2026-09-04 with one matched message, one API-accepted reply, user-visible confirmation,
+  and process exit. The SDK cache shutdown defect has since been fixed and validated offline with
+  the real SDK; no additional live send was performed. L3 business acceptance is still pending.
+  See [the runbook](docs/feishu-live-acceptance.md).
+- L3-A test approval tooling is implemented for one private card and one identity-bound choice.
+  Preview with `uv run orgpilot feishu-l3-approval --preview`. Live execution requires a fresh run ID
+  and `--confirm-single-card`; it uses an isolated SQLite outbox, freezes uncertain sends, and records
+  only a test approval decision. Real L3-A acceptance is pending; see [ADR-0011](docs/adr/0011-isolated-feishu-approval-acceptance.md).
 - The solo-tester demo task chain injected on a first Feishu message is opt-in: set `ORGPILOT_DEMO_BOOTSTRAP=true` (off by default).
-- Outbound delivery is durable: commands persist in an outbox before sending, failed transports retry with backoff (`ORGPILOT_OUTBOX_*` settings) and dead-letter after the attempt cap; a startup/periodic sweep re-sends anything a crash stranded between "event persisted" and "sent". `GET /api/v1/projects/{id}/outbox` exposes the delivery ledger, and the console shows a backlog badge.
+- Outbound delivery uses a persistent outbox before sending; failed transports retry with backoff (`ORGPILOT_OUTBOX_*` settings) and dead-letter after the attempt cap. Startup/periodic sweeps resume commands already persisted as pending. Domain events and outbox rows do not yet share one atomic commit, so the narrow crash window before enqueue remains an explicit limitation. `GET /api/v1/projects/{id}/outbox` exposes the delivery ledger, and the console shows a backlog badge.
 - Ground-truth replay scenarios (4 P0 + 5 M1) live in `evals/scenarios/`.
 - 34-sample natural language extraction gold dataset lives in `evals/extraction/gold_dataset.yaml`.
 - Architecture and design specifications live in `docs/`.
@@ -75,6 +89,8 @@ uv run uvicorn orgpilot.gateway.app:create_app --factory --port 8000
 - `docs/adr/0008-directive-execution-chain.md`: ADR-0008: Event-Sourced Directive Execution Chain
 - `docs/adr/0009-real-integration-reliability.md`: ADR-0009: Real-Integration Reliability (M3-R)
 - `docs/adr/0010-nl-task-operations.md`: ADR-0010: NL Task Creation & Reassignment Behind Approval Gates
+- `docs/adr/0011-isolated-feishu-approval-acceptance.md`: ADR-0011: bounded test approval and one-shot outbox
+- `docs/adr/0012-outbox-first-execution-truth.md`: ADR-0012: outbox-first execution and truthful delivery state
 
 ---
 

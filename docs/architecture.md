@@ -1,12 +1,24 @@
 # OrgPilot 架构说明
 
+当前基线（2026-09-04）：P0/M1/M2/P1/F1/W1/M3 的代码与离线闭环已实现；真实飞书 L1 鉴权及
+L2 单目标文本收发已通过（含用户可见确认），L3 业务验收仍待独立授权。SDK 缓存清理缺陷已修复，
+并通过真实 SDK 的离线生命周期测试；修复后未重做线上收发。M4/M5 仍是后续提案。
+单次传输成功不等于生产可靠性已验证。
+
+2026-09-12 的执行可靠性收口将网关 Agent、进度探针、澄清和简报统一为 outbox-first；显式失败
+不再记为 delivered，审批后的任务更新失败也不再关闭 Case。后台维护循环会在无新消息时扫描
+指令提醒与升级。事务边界和剩余限制见 [ADR-0012](adr/0012-outbox-first-execution-truth.md)。
+
 ## 演进历程
 
 - **P0 阶段**：建立确定性单向协调内核（事件 → 状态 → 依赖分析 → Case 构建 → Policy 裁决）。
 - **M1 阶段**：建立 Mock 闭环协调 Agent（CaseLedger 状态机 + 三阶段 Action 抽象 + 审批门禁 + Mock Adapter 反馈 + 有界 Agent Loop）。
 - **M2 阶段**：建立结构化声明抽取边界（离线规则客户端 + 可选 AIHubMix Anthropic 兼容客户端 + GroundingVerifier + 相对时间解析）。
 - **P1 阶段**：建立 SQL 异步持久化与 FastAPI 事件网关原型（默认文件型 SQLite，可配置 PostgreSQL；尚未完成多实例生产验证）。
-- **F1 阶段**：建立飞书 OpenAPI、HTTP Webhook 与 2.0 交互式卡片适配层；真实租户 smoke test 尚待执行。
+- **F1 阶段**：建立飞书 OpenAPI、HTTP Webhook 与 2.0 交互式卡片适配层；L2 单文本收发通过，
+  真实租户业务卡片/任务动作仍待 L3 验收。
+- **W1/M3 阶段**：多角色沙箱、DAG/时间线、意图路由、指令生命周期，以及经审批的自然语言建任务、
+  改派与改期；业务外发经 outbox 重试/死信，模型具有有界重试与熔断。
 
 ---
 
@@ -16,7 +28,9 @@
 飞书桌面端 / 移动端 (Feishu Desktop / Mobile Client)
         │ (发送群聊/私聊消息 或 点击卡片【🟢 批准】/【🔴 拒绝】按钮)
         ▼
-FastAPI 事件网关 (`src/orgpilot/gateway/`)
+HTTP Webhook / FeishuWebSocketListener（SDK 线程 → 业务事件循环）
+        ▼
+GatewayService / FastAPI (`src/orgpilot/gateway/`)
         ├── /api/v1/feishu/events (飞书 URL Challenge 握手、消息接收与卡片按钮回调)
         ├── /api/v1/projects/{id}/events (结构化事件流摄入与查询)
         ├── /api/v1/projects/{id}/messages (自然语言聊天文本摄入 + 自动抽取)
@@ -24,14 +38,15 @@ FastAPI 事件网关 (`src/orgpilot/gateway/`)
         ├── /api/v1/projects/{id}/approvals (待审列表与批准/拒绝决策 Webhook)
         └── /api/v1/projects/{id}/run-turn (显式触发 Agent 协调轮次)
         ↓
-LLM 声明抽取引擎 (`src/orgpilot/extraction/`)
+IntentRouter → 声明抽取 / DirectiveManager / TaskManager
         ├── ClaimExtractor (Pydantic v2 强约束输出)
         ├── GroundingVerifier (原文引文反查防证据幻觉)
         └── TemporalResolver (相对时间绝对化归一解析)
         ↓
 SQL 异步持久化存储 (`src/orgpilot/storage/`)
         ├── SqlEventStore (基于 (project_id, event_id) 唯一索引与 SHA-256 哈希校验的 Append-only 幂等事件日志)
-        └── SqlStateStore (OrgState / CaseLedger / ApprovalManager 快照持久化与跨进程瞬时恢复)
+        ├── SqlStateStore (OrgState / CaseLedger / ApprovalManager 快照与重启回放)
+        └── SqlOutboxStore (持久化发送意图、累计尝试、重试与死信)
         ↓
 确定性状态投影 (`OrgProjector`)
         ↓
@@ -47,7 +62,7 @@ Case 账本对齐与消除 (`CaseLedger`)
         ↓
 确定性指令生成 (`ActionCommand`)
         ↓
-飞书适配器 (`FeishuCollaborationAdapter` / `src/orgpilot/feishu/`)
+OutboxDispatcher → 飞书适配器 (`FeishuCollaborationAdapter`)
         ├── SEND_PRIVATE_INQUIRY -> 发送延期追问卡片
         ├── REQUEST_APPROVAL -> 发送 PM 原地交互式审批卡片 (持久化审批 ID)
         ├── UPDATE_TASK_DEADLINE -> 调用飞书 Task v2 OpenAPI 更新截止时间
@@ -56,21 +71,35 @@ Case 账本对齐与消除 (`CaseLedger`)
 执行结果 (`ActionResult`) & 状态更新卡片原地渲染
 ```
 
+指令由 `DirectiveManager` 独立管理，不混入风险驱动的 `CaseLedger`（ADR-0008）。NL 任务操作
+采用 TaskManager 提案 → ApprovalManager 审批 → 内核任务事件 → outbox 通知（ADR-0010）；
+本地 `task.created/updated` 不等于已经创建/改派了飞书 Task 实体，真实平台操作需独立验收。
+
+L2 是刻意隔离的另一条路径：SDK 消息回调 → `L2Acceptance` 精确私聊挑战 → 最多一次固定文本
+发送尝试 → 本地脱敏 JSON 回执。它不进入上述业务链、不调用模型、不读写业务数据库/outbox。
+因此 L2 只证明传输收发，不能代替 L3 的业务审批/任务闭环验收。
+
+L3-A 在共享的 `AcceptanceWindow` 上复用 `ApprovalManager` 和独立 `SqlOutboxStore`：精确
+私聊挑战 → 合成测试审批 → 原子占用单卡额度 → 平台接受 → 绑定卡片/操作者的审批选择 → 脱敏
+报告与关闭。测试审批不消费为任务命令，不进入通用网关业务执行器；工具已离线验证，真实验收待完成。
+`held` outbox 状态保留不确定的单次额度，排除于自动重发查询，但计入待处理数量。
+设计详见 [ADR-0011](adr/0011-isolated-feishu-approval-acceptance.md)。
+
 ---
 
 ## 核心模块与职责分工
 
 | 模块 | 职责 | 核心组件 / 类 |
 | --- | --- | --- |
-| `feishu` | 飞书 OpenAPI 客户端、Token 自动刷新、2.0 交互式卡片渲染与 HTTP Webhook 解析 | `AsyncFeishuClient`, `MockFeishuClient`, `FeishuCollaborationAdapter`, `FeishuWebhookHandler` |
+| `feishu` | OpenAPI、卡片、HTTP/WS 桥接；L2 文本与 L3-A 单审批卡验收 | `AsyncFeishuClient`, `FeishuCollaborationAdapter`, `FeishuWebhookHandler`, `FeishuWebSocketListener`, `L2Acceptance`, `L3ApprovalAcceptance` |
 | `gateway` | FastAPI 异步事件网关、Webhook 路由、生命周期与 REST 服务 | `create_app`, `GatewayService` |
-| `storage` | SQLAlchemy 2.0 异步数据库持久化、幂等事件表、状态与 Case 快照 | `Database`, `SqlEventStore`, `SqlStateStore`, `Base` |
+| `storage` | SQLAlchemy 异步持久化、幂等事件、状态/审批快照与 outbox | `Database`, `SqlEventStore`, `SqlStateStore`, `SqlOutboxStore` |
 | `extraction` | 自然语言消息结构化抽取、防幻觉反查、相对时间解析、离线评测与可选在线客户端 | `ClaimExtractor`, `GroundingVerifier`, `TemporalResolver`, `MockLLMClient`, `AnthropicCompatibleLLMClient` |
 | `events` | 版本化事件契约、不可变信封、反序列化、内存幂等事件日志 | `OrgEvent`, `InMemoryEventLog`, `parse_event` |
 | `domain` | 领域模型、严格校验、枚举词汇、稳定领域异常 | `OrgState`, `CoordinationCase`, `ActionCommand`, `ActionResult`, `ApprovalRequest` |
 | `state` | 严格按时序投影当前组织状态与证据链路 | `OrgProjector` |
 | `dependencies` | 依赖有向图环路检测与多跳风险影响传播 | `DependencyAnalyzer` |
-| `coordination` | Case 生命周期维护、状态对齐与消除、审批状态机、候选动作规划 | `CaseLedger`, `ApprovalManager`, `CoordinationService` |
+| `coordination` | 风险 Case、指令生命周期、任务提案审批及进度同步 | `CaseLedger`, `ApprovalManager`, `DirectiveManager`, `TaskManager`, `ProgressSyncCoordinator` |
 | `policy` | 独立评估动作风险等级与审批门禁 | `PolicyEngine` |
 | `adapter` | 协作平台统一接口、Mock 模拟与反馈事件注入 | `CollaborationAdapter`, `MockCollaborationAdapter` |
 | `agent` | 有界单步/多轮 Agent Loop 编排与轨迹记录 | `CoordinationAgent`, `AgentExecutionTrace` |
@@ -85,6 +114,19 @@ Case 账本对齐与消除 (`CaseLedger`)
 - 网关验证飞书 Verification Token，并校验操作者 `open_id` 等于指定审批人，随后推进任务改期和事件持久化。
 
 ### 2. 显式运行模式
-- **事件通道**：当前只支持带 Verification Token 的 HTTP Webhook；WebSocket 尚未实现；
+- **事件通道**：HTTP Webhook 与 WebSocket 已实现；SDK 线程向业务循环桥接回调。当前 SDK 使用
+  模块级循环，同一进程按单监听器使用，多监听器/多实例不在已验证范围；
+- **循环所有权**：SDK Client 在 SDK 线程设置循环后才创建，缓存定时任务与连接共用该循环。
+  停止请求先让 `Client.start()` 返回，再在 SDK 线程中取消接收协程、完成断连、取消并等待
+  缓存/ping 等剩余任务，最后关闭循环；已运行的外部业务循环及其任务不由监听器销毁；
 - **协作适配器**：默认 `MockCollaborationAdapter`，只有设置 `ORGPILOT_COLLABORATION_ADAPTER=feishu` 并提供完整凭据才启用真实飞书调用；
 - **模型客户端**：默认离线 `MockLLMClient`，只有设置 `ORGPILOT_LLM_PROVIDER=aihubmix` 才启用在线调用。
+- **写入总闸**：`ORGPILOT_FEISHU_ALLOW_WRITES=false` 默认关闭；正常网关的 WS、业务 Webhook 和
+  outbox 清扫在闸门关闭时不启动/不执行，HTTP URL verification 例外；
+- **L2 模式**：总闸仍关闭，专用命令只向独立 `L2Acceptance` 注入发送客户端。收到非私聊、非用户、
+  缺失 open_id、非文本或不匹配挑战均拒绝；只发送固定文本，不把挑战当业务命令解析；
+- **结果边界**：API 成功记 `api_accepted`，不自动宣称用户可见；网络异常/取消记 `unknown`，不重发。
+  关闭时调用当前 SDK 的 `_disconnect` 并停止/回收自有循环，断连失败或线程未退出均报告
+  关闭未确认。此处依赖 SDK 私有接口，升级 SDK 时必须运行真实 SDK 离线生命周期回归；
+- **生产边界**：REST 的可选共享 Bearer Token 与项目角色检查不等于完整逐用户登录和租户隔离。
+  PostgreSQL、多实例、长期运行、备份恢复与逐用户权限仍需在真实试用前分别验收。

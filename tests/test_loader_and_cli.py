@@ -188,3 +188,150 @@ def test_cli_feishu_listener_requires_explicit_write_gate(
     _set_safe_feishu_env(monkeypatch)
     with pytest.raises(SystemExit, match="write gate is closed"):
         cli._start_feishu_ws()
+
+
+@pytest.mark.parametrize(
+    ("challenge", "project_id", "timeout_seconds", "confirmed", "error"),
+    [
+        ("long-enough-challenge", "feishu-l2-test", 30, False, "confirm-single-reply"),
+        ("too-short", "feishu-l2-test", 30, True, "at least 12"),
+        ("long-enough-challenge", "feishu-l2-test", 29, True, "between 30 and 300"),
+        ("long-enough-challenge", "shared-project", 30, True, "must start"),
+        ("long-enough-challenge", "feishu-l2-../../escape", 30, True, "safe unique suffix"),
+        ("long-enough\nchallenge", "feishu-l2-test", 30, True, "single line"),
+    ],
+)
+def test_cli_feishu_l2_rejects_unbounded_or_ambiguous_invocation(
+    challenge: str,
+    project_id: str,
+    timeout_seconds: int,
+    confirmed: bool,
+    error: str,
+) -> None:
+    with pytest.raises(SystemExit, match=error):
+        cli._feishu_l2_smoke(challenge, project_id, timeout_seconds, confirmed)
+
+
+def test_cli_feishu_l2_requires_ambient_write_gate_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_safe_feishu_env(monkeypatch)
+    monkeypatch.setenv("ORGPILOT_FEISHU_ALLOW_WRITES", "true")
+
+    with pytest.raises(SystemExit, match="Ambient Feishu write gate must remain closed"):
+        cli._feishu_l2_smoke(
+            "long-enough-challenge",
+            "feishu-l2-test",
+            30,
+            True,
+        )
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected_code", "expected_status"),
+    [
+        ("accepted", 0, "api_accepted"),
+        ("timeout", 1, "not_attempted"),
+        ("request_error", 1, "unknown"),
+        ("connection_failure", 1, "not_attempted"),
+        ("shutdown_failure", 1, "api_accepted"),
+        ("shutdown_exception", 1, "api_accepted"),
+    ],
+)
+def test_cli_l2_offline_lifecycle_and_safe_report(
+    mode: str,
+    expected_code: int,
+    expected_status: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import asyncio
+    import json
+
+    from orgpilot.feishu.acceptance import L2Acceptance
+    from orgpilot.feishu.client import MockFeishuClient
+
+    _set_safe_feishu_env(monkeypatch)
+    monkeypatch.chdir(tmp_path)
+    seen: dict = {}
+
+    class TestClient(MockFeishuClient):
+        async def send_message(self, **kwargs) -> dict:
+            if mode == "request_error":
+                raise TimeoutError("secret_must_not_appear")
+            return await super().send_message(**kwargs)
+
+    def client_factory(**kwargs) -> TestClient:
+        assert kwargs["allow_writes"] is True
+        return TestClient()
+
+    class TestListener:
+        connection_error_type = "TestConnectionError"
+
+        def __init__(self, **kwargs) -> None:
+            seen.update(kwargs)
+
+        def start(self) -> None:
+            seen["started"] = True
+
+        def wait_until_connected(self, _timeout: float) -> bool:
+            return mode != "connection_failure"
+
+        def stop(self) -> bool:
+            seen["acceptance"].close()
+            seen["stopped"] = True
+            if mode == "shutdown_exception":
+                raise RuntimeError("secret_must_not_appear")
+            return mode != "shutdown_failure"
+
+    original_wait = L2Acceptance.wait
+
+    def deliver_or_timeout(acceptance: L2Acceptance, _timeout: float) -> dict:
+        if mode != "timeout":
+            asyncio.run(
+                acceptance.handle_message(
+                    {
+                        "message_type": "text",
+                        "chat_type": "p2p",
+                        "message_id": "om_private",
+                        "content": json.dumps({"text": acceptance.challenge}),
+                    },
+                    {"open_id": "ou_private", "sender_type": "user"},
+                )
+            )
+        return original_wait(acceptance, 0)
+
+    monkeypatch.setattr("orgpilot.feishu.client.AsyncFeishuClient", client_factory)
+    monkeypatch.setattr("orgpilot.feishu.ws.FeishuWebSocketListener", TestListener)
+    monkeypatch.setattr(L2Acceptance, "wait", deliver_or_timeout)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "orgpilot",
+            "feishu-l2-smoke",
+            "--project-id",
+            "feishu-l2-offline",
+            "--confirm-single-reply",
+        ],
+    )
+    assert cli.main() == expected_code
+    assert seen["stopped"] is True
+    assert "gateway_service" not in seen
+    report_path = tmp_path / "var/feishu-acceptance/feishu-l2-offline.json"
+    report_text = report_path.read_text(encoding="utf-8")
+    report = json.loads(report_text)
+    assert report["reply_status"] == expected_status
+    assert report["user_visible_confirmed"] is False
+    assert report["window_closed"] is True
+    assert report["listener_stopped"] is (mode not in {"shutdown_failure", "shutdown_exception"})
+    assert not (tmp_path / "orgpilot.db").exists()
+    output = capsys.readouterr().out
+    for private_value in ("secret_must_not_appear", "ou_private", "om_private"):
+        assert private_value not in output + report_text
+    assert seen["acceptance"].challenge not in report_text
+    if mode == "accepted":
+        assert "user-side visibility still needs confirmation" in output
+    with pytest.raises(SystemExit, match="report already exists"):
+        cli.main()

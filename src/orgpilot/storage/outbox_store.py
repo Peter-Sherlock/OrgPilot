@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from orgpilot.domain.models import ActionCommand
 from orgpilot.storage.database import Database
@@ -13,6 +13,7 @@ from orgpilot.storage.models import OutboxRecord
 OUTBOX_PENDING = "pending"
 OUTBOX_DELIVERED = "delivered"
 OUTBOX_DEAD = "dead"
+OUTBOX_HELD = "held"
 
 
 class SqlOutboxStore:
@@ -90,6 +91,25 @@ class SqlOutboxStore:
             )
             return True
 
+    async def reserve_once(self, project_id: str, idempotency_key: str, now: datetime) -> bool:
+        """Atomically consume a one-shot send budget before IO.
+
+        Held rows are excluded from automatic recovery. A crash/uncertain result
+        requires reconciliation, never another attempt. Normal dispatch is unchanged.
+        """
+        async with self.db.session() as session:
+            result = await session.execute(
+                update(OutboxRecord)
+                .where(
+                    OutboxRecord.project_id == project_id,
+                    OutboxRecord.idempotency_key == idempotency_key,
+                    OutboxRecord.status == OUTBOX_PENDING,
+                    OutboxRecord.attempts == 0,
+                )
+                .values(status=OUTBOX_HELD, attempts=1, updated_at=now)
+            )
+            return result.rowcount == 1
+
     async def due_commands(self, project_id: str, now: datetime) -> list[ActionCommand]:
         """Returns pending commands whose next attempt is due, oldest first."""
         async with self.db.session() as session:
@@ -153,6 +173,15 @@ class SqlOutboxStore:
             rec = (await session.execute(stmt)).scalar_one_or_none()
             return int(rec.attempts) if rec is not None else 0
 
+    async def status_of(self, project_id: str, idempotency_key: str) -> str | None:
+        """Returns the delivery status for one idempotent command, if present."""
+        async with self.db.session() as session:
+            stmt = select(OutboxRecord.status).where(
+                OutboxRecord.project_id == project_id,
+                OutboxRecord.idempotency_key == idempotency_key,
+            )
+            return (await session.execute(stmt)).scalar_one_or_none()
+
     async def list_rows(self, project_id: str, limit: int = 50) -> list[dict[str, Any]]:
         """Returns recent outbox rows for observability endpoints."""
         async with self.db.session() as session:
@@ -179,14 +208,14 @@ class SqlOutboxStore:
             ]
 
     async def pending_count(self, project_id: str) -> int:
-        """Counts undelivered rows (pending retries plus dead letters)."""
+        """Counts undelivered rows, including held one-shot attempts awaiting reconciliation."""
         async with self.db.session() as session:
             stmt = (
                 select(func.count())
                 .select_from(OutboxRecord)
                 .where(
                     OutboxRecord.project_id == project_id,
-                    OutboxRecord.status.in_((OUTBOX_PENDING, OUTBOX_DEAD)),
+                    OutboxRecord.status.in_((OUTBOX_PENDING, OUTBOX_DEAD, OUTBOX_HELD)),
                 )
             )
             return int((await session.execute(stmt)).scalar_one())

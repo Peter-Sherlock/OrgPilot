@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 from orgpilot.adapter.base import CollaborationAdapter
 from orgpilot.adapter.contracts import PermanentDeliveryError
+from orgpilot.domain.enums import CommandStatus
 from orgpilot.domain.models import ActionCommand
 from orgpilot.events.models import (
     DirectiveDeliveredEvent,
@@ -100,7 +101,27 @@ class OutboxDispatcher:
         attempts = await self.store.attempts_of(project_id, command.idempotency_key) + 1
         try:
             # The adapter interface is synchronous and may block on IO.
-            await asyncio.to_thread(adapter.execute, command)
+            result = await asyncio.to_thread(adapter.execute, command)
+            if result.status is not CommandStatus.SUCCESS:
+                error = result.error or f"adapter returned {result.status.value}"
+                await self.store.settle(
+                    project_id,
+                    command.idempotency_key,
+                    delivered=False,
+                    attempts=attempts,
+                    error=error,
+                    retry_at=now,
+                    now=now,
+                    dead=True,
+                )
+                return self._delivery_event(
+                    project_id,
+                    command,
+                    success=False,
+                    attempts=attempts,
+                    error=error,
+                    now=now,
+                )
         except Exception as exc:
             # Transport failures are recoverable (backoff, then dead-letter);
             # permanent rejections (bad target, 4xx) dead-letter immediately —
@@ -132,9 +153,11 @@ class OutboxDispatcher:
             retry_at=now,
             now=now,
         )
-        return self._delivery_event(
+        events = self._delivery_event(
             project_id, command, success=True, attempts=attempts, error=None, now=now
         )
+        events.extend(adapter.pop_generated_events())
+        return events
 
     def _delivery_event(
         self,

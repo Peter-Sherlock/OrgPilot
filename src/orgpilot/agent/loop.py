@@ -13,6 +13,7 @@ from orgpilot.domain.enums import (
     ActionType,
     AgentTerminationReason,
     ApprovalStatus,
+    CommandStatus,
     CoordinationCaseStatus,
 )
 from orgpilot.domain.models import (
@@ -36,6 +37,7 @@ class CoordinationAgent:
         project_id: str,
         adapter: CollaborationAdapter | None = None,
         max_response_timeout_hours: int = 2,
+        defer_outbound: bool = False,
     ) -> None:
         self.project_id = project_id
         self.event_log = InMemoryEventLog()
@@ -46,17 +48,18 @@ class CoordinationAgent:
         self.approval_manager = ApprovalManager()
         self.case_ledger = CaseLedger()
         self.adapter = adapter or MockCollaborationAdapter(project_id=project_id)
+        self.defer_outbound = defer_outbound
         self.max_response_timeout = timedelta(hours=max_response_timeout_hours)
         self._turn_count = 0
         # Outbound commands executed this turn with their transport outcome, so the
         # gateway can settle them into the persistent outbox after the turn.
-        self._turn_outbound: list[tuple[ActionCommand, bool, str | None]] = []
+        self._turn_outbound: list[tuple[ActionCommand, bool | None, str | None]] = []
 
     @property
     def state(self) -> OrgState:
         return self.projector.state
 
-    def pop_turn_outbound(self) -> list[tuple[ActionCommand, bool, str | None]]:
+    def pop_turn_outbound(self) -> list[tuple[ActionCommand, bool | None, str | None]]:
         """Returns and clears this turn's outbound commands with delivery outcomes."""
         outbound = self._turn_outbound
         self._turn_outbound = []
@@ -72,8 +75,11 @@ class CoordinationAgent:
         settle them into the persistent outbox (retry failures, ledger honesty).
         """
         command = args[0] if args and isinstance(args[0], ActionCommand) else None
+        if self.defer_outbound and command is not None:
+            self._turn_outbound.append((command, None, None))
+            return True
         try:
-            call(*args)
+            result = call(*args)
         except Exception as exc:
             logger.exception(
                 "Adapter %s failed; coordination continues without delivery", operation
@@ -81,9 +87,13 @@ class CoordinationAgent:
             if command is not None:
                 self._turn_outbound.append((command, False, str(exc)))
             return False
+        succeeded = result.status is CommandStatus.SUCCESS
+        error = None if succeeded else (result.error or f"adapter returned {result.status.value}")
         if command is not None:
-            self._turn_outbound.append((command, True, None))
-        return True
+            self._turn_outbound.append((command, succeeded, error))
+        if not succeeded:
+            logger.error("Adapter %s returned %s: %s", operation, result.status.value, error)
+        return succeeded
 
     def run_turn(
         self,
@@ -225,31 +235,49 @@ class CoordinationAgent:
                                 created_at=current_time,
                                 idempotency_key=f"idem:update:{case.source_task_id}:r{self._turn_count}",
                             )
-                            self._safe_adapter_call(
+                            update_succeeded = self._safe_adapter_call(
                                 "execute(reschedule_update)", self.adapter.execute, update_cmd
                             )
                             self.case_ledger.record_command(case.case_id, update_cmd, current_time)
                             executed_cmd_ids.append(update_cmd.command_id)
-                            self.case_ledger.transition(
-                                case.case_id,
-                                CoordinationCaseStatus.RESOLVED,
-                                current_time,
-                                terminal_reason="reschedule approved and task updated",
-                                candidate_actions=(),
-                            )
+                            if update_succeeded:
+                                self.case_ledger.transition(
+                                    case.case_id,
+                                    CoordinationCaseStatus.RESOLVED,
+                                    current_time,
+                                    terminal_reason="reschedule approved and task updated",
+                                    candidate_actions=(),
+                                )
+                            else:
+                                self.case_ledger.transition(
+                                    case.case_id,
+                                    CoordinationCaseStatus.ESCALATED,
+                                    current_time,
+                                    terminal_reason="approved task update execution failed",
+                                    candidate_actions=(),
+                                )
                         elif req.action_type is ActionType.UPDATE_TASK:
-                            self._safe_adapter_call(
+                            update_succeeded = self._safe_adapter_call(
                                 "execute(task_update)", self.adapter.execute, command
                             )
                             self.case_ledger.record_command(case.case_id, command, current_time)
                             executed_cmd_ids.append(command.command_id)
-                            self.case_ledger.transition(
-                                case.case_id,
-                                CoordinationCaseStatus.RESOLVED,
-                                current_time,
-                                terminal_reason="task update executed",
-                                candidate_actions=(),
-                            )
+                            if update_succeeded:
+                                self.case_ledger.transition(
+                                    case.case_id,
+                                    CoordinationCaseStatus.RESOLVED,
+                                    current_time,
+                                    terminal_reason="task update executed",
+                                    candidate_actions=(),
+                                )
+                            else:
+                                self.case_ledger.transition(
+                                    case.case_id,
+                                    CoordinationCaseStatus.ESCALATED,
+                                    current_time,
+                                    terminal_reason="approved task update execution failed",
+                                    candidate_actions=(),
+                                )
                     elif req.status is ApprovalStatus.REJECTED:
                         self.case_ledger.transition(
                             case.case_id,
@@ -308,3 +336,7 @@ class CoordinationAgent:
                 return AgentTerminationReason.WAITING_APPROVAL
 
         return AgentTerminationReason.NO_ACTION
+
+    def current_termination_reason(self) -> AgentTerminationReason:
+        """Returns the termination reason for the current persisted case state."""
+        return self._determine_termination_reason()

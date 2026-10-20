@@ -2,6 +2,7 @@
 
 import logging
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -9,6 +10,7 @@ from orgpilot.adapter.base import CollaborationAdapter
 from orgpilot.dependencies.analyzer import DependencyAnalyzer
 from orgpilot.domain.enums import (
     ActionType,
+    CommandStatus,
     HealthStatus,
     ProbeMemberStatus,
     SyncSessionStatus,
@@ -41,6 +43,8 @@ class ProgressSyncCoordinator:
         extractor: ClaimExtractor | None = None,
         max_clarification_turns: int = 2,
         reference_timezone: str = "Asia/Shanghai",
+        defer_outbound: bool = False,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.agent = agent
         self.adapter = adapter or agent.adapter
@@ -48,7 +52,38 @@ class ProgressSyncCoordinator:
         self.analyzer = DependencyAnalyzer()
         self.max_clarification_turns = max_clarification_turns
         self.reference_timezone = reference_timezone
+        self.defer_outbound = defer_outbound
+        self._clock = clock or (lambda: datetime.now(UTC))
         self._sessions: dict[str, SyncSession] = {}
+        self._outbound_commands: list[ActionCommand] = []
+
+    def now(self) -> datetime:
+        value = self._clock()
+        return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+    def pop_outbound_commands(self) -> list[ActionCommand]:
+        commands = self._outbound_commands
+        self._outbound_commands = []
+        return commands
+
+    def _dispatch(self, command: ActionCommand) -> bool:
+        if self.defer_outbound:
+            self._outbound_commands.append(command)
+            return True
+        try:
+            result = self.adapter.execute(command)
+        except Exception as exc:
+            logger.error("Failed to execute sync command %s: %s", command.command_id, exc)
+            return False
+        if result.status is not CommandStatus.SUCCESS:
+            logger.error(
+                "Sync command %s returned %s: %s",
+                command.command_id,
+                result.status.value,
+                result.error,
+            )
+            return False
+        return True
 
     def get_session(self, session_id: str) -> SyncSession | None:
         return self._sessions.get(session_id)
@@ -78,7 +113,7 @@ class ProgressSyncCoordinator:
         custom_intro: str | None = None,
     ) -> SyncSession:
         """Dispatches 1-on-1 private inquiries to all active task owners across the project."""
-        now = datetime.now(UTC)
+        now = self.now()
         session_id = f"sync-{project_id}-{uuid.uuid4().hex[:8]}"
 
         # A project has at most one live sync: close stale probes so replies after a
@@ -151,10 +186,7 @@ class ProgressSyncCoordinator:
                 created_at=now,
                 idempotency_key=f"idem:probe:{session_id}:{member_id}",
             )
-            try:
-                self.adapter.execute(cmd)
-            except Exception as exc:
-                logger.error("Failed to send inquiry to %s: %s", member_id, exc)
+            self._dispatch(cmd)
 
         session = SyncSession(
             session_id=session_id,
@@ -184,7 +216,7 @@ class ProgressSyncCoordinator:
             logger.warning("Session %s not found for member %s reply", session_id, member_id)
             return True, None
 
-        now = occurred_at or datetime.now(UTC)
+        now = occurred_at or self.now()
         session.updated_at = now
 
         probe = session.member_probes.get(member_id)
@@ -266,10 +298,7 @@ class ProgressSyncCoordinator:
                 created_at=now,
                 idempotency_key=f"idem:clarify:{session_id}:{member_id}:t{probe.turns_count}",
             )
-            try:
-                self.adapter.execute(clarify_cmd)
-            except Exception as exc:
-                logger.error("Failed to send clarification to %s: %s", member_id, exc)
+            self._dispatch(clarify_cmd)
 
             return False, question
 
@@ -292,7 +321,7 @@ class ProgressSyncCoordinator:
         ):
             return None
 
-        now = datetime.now(UTC)
+        now = self.now()
         for probe in session.member_probes.values():
             if probe.status != ProbeMemberStatus.COLLECTED:
                 probe.status = ProbeMemberStatus.NO_RESPONSE
@@ -305,7 +334,7 @@ class ProgressSyncCoordinator:
         if not session:
             return None
 
-        now = datetime.now(UTC)
+        now = self.now()
         session.status = SyncSessionStatus.SYNTHESIZING
 
         tasks = self.agent.projector.state.tasks
@@ -408,12 +437,7 @@ class ProgressSyncCoordinator:
             created_at=now,
             idempotency_key=f"idem:briefing:{session_id}",
         )
-        try:
-            self.adapter.execute(notify_cmd)
-        except Exception as exc:
-            logger.error("Failed to dispatch briefing to PM: %s", exc)
+        self._dispatch(notify_cmd)
 
-        logger.info(
-            "Successfully synthesized and delivered executive briefing for session %s", session_id
-        )
+        logger.info("Successfully synthesized executive briefing for session %s", session_id)
         return briefing

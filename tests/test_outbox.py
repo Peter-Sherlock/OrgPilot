@@ -1,19 +1,69 @@
 """Outbox reliability: enqueue-before-send, retry with backoff, dead letters,
 crash recovery between persist and send, and the directive delivery ledger."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import httpx
 import pytest
 
 from orgpilot.config import OrgPilotSettings
-from orgpilot.domain.models import ActionCommand
+from orgpilot.domain.enums import ActionType, CommandStatus, CoordinationCaseStatus
+from orgpilot.domain.models import ActionCommand, ActionResult
 from orgpilot.gateway.app import create_app
+from orgpilot.gateway.outbox import OutboxDispatcher
 from orgpilot.gateway.service import GatewayService
 from orgpilot.storage.database import Database
-from orgpilot.storage.outbox_store import OUTBOX_DEAD, OUTBOX_DELIVERED, OUTBOX_PENDING
+from orgpilot.storage.outbox_store import (
+    OUTBOX_DEAD,
+    OUTBOX_DELIVERED,
+    OUTBOX_PENDING,
+    SqlOutboxStore,
+)
 
 NOW = datetime.fromisoformat("2026-09-10T10:00:00+08:00")
+
+
+class ResultFailingAdapter:
+    """Returns a typed adapter failure without raising an exception."""
+
+    def execute(self, command: ActionCommand) -> ActionResult:
+        return ActionResult(
+            command_id=command.command_id,
+            action_id=command.action_id,
+            status=CommandStatus.FAILED,
+            error="synthetic contract failure",
+            executed_at=command.created_at,
+        )
+
+    def pop_generated_events(self) -> list:
+        return []
+
+
+async def test_adapter_failed_result_is_dead_lettered_not_delivered() -> None:
+    db = Database("sqlite+aiosqlite:///:memory:")
+    await db.init_db()
+    store = SqlOutboxStore(db)
+    dispatcher = OutboxDispatcher(store)
+    command = ActionCommand(
+        command_id="cmd:typed-failure",
+        action_id="action:typed-failure",
+        action_type=ActionType.SEND_DIRECTIVE,
+        targets=("alice",),
+        payload={"text": "test", "directive_id": "dir-typed-failure"},
+        idempotency_key="idem:typed-failure",
+        created_at=NOW,
+    )
+
+    events = await dispatcher.enqueue_and_deliver(
+        "project-typed-failure", command, ResultFailingAdapter()
+    )
+
+    rows = await store.list_rows("project-typed-failure")
+    assert rows[0]["status"] == OUTBOX_DEAD
+    assert rows[0]["attempts"] == 1
+    assert rows[0]["last_error"] == "synthetic contract failure"
+    assert [event.event_type for event in events] == ["directive.delivery_failed"]
+    await db.close()
 
 
 async def _seed(db: Database, project_id: str) -> None:
@@ -46,6 +96,137 @@ async def _seed(db: Database, project_id: str) -> None:
             },
         ],
     )
+
+
+class FailFirstTaskUpdateAdapter:
+    """Delegates every command except the first task update, which loses transport."""
+
+    def __init__(self, project_id: str) -> None:
+        from orgpilot.adapter.mock import MockCollaborationAdapter
+
+        self.inner = MockCollaborationAdapter(project_id=project_id)
+        self.update_attempts = 0
+
+    def execute(self, command: ActionCommand) -> ActionResult:
+        if command.action_type is ActionType.UPDATE_TASK:
+            self.update_attempts += 1
+            if self.update_attempts == 1:
+                raise ConnectionError("synthetic task transport outage")
+        return self.inner.execute(command)
+
+    def __getattr__(self, name):
+        return getattr(self.inner, name)
+
+
+async def test_failed_approved_update_is_not_resolved_until_retry_succeeds() -> None:
+    db = Database("sqlite+aiosqlite:///:memory:")
+    await db.init_db()
+    project_id = "project-update-retry"
+    adapter = FailFirstTaskUpdateAdapter(project_id)
+    service = GatewayService(
+        db,
+        adapter_factory=lambda _project_id: adapter,
+        outbox_retry_seconds=0,
+    )
+    await _seed(db, project_id)
+    await service.ingest_raw_events(
+        project_id,
+        [
+            {
+                "schema_version": 1,
+                "project_id": project_id,
+                "event_id": "evt-update-retry-task",
+                "event_type": "task.created",
+                "source": "task",
+                "source_ref": "setup:task",
+                "occurred_at": NOW.isoformat(),
+                "received_at": NOW.isoformat(),
+                "payload": {
+                    "task_id": "backend_api",
+                    "title": "Backend API",
+                    "owner_id": "alice",
+                    "workflow_status": "doing",
+                    "deadline": NOW.isoformat(),
+                },
+            },
+            {
+                "schema_version": 1,
+                "project_id": project_id,
+                "event_id": "evt-update-retry-health",
+                "event_type": "task.health_reported",
+                "source": "message",
+                "source_ref": "message:alice:update-retry",
+                "actor_id": "alice",
+                "occurred_at": NOW.isoformat(),
+                "received_at": NOW.isoformat(),
+                "payload": {
+                    "task_id": "backend_api",
+                    "health_status": "delayed",
+                    "expected_completion": "2026-09-15T18:00:00+08:00",
+                    "confidence": 0.95,
+                },
+            },
+        ],
+    )
+
+    agent = await service.get_or_replay_agent(project_id)
+    first_trace, _ = await service.run_agent_turn(agent, [], NOW)
+    assert first_trace.termination_reason.value == "waiting_approval"
+    approval = agent.approval_manager.get_pending_requests()[0]
+    agent.approval_manager.approve(approval.approval_id, "carol", NOW)
+
+    failed_trace, _ = await service.run_agent_turn(agent, [], NOW)
+    case = agent.case_ledger.get_all_cases()[0]
+    assert failed_trace.termination_reason.value == "escalated"
+    assert case.status is CoordinationCaseStatus.ESCALATED
+    assert case.terminal_reason == "approved task update execution failed"
+    assert agent.projector.state.tasks["backend_api"].deadline == NOW
+
+    update_rows = [
+        row
+        for row in await service.outbox_store.list_rows(project_id)
+        if row["action_type"] == ActionType.UPDATE_TASK.value
+    ]
+    assert update_rows[0]["status"] == OUTBOX_PENDING
+
+    assert await service.sweep_outbox() == 1
+    recovered = await service.get_or_replay_agent(project_id)
+    recovered_case = recovered.case_ledger.get_all_cases()[0]
+    assert recovered_case.status is CoordinationCaseStatus.RESOLVED
+    assert recovered_case.terminal_reason == "approved task update succeeded after retry"
+    assert recovered.projector.state.tasks["backend_api"].deadline.isoformat() == (
+        "2026-09-15T18:00:00+08:00"
+    )
+    events = await service.event_store.get_events(project_id)
+    assert [event.event_type for event in events].count("task.updated") == 1
+    await db.close()
+
+
+async def test_directive_timeout_sweep_runs_without_new_inbound_message() -> None:
+    db = Database("sqlite+aiosqlite:///:memory:")
+    await db.init_db()
+    current = {"value": NOW}
+    service = GatewayService(db, clock=lambda: current["value"])
+    project_id = "project-background-reminder"
+    await _seed(db, project_id)
+
+    result = await service.ingest_message(
+        project_id=project_id,
+        message="告诉alice，今天下班前把接口联调完",
+        actor_id="carol",
+        occurred_at=NOW,
+    )
+    assert result.directive_kind == "issued"
+    current["value"] = NOW + timedelta(minutes=61)
+
+    assert await service.sweep_directive_timeouts() == 1
+    assert await service.sweep_directive_timeouts() == 0
+    events = await service.event_store.get_events(project_id)
+    assert [event.event_type for event in events].count("directive.reminded") == 1
+    rows = await service.outbox_store.list_rows(project_id)
+    assert len(rows) == 2
+    assert all(row["status"] == OUTBOX_DELIVERED for row in rows)
+    await db.close()
 
 
 class FlakyAdapter:

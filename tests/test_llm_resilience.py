@@ -225,7 +225,7 @@ async def client() -> httpx.AsyncClient:
     db = Database("sqlite+aiosqlite:///:memory:")
     await db.init_db()
     settings = OrgPilotSettings(collaboration_adapter="mock", feishu_use_ws=False)
-    app = create_app(db, settings=settings)
+    app = create_app(db, settings=settings, clock=lambda: NOW)
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac

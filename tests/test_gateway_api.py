@@ -20,7 +20,7 @@ async def client() -> httpx.AsyncClient:
     db = Database("sqlite+aiosqlite:///:memory:")
     await db.init_db()
     settings = OrgPilotSettings(collaboration_adapter="mock", feishu_use_ws=False)
-    app = create_app(db, settings=settings)
+    app = create_app(db, settings=settings, clock=lambda: NOW)
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
@@ -264,6 +264,10 @@ async def test_gateway_sync_reply_persists_snapshot_and_events() -> None:
 
     session = await service.start_progress_sync(project_id, initiated_by="carol")
     assert "alice" in session.member_probes
+    probe_rows = await service.outbox_store.list_rows(project_id)
+    assert len(probe_rows) == 1
+    assert probe_rows[0]["action_type"] == "ask_recovery_estimate"
+    assert probe_rows[0]["status"] == "delivered"
 
     converged, clarify_q, _ = await service.handle_sync_member_reply(
         project_id=project_id,
@@ -280,6 +284,8 @@ async def test_gateway_sync_reply_persists_snapshot_and_events() -> None:
     assert snapshot is not None
     persisted = await service.event_store.get_events(project_id)
     assert any(event.event_type == "task.health_reported" for event in persisted)
+    action_types = {row["action_type"] for row in await service.outbox_store.list_rows(project_id)}
+    assert {"ask_recovery_estimate", "propose_reschedule", "notify_group"} <= action_types
     await db.close()
 
 

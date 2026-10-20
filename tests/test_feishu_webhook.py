@@ -18,7 +18,7 @@ async def client() -> httpx.AsyncClient:
     db = Database("sqlite+aiosqlite:///:memory:")
     await db.init_db()
     settings = OrgPilotSettings(collaboration_adapter="mock", feishu_use_ws=False)
-    app = create_app(db, settings=settings)
+    app = create_app(db, settings=settings, clock=lambda: NOW)
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
@@ -215,6 +215,48 @@ async def test_feishu_card_rejection_flow(client: httpx.AsyncClient) -> None:
     assert card_data["code"] == 0
     assert card_data["turn_termination_reason"] == "escalated"
     assert "任务改期审批 [已拒绝]" in card_data["card"]["header"]["title"]["content"]
+
+
+async def test_expired_card_callback_returns_conflict_instead_of_crashing() -> None:
+    db = Database("sqlite+aiosqlite:///:memory:")
+    await db.init_db()
+    current = {"value": NOW}
+    settings = OrgPilotSettings(collaboration_adapter="mock", feishu_use_ws=False)
+    app = create_app(db, settings=settings, clock=lambda: current["value"])
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.post(
+            "/api/v1/projects/feishu-project/events",
+            json={"events": _make_setup_events("feishu-project")},
+        )
+        message = {
+            "header": {
+                "event_id": "evt_msg_expired",
+                "event_type": "im.message.receive_v1",
+                "create_time": str(int(NOW.timestamp() * 1000)),
+            },
+            "event": {
+                "sender": {"sender_id": {"open_id": "ou_alice"}},
+                "message": {
+                    "message_id": "om_expired",
+                    "message_type": "text",
+                    "content": json.dumps({"text": "支付 SDK 报错，排查需要到明天下午 5 点"}),
+                },
+            },
+        }
+        assert (await client.post("/api/v1/feishu/events", json=message)).status_code == 200
+        approval = (await client.get("/api/v1/projects/feishu-project/approvals")).json()[0]
+        current["value"] = NOW + timedelta(days=3)
+        callback = {
+            "open_message_id": "om_expired_card",
+            "operator": {"open_id": "ou_carol"},
+            "action": {"value": {"action": "approved", "approval_id": approval["approval_id"]}},
+        }
+        response = await client.post("/api/v1/feishu/events", json=callback)
+        assert response.status_code == 200
+        assert response.json()["code"] == 409
+        assert "expired" in response.json()["msg"]
+    await db.close()
 
 
 def _greeting_payload(message_id: str) -> dict:
