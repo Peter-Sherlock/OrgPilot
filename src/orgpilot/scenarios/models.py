@@ -33,7 +33,9 @@ class StrictModel(BaseModel):
 
 class ExpectedTaskState(StrictModel):
     workflow_status: WorkflowStatus
-    health_status: HealthStatus
+    # None means "not asserted", mirroring `deadline`: some scenarios pin the
+    # workflow outcome without committing to one health semantics.
+    health_status: HealthStatus | None = None
     health_conflict: bool = False
     deadline: datetime | None = None
 
@@ -96,6 +98,7 @@ class ScenarioRound(StrictModel):
     approvals: tuple[ScenarioApprovalAction, ...] = ()
     expected_termination: AgentTerminationReason | None = None
     expected_case_statuses: dict[str, CoordinationCaseStatus] = Field(default_factory=dict)
+    expected_waiting_for: dict[str, str | None] = Field(default_factory=dict)
 
 
 class InteractiveGroundTruth(StrictModel):
@@ -105,6 +108,19 @@ class InteractiveGroundTruth(StrictModel):
     case_terminal_reasons: dict[str, str] = Field(default_factory=dict)
     executed_command_types: tuple[ActionType, ...] = ()
     tasks: dict[str, ExpectedTaskState] = Field(default_factory=dict)
+    commitments: dict[str, ExpectedCommitment] = Field(default_factory=dict)
+
+
+class RoundSnapshot(StrictModel):
+    """Observable agent state captured after a single interactive round."""
+
+    round_number: int
+    termination_reason: AgentTerminationReason | None
+    case_statuses: dict[str, CoordinationCaseStatus]
+    case_waiting_for: dict[str, str | None]
+    # Scripted human approvals that found no pending request to act on. A silent
+    # no-op here would let a scenario "pass" a human step that never happened.
+    unmatched_approvals: tuple[str, ...] = ()
 
 
 class ScenarioDefinition(StrictModel):
@@ -129,6 +145,7 @@ class ReplayResult(StrictModel):
     event_count: int
     duplicate_event_count: int
     agent_trace: AgentExecutionTrace | None = None
+    round_snapshots: tuple[RoundSnapshot, ...] = ()
 
 
 class AssertionResult(StrictModel):

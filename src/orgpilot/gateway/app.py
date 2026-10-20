@@ -12,6 +12,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from orgpilot.adapter.base import CollaborationAdapter
 from orgpilot.adapter.mock import MockCollaborationAdapter
 from orgpilot.config import OrgPilotSettings
+from orgpilot.domain.clock import Clock, SystemClock
 from orgpilot.extraction.client import AnthropicCompatibleLLMClient, LLMClient
 from orgpilot.extraction.extractor import ClaimExtractor
 from orgpilot.feishu.adapter import FeishuCollaborationAdapter
@@ -25,10 +26,12 @@ from orgpilot.storage.database import Database
 def create_app(
     db: Database | None = None,
     settings: OrgPilotSettings | None = None,
+    clock: Clock | None = None,
 ) -> FastAPI:
     """Creates and configures the FastAPI event gateway application."""
     runtime_settings = settings or OrgPilotSettings.from_env()
     runtime_settings.validate()
+    runtime_clock: Clock = clock or SystemClock()
     database = db or Database(runtime_settings.database_url)
 
     llm_client: LLMClient | None = None
@@ -47,7 +50,9 @@ def create_app(
         )
 
         def adapter_factory(project_id: str) -> CollaborationAdapter:
-            return FeishuCollaborationAdapter(client=feishu_client, project_id=project_id)
+            return FeishuCollaborationAdapter(
+                client=feishu_client, project_id=project_id, clock=runtime_clock
+            )
 
     else:
 
@@ -58,6 +63,7 @@ def create_app(
         database,
         extractor=extractor,
         adapter_factory=adapter_factory,
+        clock=runtime_clock,
     )
 
     @asynccontextmanager
@@ -95,6 +101,7 @@ def create_app(
     app.state.db = database
     app.state.settings = runtime_settings
     app.state.gateway_service = gateway_service
+    app.state.clock = runtime_clock
 
     @app.middleware("http")
     async def require_api_token(request, call_next):

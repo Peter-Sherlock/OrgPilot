@@ -7,7 +7,7 @@ from orgpilot.domain.enums import ApprovalStatus
 from orgpilot.domain.models import AgentExecutionTrace, AgentTurnTrace
 from orgpilot.events.log import AppendResult, InMemoryEventLog
 from orgpilot.policy.engine import PolicyEngine
-from orgpilot.scenarios.models import ReplayResult, ScenarioDefinition
+from orgpilot.scenarios.models import ReplayResult, RoundSnapshot, ScenarioDefinition
 from orgpilot.state.projector import OrgProjector
 
 
@@ -55,14 +55,18 @@ class ScenarioRunner:
     def _run_interactive(self, scenario: ScenarioDefinition) -> ReplayResult:
         agent = CoordinationAgent(project_id=scenario.project_id)
         turn_traces: list[AgentTurnTrace] = []
+        snapshots: list[RoundSnapshot] = []
 
         for round_item in scenario.rounds:
+            unmatched_approvals: list[str] = []
             # Apply configured approval actions before running the turn
             for appr in round_item.approvals:
                 pending_requests = agent.approval_manager.get_pending_requests()
+                matched = False
                 for req in pending_requests:
                     if appr.approval_id and req.approval_id != appr.approval_id:
                         continue
+                    matched = True
                     if appr.decision is ApprovalStatus.APPROVED:
                         agent.approval_manager.approve(
                             req.approval_id, appr.approver_id, round_item.current_time
@@ -74,11 +78,23 @@ class ScenarioRunner:
                             appr.reason or "declined",
                             round_item.current_time,
                         )
+                if not matched:
+                    unmatched_approvals.append(f"{appr.approver_id}:{appr.decision.value}")
 
             turn_trace, generated_events = agent.run_turn(
                 list(round_item.events), round_item.current_time
             )
             turn_traces.append(turn_trace)
+            cases_after_turn = agent.case_ledger.get_all_cases()
+            snapshots.append(
+                RoundSnapshot(
+                    round_number=round_item.round_number,
+                    termination_reason=turn_trace.termination_reason,
+                    case_statuses={case.case_id: case.status for case in cases_after_turn},
+                    case_waiting_for={case.case_id: case.waiting_for for case in cases_after_turn},
+                    unmatched_approvals=tuple(unmatched_approvals),
+                )
+            )
 
         final_termination = (
             turn_traces[-1].termination_reason
@@ -109,4 +125,5 @@ class ScenarioRunner:
             event_count=len(agent.event_log),
             duplicate_event_count=0,
             agent_trace=agent_trace,
+            round_snapshots=tuple(snapshots),
         )

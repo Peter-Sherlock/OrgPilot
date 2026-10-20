@@ -2,10 +2,11 @@
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from orgpilot.adapter.base import CollaborationAdapter
+from orgpilot.domain.clock import Clock, SystemClock
 from orgpilot.domain.enums import CommandStatus
 from orgpilot.domain.models import ActionCommand, ActionResult
 from orgpilot.events.models import (
@@ -30,9 +31,11 @@ class FeishuCollaborationAdapter(CollaborationAdapter):
         self,
         client: FeishuClient | None = None,
         project_id: str = "feishu-project",
+        clock: Clock | None = None,
     ) -> None:
         self.client: FeishuClient = client or MockFeishuClient()
         self.project_id = project_id
+        self.clock: Clock = clock or SystemClock()
         self.audit_log: list[tuple[ActionCommand, ActionResult]] = []
         self._generated_events: list[OrgEvent] = []
 
@@ -133,13 +136,13 @@ class FeishuCollaborationAdapter(CollaborationAdapter):
         deadline_dt = (
             datetime.fromisoformat(deadline_str)
             if isinstance(deadline_str, str)
-            else (deadline_str or datetime.now(UTC))
+            else (deadline_str or self.clock.now())
         )
 
         self._run_async(self.client.update_task_deadline(task_guid=task_id, deadline=deadline_dt))
 
         # Generate local projection event
-        now = datetime.now(UTC)
+        now = self.clock.now()
         evt = TaskUpdatedEvent(
             project_id=self.project_id,
             event_id=f"evt-feishu-task-upd-{command.command_id}",

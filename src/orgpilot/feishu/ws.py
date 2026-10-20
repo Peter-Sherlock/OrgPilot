@@ -40,6 +40,7 @@ class FeishuWebSocketListener:
         self.webhook_handler = FeishuWebhookHandler(
             service=gateway_service,
             project_id=project_id,
+            clock=gateway_service.clock,
         )
         try:
             self._loop = loop or asyncio.get_running_loop()

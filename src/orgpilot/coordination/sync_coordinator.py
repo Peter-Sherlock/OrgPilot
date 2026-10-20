@@ -2,11 +2,12 @@
 
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from orgpilot.adapter.base import CollaborationAdapter
 from orgpilot.dependencies.analyzer import DependencyAnalyzer
+from orgpilot.domain.clock import Clock, SystemClock
 from orgpilot.domain.enums import (
     ActionType,
     HealthStatus,
@@ -40,12 +41,14 @@ class ProgressSyncCoordinator:
         adapter: CollaborationAdapter | None = None,
         extractor: ClaimExtractor | None = None,
         max_clarification_turns: int = 2,
+        clock: Clock | None = None,
     ) -> None:
         self.agent = agent
         self.adapter = adapter or agent.adapter
         self.extractor = extractor or ClaimExtractor()
         self.analyzer = DependencyAnalyzer()
         self.max_clarification_turns = max_clarification_turns
+        self.clock: Clock = clock or SystemClock()
         self._sessions: dict[str, SyncSession] = {}
 
     def get_session(self, session_id: str) -> SyncSession | None:
@@ -67,7 +70,7 @@ class ProgressSyncCoordinator:
         custom_intro: str | None = None,
     ) -> SyncSession:
         """Dispatches 1-on-1 private inquiries to all active task owners across the project."""
-        now = datetime.now(UTC)
+        now = self.clock.now()
         session_id = f"sync-{project_id}-{uuid.uuid4().hex[:8]}"
 
         active_tasks = [
@@ -163,7 +166,7 @@ class ProgressSyncCoordinator:
             logger.warning("Session %s not found for member %s reply", session_id, member_id)
             return True, None
 
-        now = occurred_at or datetime.now(UTC)
+        now = occurred_at or self.clock.now()
         session.updated_at = now
 
         probe = session.member_probes.get(member_id)
@@ -266,7 +269,7 @@ class ProgressSyncCoordinator:
         if not session:
             return None
 
-        now = datetime.now(UTC)
+        now = self.clock.now()
         session.status = SyncSessionStatus.SYNTHESIZING
 
         tasks = self.agent.projector.state.tasks

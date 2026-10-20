@@ -2,13 +2,14 @@
 
 import asyncio
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from orgpilot.adapter.base import CollaborationAdapter
 from orgpilot.adapter.mock import MockCollaborationAdapter
 from orgpilot.agent.loop import CoordinationAgent
 from orgpilot.coordination.sync_coordinator import ProgressSyncCoordinator
+from orgpilot.domain.clock import Clock, SystemClock
 from orgpilot.domain.models import AgentTurnTrace
 from orgpilot.domain.sync_models import SyncSession
 from orgpilot.events.log import AppendResult
@@ -30,6 +31,7 @@ class GatewayService:
         db: Database,
         extractor: ClaimExtractor | None = None,
         adapter_factory: Callable[[str], CollaborationAdapter] | None = None,
+        clock: Clock | None = None,
     ) -> None:
         self.db = db
         self.event_store = SqlEventStore(db)
@@ -38,6 +40,10 @@ class GatewayService:
         self.adapter_factory = adapter_factory or (
             lambda project_id: MockCollaborationAdapter(project_id=project_id)
         )
+        # Single owner of "now" for every time-dependent decision reached through
+        # the gateway. Handlers and routes read this clock instead of the wall
+        # clock so a pinned clock makes the whole request path deterministic.
+        self.clock: Clock = clock or SystemClock()
         self._sync_coordinators: dict[str, ProgressSyncCoordinator] = {}
 
     async def get_or_replay_agent(self, project_id: str) -> CoordinationAgent:
@@ -125,7 +131,7 @@ class GatewayService:
         """Extracts claims from natural language message, persists events, and optionally
         executes a turn.
         """
-        ts = occurred_at or datetime.now(UTC)
+        ts = occurred_at or self.clock.now()
         agent = await self.get_or_replay_agent(project_id)
 
         tasks_dict = {t.task_id: t.title for t in agent.projector.state.tasks.values()}
@@ -170,6 +176,7 @@ class GatewayService:
                 agent=agent,
                 adapter=agent.adapter,
                 extractor=self.extractor,
+                clock=self.clock,
             )
         return self._sync_coordinators[project_id]
 

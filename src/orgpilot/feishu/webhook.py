@@ -6,6 +6,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+from orgpilot.domain.clock import Clock, SystemClock
 from orgpilot.domain.enums import WorkflowStatus
 from orgpilot.events.models import (
     EventSource,
@@ -29,10 +30,12 @@ class FeishuWebhookHandler:
         service: Any,
         project_id: str = "feishu-default",
         verification_token: str | None = None,
+        clock: Clock | None = None,
     ) -> None:
         self.service: GatewayService = service
         self.project_id = project_id
         self.verification_token = verification_token
+        self.clock: Clock = clock or SystemClock()
 
     async def handle_event(self, body: dict[str, Any]) -> dict[str, Any]:
         """Dispatches Feishu webhook payload according to event type."""
@@ -92,7 +95,7 @@ class FeishuWebhookHandler:
         occurred_at = (
             datetime.fromtimestamp(int(occurred_ts) / 1000, tz=UTC)
             if occurred_ts
-            else datetime.now(UTC)
+            else self.clock.now()
         )
 
         # Auto-bootstrap demo tasks for first-time solo tester
@@ -290,7 +293,7 @@ class FeishuWebhookHandler:
         approval_id = action_val.get("approval_id")
 
         operator = event_data.get("operator", {}).get("open_id")
-        now = datetime.now(UTC)
+        now = self.clock.now()
 
         if not approval_id:
             return {"code": 400, "msg": "missing approval_id in button value"}

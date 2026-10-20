@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Request
 
@@ -32,7 +32,7 @@ async def run_turn(
     service: GatewayService = Depends(get_service),
 ) -> TurnRunResponse:
     """Explicitly triggers one turn of the CoordinationAgent loop."""
-    now = (body.current_time if body and body.current_time else None) or datetime.now(UTC)
+    now = (body.current_time if body and body.current_time else None) or service.clock.now()
     agent = await service.get_or_replay_agent(project_id)
     turn_trace, _ = await service.run_agent_turn(agent, [], now)
 
@@ -100,7 +100,7 @@ async def bootstrap_sandbox_endpoint(
     service: GatewayService = Depends(get_service),
 ) -> dict:
     """Initializes or resets a demo sandbox with PM, Alice, Bob, and dependent task chain."""
-    now = datetime.now(UTC)
+    now = service.clock.now()
     events: list[OrgEvent] = [
         MemberRegisteredEvent(
             project_id=project_id,
@@ -217,7 +217,7 @@ async def sandbox_chat_endpoint(
     service: GatewayService = Depends(get_service),
 ) -> dict:
     """Handles sandbox chat from any role (PM, Alice, Bob), returning bot responses."""
-    now = datetime.now(UTC)
+    now = service.clock.now()
     is_sync = any(
         k in message
         for k in [
