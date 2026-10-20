@@ -35,6 +35,16 @@ WELCOME_TEXT = (
 )
 
 
+def sync_started_text(session: Any) -> str:
+    """The PM's reply once a sync starts, counting only probes that reached Feishu."""
+    failed = len(session.failed_probe_member_ids)
+    sent = len(session.member_probes) - failed
+    text = f"已发起全员进度同步：已向 {sent} 位负责人发送进度探针。"
+    if failed:
+        text += f"另有 {failed} 位发送失败（原因见网关日志），他们不会收到追问。"
+    return text
+
+
 class ReplyKind(StrEnum):
     """What the bot did with one message, at reply granularity."""
 

@@ -1,6 +1,7 @@
 """Command-line replay and evaluation interface for local development."""
 
 import argparse
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -83,6 +84,21 @@ def _build_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="OrgPilot project ID (defaults to env ORGPILOT_FEISHU_PROJECT_ID)",
+    )
+
+    team = subparsers.add_parser("team", help="import or inspect the team roster (ADR-0009)")
+    team_commands = team.add_subparsers(dest="team_command", required=True)
+    team_import = team_commands.add_parser("import", help="import members and tasks from team.yaml")
+    team_import.add_argument("path", type=Path, help="team.yaml file")
+    team_import.add_argument(
+        "--project", default=None, help="defaults to env ORGPILOT_FEISHU_PROJECT_ID"
+    )
+    team_import.add_argument(
+        "--dry-run", action="store_true", help="print the plan without writing events"
+    )
+    team_show = team_commands.add_parser("show", help="list the project's members and tasks")
+    team_show.add_argument(
+        "--project", default=None, help="defaults to env ORGPILOT_FEISHU_PROJECT_ID"
     )
 
     return parser
@@ -494,6 +510,7 @@ def _start_feishu_ws(project_id: str | None = None) -> int:
         gateway_service=service,
         project_id=target_project,
         loop=loop,
+        demo_mode=settings.demo_mode,
     )
     print(f"[*] Starting Feishu WebSocket Listener for project '{target_project}'...")
     print(f"[*] App ID: {app_id}")
@@ -507,6 +524,132 @@ def _start_feishu_ws(project_id: str | None = None) -> int:
     except KeyboardInterrupt:
         print("\n[*] Stopping Feishu WebSocket Listener...")
         return 0
+
+
+def _team_directory(settings: Any) -> Any:
+    """The Feishu contact lookup used to resolve member emails (ADR-0009 §3)."""
+    from orgpilot.feishu.client import AsyncFeishuClient
+
+    if not settings.feishu_app_id or not settings.feishu_app_secret:
+        raise SystemExit(
+            "Error: FEISHU_APP_ID and FEISHU_APP_SECRET are required to resolve member emails."
+        )
+    return AsyncFeishuClient(app_id=settings.feishu_app_id, app_secret=settings.feishu_app_secret)
+
+
+def _print_team_errors(errors: list[str]) -> None:
+    print("导入失败，未写入任何事件：", file=sys.stderr)
+    for error in errors:
+        print(f"  - {error}", file=sys.stderr)
+
+
+def _team_import(path: Path, project: str | None, dry_run: bool) -> int:
+    import asyncio
+    from datetime import UTC, datetime
+
+    import httpx
+
+    from orgpilot.config import OrgPilotSettings
+    from orgpilot.gateway.service import GatewayService
+    from orgpilot.storage.database import Database
+    from orgpilot.team import ChangeKind, TeamImportError, import_team, load_team_spec
+
+    settings = OrgPilotSettings.from_env()
+    try:
+        spec, digest = load_team_spec(path, settings.business_timezone)
+    except TeamImportError as exc:
+        _print_team_errors(exc.errors)
+        return 1
+    target = project or settings.feishu_project_id
+    if spec.project != target:
+        _print_team_errors(
+            [f"team.yaml is for project {spec.project!r}, but the target is {target!r}"]
+        )
+        return 1
+    directory = _team_directory(settings)
+
+    async def run() -> int:
+        db = Database(settings.database_url)
+        await db.init_db()
+        try:
+            service = GatewayService(db, business_timezone=settings.business_timezone)
+            now = datetime.now(UTC).astimezone(settings.business_timezone)
+            result = await import_team(
+                service, spec, directory, digest=digest, now=now, dry_run=dry_run
+            )
+        except TeamImportError as exc:
+            _print_team_errors(exc.errors)
+            return 1
+        except (RuntimeError, httpx.HTTPError) as exc:
+            # A Feishu API error (e.g. Access denied) is a setup problem, not a crash.
+            # httpx timeouts stringify to "", so fall back to the exception type.
+            _print_team_errors(
+                [
+                    f"调用飞书接口失败：{str(exc) or type(exc).__name__}",
+                    "如果是 Access denied，确认应用已开通 contact:user.id:readonly 并已生效；"
+                    "网络超时可以直接重试",
+                ]
+            )
+            return 1
+        finally:
+            await db.close()
+
+        plan = result.plan
+        print(f"项目 {spec.project} · team-import@{digest}")
+        for change in plan.changes:
+            print(change.render())
+        for warning in plan.warnings:
+            print(f"警告：{warning}")
+        skipped = sum(1 for c in plan.changes if c.kind is ChangeKind.SKIP)
+        if not plan.events:
+            print(f"没有需要写入的变更，跳过 {skipped} 项")
+        elif result.applied:
+            print(f"已写入 {len(plan.events)} 个事件，跳过 {skipped} 项")
+        else:
+            print(f"将写入 {len(plan.events)} 个事件，跳过 {skipped} 项（dry-run，未写入）")
+        return 0
+
+    return asyncio.run(run())
+
+
+def _team_show(project: str | None) -> int:
+    import asyncio
+
+    from orgpilot.config import OrgPilotSettings
+    from orgpilot.gateway.service import GatewayService
+    from orgpilot.storage.database import Database
+
+    settings = OrgPilotSettings.from_env()
+    target = project or settings.feishu_project_id
+
+    async def run() -> int:
+        db = Database(settings.database_url)
+        await db.init_db()
+        try:
+            agent = await GatewayService(db).get_or_replay_agent(target)
+        finally:
+            await db.close()
+        state = agent.projector.state
+        names = {m.member_id: m.display_name for m in state.members.values()}
+        print(f"项目 {target}")
+        print(f"成员（{len(state.members)}）")
+        for member in sorted(state.members.values(), key=lambda m: (m.role != "pm", m.member_id)):
+            print(f"  {member.member_id[:12]}…  {member.display_name}  {member.role}")
+        print(f"任务（{len(state.tasks)}）")
+        for task in sorted(state.tasks.values(), key=lambda t: t.task_id):
+            deadline = (
+                task.deadline.astimezone(settings.business_timezone).strftime("%m-%d %H:%M")
+                if task.deadline
+                else "无"
+            )
+            print(
+                f"  {task.task_id}  {task.title}  {task.workflow_status.value}  "
+                f"截止 {deadline}  负责人 {names.get(task.owner_id, task.owner_id)}  "
+                f"依赖 {', '.join(task.dependencies) or '-'}"
+            )
+        return 0
+
+    return asyncio.run(run())
 
 
 def main() -> int:
@@ -543,6 +686,10 @@ def main() -> int:
         )
     if args.command == "start-feishu-ws":
         return _start_feishu_ws(args.project_id)
+    if args.command == "team":
+        if args.team_command == "import":
+            return _team_import(args.path, args.project, args.dry_run)
+        return _team_show(args.project)
     return 2
 
 

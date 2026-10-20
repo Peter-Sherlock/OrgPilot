@@ -164,6 +164,7 @@ async def test_replay_discards_snapshot_with_unpersisted_event() -> None:
     assert "backend_api" in restored.projector.state.tasks
     await db.close()
 
+@pytest.mark.real_dotenv
 def test_load_dotenv_ignores_existing_and_malformed_lines(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

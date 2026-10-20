@@ -35,11 +35,13 @@ class FeishuWebhookHandler:
         project_id: str = "feishu-default",
         verification_token: str | None = None,
         router: "MessageRouter | None" = None,
+        demo_mode: bool = False,
     ) -> None:
         self.service: GatewayService = service
         self.project_id = project_id
         self.verification_token = verification_token
         self._router = router
+        self.demo_mode = demo_mode
 
     @property
     def router(self) -> "MessageRouter":
@@ -118,81 +120,12 @@ class FeishuWebhookHandler:
         # must resolve against the team's business-timezone date, not UTC (B5).
         occurred_at = self.service.to_business_timezone(occurred_at)
 
-        # Auto-bootstrap demo tasks for first-time solo tester; the welcome text
-        # is sent only here (first contact) and from /帮助 (ADR-0008 §4).
-        agent_init = await self.service.get_or_replay_agent(self.project_id)
+        # Demo mode only (ADR-0009 §8): the first sender to an EMPTY project becomes
+        # its PM with three demo tasks. The welcome text is sent only here (first
+        # contact) and from /帮助 (ADR-0008 §4). Real teams import team.yaml.
         bootstrapped = False
-        if not agent_init.projector.state.tasks and actor_id:
-            now_ts = occurred_at
-            bootstrap_events: list[OrgEvent] = [
-                MemberRegisteredEvent(
-                    project_id=self.project_id,
-                    event_id=f"evt-boot-mem-{actor_id}",
-                    event_type="member.registered",
-                    source=EventSource.HUMAN,
-                    source_ref="auto-bootstrap",
-                    occurred_at=now_ts,
-                    received_at=now_ts,
-                    payload=MemberRegisteredPayload(
-                        member_id=actor_id,
-                        display_name="项目负责人(您)",
-                        role="pm",
-                    ),
-                ),
-                TaskCreatedEvent(
-                    project_id=self.project_id,
-                    event_id="evt-boot-task-pay",
-                    event_type="task.created",
-                    source=EventSource.TASK,
-                    source_ref="auto-bootstrap",
-                    occurred_at=now_ts,
-                    received_at=now_ts,
-                    payload=TaskCreatedPayload(
-                        task_id="task-payment",
-                        title="支付SDK接入",
-                        owner_id=actor_id,
-                        workflow_status=WorkflowStatus.DOING,
-                        deadline=now_ts + timedelta(days=2),
-                    ),
-                ),
-                TaskCreatedEvent(
-                    project_id=self.project_id,
-                    event_id="evt-boot-task-checkout",
-                    event_type="task.created",
-                    source=EventSource.TASK,
-                    source_ref="auto-bootstrap",
-                    occurred_at=now_ts,
-                    received_at=now_ts,
-                    payload=TaskCreatedPayload(
-                        task_id="task-checkout",
-                        title="收银台前端结账",
-                        owner_id=actor_id,
-                        workflow_status=WorkflowStatus.TODO,
-                        deadline=now_ts + timedelta(days=3),
-                        dependencies=("task-payment",),
-                    ),
-                ),
-                TaskCreatedEvent(
-                    project_id=self.project_id,
-                    event_id="evt-boot-task-qa",
-                    event_type="task.created",
-                    source=EventSource.TASK,
-                    source_ref="auto-bootstrap",
-                    occurred_at=now_ts,
-                    received_at=now_ts,
-                    payload=TaskCreatedPayload(
-                        task_id="task-qa",
-                        title="支付全链路压测与验收",
-                        owner_id=actor_id,
-                        workflow_status=WorkflowStatus.TODO,
-                        deadline=now_ts + timedelta(days=4),
-                        dependencies=("task-checkout",),
-                    ),
-                ),
-            ]
-            for evt in bootstrap_events:
-                await self.service.event_store.append(evt)
-            bootstrapped = True
+        if self.demo_mode and actor_id:
+            bootstrapped = await self._bootstrap_demo_project(actor_id, occurred_at)
 
         chat_type = message.get("chat_type", "p2p")
 
@@ -227,6 +160,89 @@ class FeishuWebhookHandler:
             chat_type=chat_type,
         )
         return self._outcome_response(outcome)
+
+    async def _bootstrap_demo_project(self, actor_id: str, now_ts: datetime) -> bool:
+        """Seeds the demo PM and task chain into a project that has no members yet.
+
+        Keyed on "no members" rather than "no tasks": a project whose members were
+        imported before its tasks would otherwise get a second member.registered
+        for an existing member, an event that fails every later replay. The batch
+        goes through the service's validate-then-persist path for the same reason.
+        """
+        agent = await self.service.get_or_replay_agent(self.project_id)
+        if agent.projector.state.members:
+            return False
+
+        def demo_task(
+            event_id: str,
+            task_id: str,
+            title: str,
+            status: WorkflowStatus,
+            days: int,
+            dependencies: tuple[str, ...] = (),
+        ) -> TaskCreatedEvent:
+            return TaskCreatedEvent(
+                project_id=self.project_id,
+                event_id=event_id,
+                event_type="task.created",
+                source=EventSource.TASK,
+                source_ref="auto-bootstrap",
+                occurred_at=now_ts,
+                received_at=now_ts,
+                payload=TaskCreatedPayload(
+                    task_id=task_id,
+                    title=title,
+                    owner_id=actor_id,
+                    workflow_status=status,
+                    deadline=now_ts + timedelta(days=days),
+                    dependencies=dependencies,
+                ),
+            )
+
+        bootstrap_events: list[OrgEvent] = [
+            MemberRegisteredEvent(
+                project_id=self.project_id,
+                event_id=f"evt-boot-mem-{actor_id}",
+                event_type="member.registered",
+                source=EventSource.HUMAN,
+                source_ref="auto-bootstrap",
+                occurred_at=now_ts,
+                received_at=now_ts,
+                payload=MemberRegisteredPayload(
+                    member_id=actor_id,
+                    display_name="项目负责人(您)",
+                    role="pm",
+                ),
+            ),
+            demo_task("evt-boot-task-pay", "task-payment", "支付SDK接入", WorkflowStatus.DOING, 2),
+            demo_task(
+                "evt-boot-task-checkout",
+                "task-checkout",
+                "收银台前端结账",
+                WorkflowStatus.TODO,
+                3,
+                ("task-payment",),
+            ),
+            demo_task(
+                "evt-boot-task-qa",
+                "task-qa",
+                "支付全链路压测与验收",
+                WorkflowStatus.TODO,
+                4,
+                ("task-checkout",),
+            ),
+        ]
+        _, _, _, error = await self.service.commit_extracted_events(
+            self.project_id,
+            bootstrap_events,
+            actor_id=actor_id,
+            occurred_at=now_ts,
+            auto_run_turn=False,
+        )
+        if error is not None:
+            logger.warning("Demo bootstrap rejected for %r: %s", self.project_id, error)
+            return False
+        return True
 
     def _outcome_response(self, outcome: Any) -> dict[str, Any]:
         data = dict(outcome.data)

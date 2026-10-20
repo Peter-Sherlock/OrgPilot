@@ -1,5 +1,6 @@
 """Tests for Feishu OpenAPI client and Mock implementation."""
 
+import json
 from datetime import datetime
 
 import httpx
@@ -155,3 +156,102 @@ async def test_async_feishu_client_temp_client_and_chat_fallback(
 
     resp_card = await client.send_card(receive_id="ou_user", card={"header": {"title": "t"}})
     assert resp_card["code"] == 0
+
+
+async def test_async_feishu_client_batch_get_open_ids_chunks_and_skips_unmatched() -> None:
+    """ADR-0009 §3: 50 emails per request; entries without user_id are unresolved."""
+    requests: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/open-apis/auth/v3/tenant_access_token/internal" in str(request.url):
+            return httpx.Response(200, json={"code": 0, "tenant_access_token": "t-1"})
+        assert request.url.path == "/open-apis/contact/v3/users/batch_get_id"
+        assert request.url.params["user_id_type"] == "open_id"
+        assert request.headers["Authorization"] == "Bearer t-1"
+        body = json.loads(request.content)
+        requests.append(body)
+        user_list = []
+        for email in body["emails"]:
+            if email.startswith("missing"):
+                user_list.append({"email": email})  # matched shape unknown: no user_id
+            elif not email.startswith("absent"):
+                user_list.append({"email": email, "user_id": f"ou_{email.split('@')[0]}"})
+        return httpx.Response(200, json={"code": 0, "data": {"user_list": user_list}})
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="https://open.feishu.cn"
+    ) as http:
+        client = AsyncFeishuClient(app_id="cli", app_secret="secret", client=http)
+        emails = [f"user{i}@example.com" for i in range(51)]
+        emails += ["User0@Example.com", "missing@example.com", "absent@example.com"]
+
+        resolved = await client.batch_get_open_ids(emails)
+
+    assert [len(body["emails"]) for body in requests] == [50, 3]
+    assert all(body["include_resigned"] is False for body in requests)
+    assert len(resolved) == 51
+    assert resolved["user0@example.com"] == "ou_user0"
+    assert "missing@example.com" not in resolved
+    assert "absent@example.com" not in resolved
+
+
+async def test_async_feishu_client_batch_get_open_ids_raises_on_api_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "tenant_access_token" in str(request.url):
+            return httpx.Response(200, json={"code": 0, "tenant_access_token": "t-1"})
+        return httpx.Response(200, json={"code": 99991672, "msg": "Access denied"})
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="https://open.feishu.cn"
+    ) as http:
+        client = AsyncFeishuClient(app_id="cli", app_secret="secret", client=http)
+        with pytest.raises(RuntimeError, match="batch get user id failed: Access denied"):
+            await client.batch_get_open_ids(["a@example.com"])
+
+
+async def test_mock_feishu_client_directory_lookup() -> None:
+    client = MockFeishuClient(
+        email_directory={"Alice@Example.com": "ou_alice"},
+        mobile_directory={"+86 180-0000-0001": "ou_bob"},
+    )
+    emails = ["alice@example.com", "ALICE@example.com"] + [f"x{i}@example.com" for i in range(50)]
+
+    resolved = await client.batch_get_open_ids(emails, mobiles=["18000000001", "18000000002"])
+
+    assert resolved == {"alice@example.com": "ou_alice", "18000000001": "ou_bob"}
+    assert [
+        (len(batch.get("emails", [])), len(batch.get("mobiles", [])))
+        for batch in client.directory_requests
+    ] == [(50, 2), (1, 0)]
+
+
+async def test_async_feishu_client_batch_get_open_ids_by_mobile() -> None:
+    """Mobiles ride in the same request as emails and are matched after normalizing."""
+    requests: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "tenant_access_token" in str(request.url):
+            return httpx.Response(200, json={"code": 0, "tenant_access_token": "t-1"})
+        body = json.loads(request.content)
+        requests.append(body)
+        user_list = [{"email": e} for e in body.get("emails", [])]  # unmatched shape
+        user_list += [
+            {"mobile": m, "user_id": f"ou_{m[-4:]}"} for m in body.get("mobiles", [])
+        ]
+        return httpx.Response(200, json={"code": 0, "data": {"user_list": user_list}})
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="https://open.feishu.cn"
+    ) as http:
+        client = AsyncFeishuClient(app_id="cli", app_secret="secret", client=http)
+        mobiles = [f"+86 1800000{i:04d}" for i in range(51)] + ["+14155550123"]
+
+        resolved = await client.batch_get_open_ids(["work@example.com"], mobiles=mobiles)
+
+    assert requests[0]["emails"] == ["work@example.com"]
+    assert requests[0]["mobiles"][0] == "18000000000"
+    assert "emails" not in requests[1]
+    assert [len(body["mobiles"]) for body in requests] == [50, 2]
+    assert resolved["18000000000"] == "ou_0000"
+    assert resolved["+14155550123"] == "ou_0123"
+    assert "work@example.com" not in resolved

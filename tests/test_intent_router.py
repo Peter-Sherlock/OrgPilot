@@ -1125,3 +1125,24 @@ async def test_pm_status_query_appends_sync_hint_engineer_does_not() -> None:
         assert "发起同步" not in outcome.reply_text
     finally:
         await db.close()
+
+
+async def test_sync_reply_counts_only_probes_that_reached_feishu() -> None:
+    """2026-10-14 smoke test: the reply said a probe was sent when none arrived."""
+    router, service, adapter, db = await _make_router(ScriptedIntentClient())
+
+    def refuse(command):
+        raise RuntimeError("Feishu send message failed: Bot has NO availability to this user")
+
+    adapter.send_private_message = refuse
+    try:
+        outcome = await _send(router, "/同步", sender="ou_carol")
+        assert outcome.msg == "sync_session_started"
+        coordinator = await service.get_sync_coordinator(PROJECT)
+        session = next(iter(coordinator._sessions.values()))
+        failed = len(session.failed_probe_member_ids)
+        assert failed == len(session.member_probes) > 0
+        assert outcome.reply_text.startswith("已发起全员进度同步：已向 0 位负责人发送进度探针。")
+        assert f"另有 {failed} 位发送失败" in outcome.reply_text
+    finally:
+        await db.close()

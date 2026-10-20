@@ -48,6 +48,7 @@ from orgpilot.intent.replies import (
     ReplyKind,
     RouterOutcome,
     merge_reply_kinds,
+    sync_started_text,
 )
 
 if TYPE_CHECKING:
@@ -854,9 +855,7 @@ class IntentHandlers:
             )
             if self._session_registrar is not None:
                 self._session_registrar(project_id, session, occurred_at)
-            parts.append(
-                f"已发起全员进度同步：已向 {len(session.member_probes)} 位负责人发送进度探针。"
-            )
+            parts.append(sync_started_text(session))
             kinds.append(ReplyKind.SYNC_STARTED)
             return True
         self.dialogue.clear_pending_sync_confirmation(project_id, member.member_id)

@@ -197,9 +197,10 @@ class GatewayService:
     ) -> tuple[CoordinationAgent, str | None, int | None, str | None]:
         """Validates a batch in memory, persists it, and optionally runs one turn.
 
-        Shared by the legacy extraction path and the intent handlers (ADR-0008
-        layer 2). Returns an error string instead of raising when in-memory
-        projection validation fails, so nothing unprojectable is ever persisted.
+        Shared by the legacy extraction path, the intent handlers (ADR-0008
+        layer 2), and the demo bootstrap (ADR-0009 §8). Returns an error string
+        instead of raising when in-memory projection validation fails, so nothing
+        unprojectable is ever persisted.
         """
         agent = await self.get_or_replay_agent(project_id)
         if not events:
@@ -259,4 +260,3 @@ class GatewayService:
         return coordinator.start_sync_session(
             project_id, initiated_by, custom_intro, occurred_at=occurred_at
         )
-

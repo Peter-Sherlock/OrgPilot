@@ -12,6 +12,7 @@ from orgpilot.adapter.mock import MockCollaborationAdapter
 from orgpilot.agent.loop import CoordinationAgent
 from orgpilot.coordination.sync_coordinator import ProgressSyncCoordinator
 from orgpilot.domain.enums import (
+    CommandStatus,
     HealthStatus,
     ProbeMemberStatus,
     SyncSessionStatus,
@@ -227,3 +228,28 @@ def test_notify_ignores_unknown_members_and_finished_probes() -> None:
     )
     assert again is None
     assert session.member_probes["ou_bob"].status == ProbeMemberStatus.COLLECTED
+
+
+class _UndeliverableAdapter(MockCollaborationAdapter):
+    """Feishu refuses every private message: the adapter reports FAILED, never raises."""
+
+    def send_private_message(self, command):
+        result = super().send_private_message(command)
+        return result.model_copy(
+            update={"status": CommandStatus.FAILED, "error": "send_message failed: denied"}
+        )
+
+
+def test_undelivered_probes_are_recorded_not_reported_as_sent(caplog) -> None:
+    project_id = "test-sync-proj"
+    adapter = _UndeliverableAdapter(project_id)
+    agent = CoordinationAgent(project_id, adapter)
+    _seed(agent, project_id)
+    coordinator = ProgressSyncCoordinator(agent, adapter)
+
+    with caplog.at_level("WARNING"):
+        session = coordinator.start_sync_session(project_id=project_id, initiated_by="ou_pm")
+
+    assert sorted(session.failed_probe_member_ids) == ["ou_alice", "ou_bob"]
+    assert "was not delivered" in caplog.text
+    assert "denied" in caplog.text

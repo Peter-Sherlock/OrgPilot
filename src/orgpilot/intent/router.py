@@ -41,6 +41,7 @@ from orgpilot.intent.replies import (
     HELP_TEXT,
     ReplyKind,
     RouterOutcome,
+    sync_started_text,
 )
 from orgpilot.storage.message_store import SqlMessageStore
 
@@ -51,7 +52,7 @@ logger = logging.getLogger(__name__)
 
 UNREGISTERED_HINT = (
     "你好！你还未加入本项目的成员名单，暂时无法处理你的消息。"
-    "请联系项目负责人将你添加为项目成员后再试。"
+    "请联系项目负责人把你的飞书邮箱加入团队名单（team.yaml）并导入后再试。"
 )
 
 
@@ -466,9 +467,7 @@ class MessageRouter:
             return RouterOutcome(
                 msg="sync_session_started",
                 reply_category=ReplyKind.SYNC_STARTED,
-                reply_text=(
-                    f"已发起全员进度同步：已向 {len(session.member_probes)} 位负责人发送进度探针。"
-                ),
+                reply_text=sync_started_text(session),
                 data={
                     "session_id": session.session_id,
                     "intent_summary": {"command": head},

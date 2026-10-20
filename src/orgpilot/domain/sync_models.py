@@ -71,6 +71,8 @@ class SyncSession(BaseModel):
     created_at: datetime
     updated_at: datetime
     member_probes: dict[str, MemberProbeState] = Field(default_factory=dict)
+    # Members whose probe message did not reach Feishu; reported back to the PM.
+    failed_probe_member_ids: list[str] = Field(default_factory=list)
     briefing: ExecutiveBriefing | None = None
 
     def progress_summary(self) -> str:

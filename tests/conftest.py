@@ -3,7 +3,23 @@
 from collections.abc import Mapping
 from typing import Any
 
+import pytest
+
+import orgpilot.config as orgpilot_config
 from orgpilot.events.models import OrgEvent, parse_event
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line("markers", "real_dotenv: let this test call the real .env loader")
+
+
+@pytest.fixture(autouse=True)
+def _ignore_developer_dotenv(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch):
+    """A developer's .env (e.g. real Feishu credentials for a smoke test) must not
+    leak into tests: the loader writes os.environ for the rest of the session, and
+    a test expecting missing credentials would then call the real Feishu API."""
+    if request.node.get_closest_marker("real_dotenv") is None:
+        monkeypatch.setattr(orgpilot_config, "_load_dotenv_if_exists", lambda *args, **kwargs: None)
 
 
 def event_data(
