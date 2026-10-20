@@ -1,5 +1,63 @@
 # 开发记录
 
+## 2026-10-20：演示前收尾——修复审批改期链路、注入 Clock（分支 `feat/demo-readiness`）
+
+准备在真实飞书租户录演示前，逐段核对"报延期 → 审批卡片 → 批准改期"的代码路径。这条链路在飞书
+适配器下从没有端到端测过，核对中发现三个会让演示当场失败的缺陷。
+
+### 修复
+
+- **改期载荷键名不一致**：协调服务的改期提议用 `new_deadline`，飞书侧却读 `proposed_deadline` 和
+  `deadline`。后果：审批卡片上的新截止时间显示"未指定"；PM 批准后适配器读不到截止时间，退回用
+  当前时间，任务被改期到"批准的那一刻"。现在 `new_deadline` 是唯一的截止时间键，载荷另带
+  `task_title` 和 `impacted_tasks`（下游任务标题）；缺少 `new_deadline` 时返回失败。Mock 适配器
+  一直读的是 `new_deadline`，所以 9 个回放场景没有暴露这个问题；
+- **飞书任务写回**：批准后适配器把 OrgPilot 任务 ID（如 `task-payment`）当成飞书任务 guid 调 Task v2
+  接口。名单导入的任务不在飞书任务里，接口必然报错，而异常没有被捕获，整轮协调中断。现在写回
+  默认关闭（`ORGPILOT_FEISHU_TASK_WRITEBACK`），改期只更新 OrgPilot；开启后接口失败返回 FAILED、
+  不写本地事件，Agent Loop 据此把协调事项升级，而不是标为已解决；
+- **独立长连接监听器**：`orgpilot start-feishu-ws` 用默认 Mock 适配器和默认路由构造服务，审批卡片
+  和探针不会发到飞书，LLM 意图客户端和业务时区配置也不生效。网关与监听器改为共用
+  `build_gateway_service`；监听器在 Mock 适配器下拒绝启动；
+- **审批结果卡片**：审批人显示成员名字而不是 open_id，审批时间按业务时区显示（原来标的是 UTC）。
+
+### Clock 注入（移植自 `wip/clock-and-lifecycle`）
+
+- 新增 `domain/clock.py`（`Clock` / `SystemClock` / `FrozenClock`）。`GatewayService` 持有唯一的时钟，
+  路由、飞书 webhook、适配器、同步协调器、对话状态存储都从它读"现在"；
+- 网关测试的 fixture 改回固定时刻并注入 `FrozenClock`，取代 65c70e0 把 fixture 锚定到真实时钟的做法；
+- 改回固定时刻后，立刻暴露出 `DialogueStateStore` 判断追问有效期时仍读系统时钟，一并注入——这正是
+  `test_clock_determinism.py` 要防的那一类缺陷；
+- 只移植了 Clock。同一份 WIP 里的生命周期场景（`e2e_01`、团队模拟器设计）留给阶段 3 的对比实验；
+  PR #4（WIP 备份分支）由本分支取代。
+
+### 新增测试
+
+- `tests/test_feishu_demo_script.py`：按演示手册的步骤，经 `build_gateway_service` 的真实装配
+  （只替换飞书客户端）跑完名单导入 → 私聊报延期 → 审批卡片只发给 PM，且含新截止时间和两个下游任务
+  → 非审批人点击被拒 → PM 批准 → 截止时间更新、飞书任务接口未被调用 → 重新导入不回滚；
+- `test_clock_determinism.py`（5 个）；适配器写回成功 / 失败 / 缺少截止时间（4 个）；Agent Loop
+  写回失败时升级（1 个）；共用装配与监听器拒绝 Mock 适配器（2 个）。
+
+### 未做（如实标注）
+
+- **对话状态持久化**原计划今天做，推迟：同步会话（`ProgressSyncCoordinator._sessions`）同样只在
+  内存里，只持久化对话状态，重启后待追问的状态会指向已经不存在的会话。两者需要一起做；
+- 真实租户未跑：演示步骤见 `docs/feishu-demo-runbook.md`，待执行；
+- `ORGPILOT_FEISHU_TASK_WRITEBACK=true` 的路径只在 Mock 上测过。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS
+pytest: 396 passed, coverage 91.94%（fail_under=90）
+ruff check: All checks passed
+意图评测离线回放（c9850dec6655）：dev 97/102、test 53/58、对话 10/10，与冻结结果一致；oracle dev 0 失败
+git diff --check: PASS
+```
+
+---
+
 ## 2026-10-14：P-1 实测修订——手机号标识、测试隔离 `.env`、接口报错提示（分支 `feat/team-onboarding`）
 
 在飞书「测试企业」中用单账号做实测，在导入第一步就发现问题。
