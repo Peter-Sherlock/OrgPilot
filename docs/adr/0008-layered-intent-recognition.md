@@ -162,7 +162,7 @@
 
 - `intent/client.py`：`IntentClient` 协议 + `IntentContext`（消息、业务时区 occurred_at、发送者身份与任务、全部任务快照、待回答/待确认上下文、最近 N 轮对话，N 默认 6 可配置）；`HeuristicIntentClient`（包装 MockLLMClient，`ORGPILOT_LLM_PROVIDER=mock` 时的默认实现，效果不作考核）；`ScriptedIntentClient`（测试替身：预设结果，可模拟超时/异常/非法输出）；所有调用经 `classify_with_timeout`（`asyncio.wait_for`，默认 20 秒，`ORGPILOT_INTENT_TIMEOUT_SECONDS`），同步实现走 `asyncio.to_thread`；
 - `intent/router.py`：`MessageRouter` 按固定顺序处理每条消息：消息幂等 → 群聊拒收（`group_not_supported`）→ 未注册拒收 → 同步探针回复（优先于命令与意图，延续 B2/F1 的决策）→ 显式命令（`/同步`、`/帮助`、未知 `/xxx`，不调用意图客户端）→ 构建对话上下文 → 意图分类（失败重试一次，仍失败回复"没理解……"并记 `fallback` 类别，不改任何状态）→ 护栏 → 处理器。每条消息只发一次回复，结果落消息表；
-- `intent/dialogue.py`：`DialogueStateStore`，按（项目+发送者）存放 `PendingClarification`（问题、目标任务、待补全 claim、缺失槽位、已追问轮数、来源 probe/clarify）与 `PendingSyncConfirmation`（发起人、将被询问成员、创建时间）；过期时间追问 24 小时、确认卡片 30 分钟，均可配置。**本轮仅在内存中，重启后丢失**（见开发日志已知限制）；探针产生的追问同样登记在此，探针回复仍委托协调器收敛（保留简报与升级路径），probe 来源 claim 的合并统一留到第 4 步；
+- `intent/dialogue.py`：`DialogueStateStore`，按（项目+发送者）存放 `PendingClarification`（问题、目标任务、待补全 claim、缺失槽位、已追问轮数、来源 probe/clarify）与 `PendingSyncConfirmation`（发起人、将被询问成员、创建时间）；过期时间追问 24 小时、确认卡片 30 分钟，均可配置。**本轮仅在内存中，重启后丢失**（见开发日志已知限制；2026-10-20 起由 ADR-0013 持久化）；探针产生的追问同样登记在此，探针回复仍委托协调器收敛（保留简报与升级路径），probe 来源 claim 的合并统一留到第 4 步；
 - `storage/message_store.py`：持久化 `processed_messages` 表（project_id、message_id、发送者、原文、意图摘要、回复类别、回复文本、响应、时间），message_id 已存在时直接返回上次结果，不重新识别也不重复发送；同一张表提供"最近 N 轮对话"；
 - `intent/guards.py`：纯函数护栏，按 ADR 顺序执行 grounding → 任务 → 语气 → 含糊 → 置信度 → 时间 → 角色 → 分期；
 - `intent/handlers.py`：各意图的处理逻辑；`extraction/event_builder.py` 把 ClaimExtractor 的事件构造抽成可复用函数（两条路径产生完全相同的事件 id 与载荷）；`GatewayService.commit_extracted_events` 复用"先内存校验再持久化再跑一轮"的既有路径；
