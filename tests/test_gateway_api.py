@@ -1,19 +1,20 @@
 """Async API integration tests for FastAPI event gateway."""
 
-from datetime import UTC, datetime, time, timedelta
+from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
 
 from orgpilot.config import OrgPilotSettings
+from orgpilot.domain.clock import FrozenClock
 from orgpilot.gateway.app import create_app
 from orgpilot.gateway.service import GatewayService
 from orgpilot.storage.database import Database
 
-# Anchored to the real clock so approval expiry (created_at + 2 days) never lapses
-# between message ingestion and the approval decision callbacks under test.
-NOW = datetime.now(UTC)
+# The app runs on a FrozenClock pinned here, so approval expiry is measured
+# from this instant instead of the wall clock (see test_clock_determinism.py).
+NOW = datetime.fromisoformat("2026-09-10T10:00:00+08:00")
 # Relative time in messages resolves against the business timezone (B5), so the
 # "明天下午5点" deadline the approval flow persists is 17:00 Beijing time.
 BUSINESS_TZ = ZoneInfo("Asia/Shanghai")
@@ -24,7 +25,7 @@ async def client() -> httpx.AsyncClient:
     db = Database("sqlite+aiosqlite:///:memory:")
     await db.init_db()
     settings = OrgPilotSettings(collaboration_adapter="mock", feishu_use_ws=False)
-    app = create_app(db, settings=settings)
+    app = create_app(db, settings=settings, clock=FrozenClock(NOW))
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
@@ -37,7 +38,7 @@ async def sandbox_harness() -> tuple[httpx.AsyncClient, GatewayService]:
     db = Database("sqlite+aiosqlite:///:memory:")
     await db.init_db()
     settings = OrgPilotSettings(collaboration_adapter="mock", feishu_use_ws=False)
-    app = create_app(db, settings=settings)
+    app = create_app(db, settings=settings, clock=FrozenClock(NOW))
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac, app.state.gateway_service
@@ -252,7 +253,7 @@ async def test_app_lifespan_runs_database_lifecycle() -> None:
     """The app lifespan must initialize and dispose the configured database."""
     db = Database("sqlite+aiosqlite:///:memory:")
     settings = OrgPilotSettings(collaboration_adapter="mock", feishu_use_ws=False)
-    app = create_app(db, settings=settings)
+    app = create_app(db, settings=settings, clock=FrozenClock(NOW))
     async with app.router.lifespan_context(app):
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:

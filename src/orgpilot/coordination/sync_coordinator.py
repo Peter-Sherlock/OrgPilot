@@ -9,11 +9,12 @@ session bookkeeping, timeout, convergence, and briefing synthesis only.
 
 import logging
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 from orgpilot.adapter.base import CollaborationAdapter
 from orgpilot.dependencies.analyzer import DependencyAnalyzer
+from orgpilot.domain.clock import Clock, SystemClock
 from orgpilot.domain.enums import (
     ActionType,
     CommandStatus,
@@ -44,11 +45,13 @@ class ProgressSyncCoordinator:
         agent: "CoordinationAgent",
         adapter: CollaborationAdapter | None = None,
         session_timeout: timedelta = timedelta(hours=24),
+        clock: Clock | None = None,
     ) -> None:
         self.agent = agent
         self.adapter = adapter or agent.adapter
         self.analyzer = DependencyAnalyzer()
         self.session_timeout = session_timeout
+        self.clock: Clock = clock or SystemClock()
         self._sessions: dict[str, SyncSession] = {}
 
     def get_session(self, session_id: str) -> SyncSession | None:
@@ -60,9 +63,9 @@ class ProgressSyncCoordinator:
         """Returns the latest active session, expiring sessions idle past the timeout.
 
         ``now`` should carry the current message's occurred_at so the check stays
-        deterministic under test; it defaults to the wall clock.
+        deterministic under test; it defaults to the injected clock.
         """
-        checked_at = now or datetime.now(UTC)
+        checked_at = now or self.clock.now()
         active: SyncSession | None = None
         for s in reversed(list(self._sessions.values())):
             if s.project_id != project_id or s.status not in (
@@ -71,20 +74,20 @@ class ProgressSyncCoordinator:
             ):
                 continue
             if checked_at - s.updated_at > self.session_timeout:
-                self._timeout_session(s)
+                self._timeout_session(s, checked_at)
                 continue
             if active is None:
                 active = s
         return active
 
-    def _timeout_session(self, session: SyncSession) -> None:
+    def _timeout_session(self, session: SyncSession, now: datetime) -> None:
         """Ends a stalled session, briefing from whatever has been collected so far."""
         for probe in session.member_probes.values():
             if probe.status is not ProbeMemberStatus.COLLECTED:
                 probe.status = ProbeMemberStatus.TIMEOUT
         self.synthesize_and_deliver_briefing(session.session_id)
         session.status = SyncSessionStatus.TIMEOUT
-        session.updated_at = datetime.now(UTC)
+        session.updated_at = now
         unreplied = [
             p.member_id
             for p in session.member_probes.values()
@@ -109,7 +112,7 @@ class ProgressSyncCoordinator:
         ``occurred_at`` anchors the session clock (evaluations replay fixed
         timestamps); it defaults to the wall clock.
         """
-        now = occurred_at or datetime.now(UTC)
+        now = occurred_at or self.clock.now()
         session_id = f"sync-{project_id}-{uuid.uuid4().hex[:8]}"
 
         active_tasks = [
@@ -222,7 +225,7 @@ class ProgressSyncCoordinator:
         delivering the briefing — once every probe has reached a terminal state.
         Returns the session when the member belonged to one, else None.
         """
-        now = occurred_at or datetime.now(UTC)
+        now = occurred_at or self.clock.now()
         session = self.get_active_session(project_id, now=now)
         if session is None:
             return None
@@ -251,7 +254,7 @@ class ProgressSyncCoordinator:
         if not session:
             return None
 
-        now = datetime.now(UTC)
+        now = self.clock.now()
         session.status = SyncSessionStatus.SYNTHESIZING
 
         tasks = self.agent.projector.state.tasks

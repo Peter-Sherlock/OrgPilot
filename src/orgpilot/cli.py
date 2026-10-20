@@ -485,8 +485,9 @@ def _start_feishu_ws(project_id: str | None = None) -> int:
     import time
 
     from orgpilot.config import OrgPilotSettings
+    from orgpilot.extraction.client import AnthropicCompatibleLLMClient
     from orgpilot.feishu.ws import FeishuWebSocketListener
-    from orgpilot.gateway.service import GatewayService
+    from orgpilot.gateway.app import build_gateway_service
     from orgpilot.storage.database import Database
 
     settings = OrgPilotSettings.from_env()
@@ -496,6 +497,11 @@ def _start_feishu_ws(project_id: str | None = None) -> int:
         raise SystemExit(
             "Error: FEISHU_APP_ID and FEISHU_APP_SECRET environment variables are required."
         )
+    if settings.collaboration_adapter != "feishu":
+        raise SystemExit(
+            "Error: start-feishu-ws needs ORGPILOT_COLLABORATION_ADAPTER=feishu; "
+            "with the mock adapter, replies and cards never reach Feishu."
+        )
 
     target_project = project_id or settings.feishu_project_id
     db = Database(settings.database_url)
@@ -503,7 +509,9 @@ def _start_feishu_ws(project_id: str | None = None) -> int:
     asyncio.set_event_loop(loop)
     loop.run_until_complete(db.init_db())
 
-    service = GatewayService(db)
+    # Same wiring as the HTTP gateway. Before this, the listener ran the mock
+    # adapter and a default router, so approval cards and probes never reached Feishu.
+    service, llm_client = build_gateway_service(settings, db)
     listener = FeishuWebSocketListener(
         app_id=app_id,
         app_secret=app_secret,
@@ -524,6 +532,9 @@ def _start_feishu_ws(project_id: str | None = None) -> int:
     except KeyboardInterrupt:
         print("\n[*] Stopping Feishu WebSocket Listener...")
         return 0
+    finally:
+        if isinstance(llm_client, AnthropicCompatibleLLMClient):
+            llm_client.close()
 
 
 def _team_directory(settings: Any) -> Any:
@@ -545,7 +556,6 @@ def _print_team_errors(errors: list[str]) -> None:
 
 def _team_import(path: Path, project: str | None, dry_run: bool) -> int:
     import asyncio
-    from datetime import UTC, datetime
 
     import httpx
 
@@ -573,7 +583,7 @@ def _team_import(path: Path, project: str | None, dry_run: bool) -> int:
         await db.init_db()
         try:
             service = GatewayService(db, business_timezone=settings.business_timezone)
-            now = datetime.now(UTC).astimezone(settings.business_timezone)
+            now = service.clock.now().astimezone(settings.business_timezone)
             result = await import_team(
                 service, spec, directory, digest=digest, now=now, dry_run=dry_run
             )

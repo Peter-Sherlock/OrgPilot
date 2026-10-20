@@ -20,6 +20,8 @@ from orgpilot.events.models import (
     TaskHealthReportedEvent,
     TaskHealthReportedPayload,
 )
+from orgpilot.feishu.adapter import FeishuCollaborationAdapter
+from orgpilot.feishu.client import MockFeishuClient
 
 NOW = datetime.fromisoformat("2026-09-01T10:00:00+08:00")
 
@@ -141,6 +143,49 @@ def test_agent_run_turn_update_task_approval() -> None:
     case = agent.case_ledger.get_case("case:task-health:t1")
     assert case is not None
     assert case.status is CoordinationCaseStatus.RESOLVED
+
+
+def test_agent_escalates_when_the_approved_update_fails() -> None:
+    """An approved reschedule that the platform rejects is escalated, not resolved."""
+
+    class RejectingClient(MockFeishuClient):
+        async def update_task_deadline(self, task_guid: str, deadline: datetime) -> dict:
+            raise RuntimeError("Feishu update task failed: task not found")
+
+    adapter = FeishuCollaborationAdapter(
+        client=RejectingClient(), project_id="test-proj", task_writeback=True
+    )
+    agent = CoordinationAgent(project_id="test-proj", adapter=adapter)
+    events = _init_events()
+    events.append(
+        TaskHealthReportedEvent(
+            project_id="test-proj",
+            event_id="evt-delay-overdue",
+            event_type="task.health_reported",
+            source=EventSource.MESSAGE,
+            source_ref="ref",
+            actor_id="alice",
+            occurred_at=NOW,
+            received_at=NOW,
+            payload=TaskHealthReportedPayload(
+                task_id="t1",
+                health_status=HealthStatus.DELAYED,
+                expected_completion=NOW + timedelta(days=5),
+                confidence=0.95,
+            ),
+        )
+    )
+    agent.run_turn(events, NOW)
+    [pending] = agent.approval_manager.get_pending_requests()
+    agent.approval_manager.approve(pending.approval_id, "carol", NOW + timedelta(hours=1))
+
+    agent.run_turn([], NOW + timedelta(hours=1))
+
+    case = agent.case_ledger.get_case("case:task-health:t1")
+    assert case is not None
+    assert case.status is CoordinationCaseStatus.ESCALATED
+    assert "task not found" in (case.terminal_reason or "")
+    assert agent.state.tasks["t1"].deadline == NOW + timedelta(days=2)
 
 
 def test_agent_run_turn_direct_update_task_action_approval() -> None:

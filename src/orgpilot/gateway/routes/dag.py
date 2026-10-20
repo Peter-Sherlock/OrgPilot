@@ -1,6 +1,5 @@
 """FastAPI routes for interactive DAG topology and explainability timeline."""
 
-from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request
@@ -242,7 +241,7 @@ async def get_project_timeline(
         entries.append(
             TimelineEntry(
                 entry_id=c.case_id,
-                timestamp=c.created_at or datetime.now(UTC),
+                timestamp=c.created_at or service.clock.now(),
                 category="case",
                 title=f"Coordination Case: {c.case_id}",
                 description=f"针对任务 {c.source_task_id} 的风险协调，当前状态: {c.status.value}",
@@ -266,7 +265,7 @@ async def get_project_timeline(
         entries.append(
             TimelineEntry(
                 entry_id=app.approval_id,
-                timestamp=getattr(app, "created_at", None) or datetime.now(UTC),
+                timestamp=getattr(app, "created_at", None) or service.clock.now(),
                 category="approval",
                 title=f"审批请求: {app.approval_id}",
                 description=f"向 {app.approver_id} 发起改期审批，状态: {app.status.value}",
@@ -282,7 +281,7 @@ async def get_project_timeline(
         )
 
     # Sort chronologically
-    entries.sort(key=lambda e: e.timestamp or datetime.now(UTC))
+    entries.sort(key=lambda e: e.timestamp or service.clock.now())
 
     return TimelineResponse(
         project_id=project_id,

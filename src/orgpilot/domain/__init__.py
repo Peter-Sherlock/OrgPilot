@@ -1,5 +1,6 @@
 """Domain vocabulary and state models."""
 
+from orgpilot.domain.clock import Clock, FrozenClock, SystemClock
 from orgpilot.domain.enums import (
     ActionType,
     AgentTerminationReason,
@@ -40,6 +41,7 @@ __all__ = [
     "ApprovalRequest",
     "ApprovalStatus",
     "ClaimStatus",
+    "Clock",
     "CommandStatus",
     "Commitment",
     "CommitmentStatus",
@@ -47,12 +49,14 @@ __all__ = [
     "CoordinationCase",
     "CoordinationCaseStatus",
     "DependencyImpact",
+    "FrozenClock",
     "HealthStatus",
     "MemberState",
     "OrgState",
     "PolicyDecision",
     "PolicyDisposition",
     "RiskLevel",
+    "SystemClock",
     "TaskHealthClaim",
     "TaskState",
     "WorkflowStatus",

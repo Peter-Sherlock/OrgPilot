@@ -11,6 +11,7 @@ from orgpilot.adapter.base import CollaborationAdapter
 from orgpilot.adapter.mock import MockCollaborationAdapter
 from orgpilot.agent.loop import CoordinationAgent
 from orgpilot.coordination.sync_coordinator import ProgressSyncCoordinator
+from orgpilot.domain.clock import Clock, SystemClock
 from orgpilot.domain.errors import DomainInvariantError
 from orgpilot.domain.models import AgentTurnTrace
 from orgpilot.domain.sync_models import SyncSession
@@ -40,6 +41,7 @@ class GatewayService:
         adapter_factory: Callable[[str], CollaborationAdapter] | None = None,
         sync_session_timeout: timedelta = timedelta(hours=24),
         business_timezone: ZoneInfo = DEFAULT_BUSINESS_TIMEZONE,
+        clock: Clock | None = None,
     ) -> None:
         self.db = db
         self.event_store = SqlEventStore(db)
@@ -50,6 +52,10 @@ class GatewayService:
         )
         self.sync_session_timeout = sync_session_timeout
         self.business_timezone = business_timezone
+        # Single owner of "now" for every time-dependent decision reached through
+        # the gateway. Handlers and routes read this clock instead of the wall
+        # clock so a pinned clock makes the whole request path deterministic.
+        self.clock: Clock = clock or SystemClock()
         self._sync_coordinators: dict[str, ProgressSyncCoordinator] = {}
 
     def to_business_timezone(self, moment: datetime) -> datetime:
@@ -150,7 +156,7 @@ class GatewayService:
         in that case, so the durable event log can never be poisoned by an event
         that replays into a DomainInvariantError.
         """
-        ts = occurred_at or datetime.now(UTC)
+        ts = occurred_at or self.clock.now()
         agent = await self.get_or_replay_agent(project_id)
 
         tasks_dict = {t.task_id: t.title for t in agent.projector.state.tasks.values()}
@@ -241,6 +247,7 @@ class GatewayService:
                 agent=agent,
                 adapter=agent.adapter,
                 session_timeout=self.sync_session_timeout,
+                clock=self.clock,
             )
         return self._sync_coordinators[project_id]
 

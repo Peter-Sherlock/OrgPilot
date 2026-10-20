@@ -122,7 +122,8 @@ class MessageRouter:
         # the heuristic wrapper stays the default so mock demos are unchanged.
         self.intent_client = intent_client or default_intent_client(self.settings)
         self.dialogue = dialogue_store or DialogueStateStore(
-            max_topic_reasks=self.settings.max_topic_reasks
+            max_topic_reasks=self.settings.max_topic_reasks,
+            clock=getattr(service, "clock", None),
         )
         self.messages = message_store or SqlMessageStore(service.db)
         self.recent_turns_limit = recent_turns_limit or self.settings.intent_recent_turns

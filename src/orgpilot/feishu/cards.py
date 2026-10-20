@@ -1,6 +1,17 @@
 """Feishu 2.0 Interactive Card JSON generators for inquiry, approval, and notifications."""
 
+from datetime import datetime
 from typing import Any
+
+
+def format_deadline(value: Any, fallback: str = "未指定") -> str:
+    """Renders an ISO deadline as "YYYY-MM-DD HH:MM" in the offset it was stated in."""
+    if not value:
+        return fallback
+    try:
+        return datetime.fromisoformat(str(value)).strftime("%Y-%m-%d %H:%M")
+    except ValueError:
+        return str(value)
 
 
 def build_inquiry_card(task_id: str, title: str, reason: str | None = None) -> dict[str, Any]:

@@ -1,13 +1,14 @@
 """Tests for Feishu Webhook event handling, messages, and card callback flows."""
 
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 import httpx
 import pytest
 
 from orgpilot.adapter.mock import MockCollaborationAdapter
 from orgpilot.config import OrgPilotSettings
+from orgpilot.domain.clock import FrozenClock
 from orgpilot.domain.enums import (
     CoordinationCaseStatus,
     HealthStatus,
@@ -20,9 +21,9 @@ from orgpilot.gateway.app import create_app
 from orgpilot.gateway.service import GatewayService
 from orgpilot.storage.database import Database
 
-# Anchored to the real clock so approval expiry (created_at + 2 days) never lapses
-# between event ingestion and the card/decision callbacks under test.
-NOW = datetime.now(UTC)
+# The app runs on a FrozenClock pinned here, so approval expiry is measured
+# from this instant instead of the wall clock (see test_clock_determinism.py).
+NOW = datetime.fromisoformat("2026-09-10T10:00:00+08:00")
 
 
 @pytest.fixture
@@ -30,7 +31,7 @@ async def client() -> httpx.AsyncClient:
     db = Database("sqlite+aiosqlite:///:memory:")
     await db.init_db()
     settings = OrgPilotSettings(collaboration_adapter="mock", feishu_use_ws=False)
-    app = create_app(db, settings=settings)
+    app = create_app(db, settings=settings, clock=FrozenClock(NOW))
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
@@ -43,7 +44,7 @@ async def harness() -> tuple[httpx.AsyncClient, GatewayService]:
     db = Database("sqlite+aiosqlite:///:memory:")
     await db.init_db()
     settings = OrgPilotSettings(collaboration_adapter="mock", feishu_use_ws=False)
-    app = create_app(db, settings=settings)
+    app = create_app(db, settings=settings, clock=FrozenClock(NOW))
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac, app.state.gateway_service

@@ -3,10 +3,11 @@
 import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from orgpilot.adapter.base import CollaborationAdapter
+from orgpilot.domain.clock import Clock, SystemClock
 from orgpilot.domain.enums import CommandStatus
 from orgpilot.domain.models import ActionCommand, ActionResult
 from orgpilot.events.models import (
@@ -20,6 +21,7 @@ from orgpilot.feishu.cards import (
     build_executive_briefing_card,
     build_inquiry_card,
     build_notification_card,
+    format_deadline,
 )
 from orgpilot.feishu.client import FeishuClient, MockFeishuClient
 
@@ -33,9 +35,16 @@ class FeishuCollaborationAdapter(CollaborationAdapter):
         self,
         client: FeishuClient | None = None,
         project_id: str = "feishu-project",
+        clock: Clock | None = None,
+        task_writeback: bool = False,
     ) -> None:
         self.client: FeishuClient = client or MockFeishuClient()
         self.project_id = project_id
+        self.clock: Clock = clock or SystemClock()
+        # Tasks imported from team.yaml live only in OrgPilot, so their ids are not
+        # Feishu task guids; patching Feishu Task with them fails. Write-back is opt-in
+        # for projects whose task ids really are Feishu task guids.
+        self.task_writeback = task_writeback
         self.audit_log: list[tuple[ActionCommand, ActionResult]] = []
         self._generated_events: list[OrgEvent] = []
 
@@ -124,7 +133,7 @@ class FeishuCollaborationAdapter(CollaborationAdapter):
         case_id = command.payload.get("case_id", "case:unknown")
         task_id = command.payload.get("task_id", "unknown_task")
         task_title = command.payload.get("task_title", task_id)
-        proposed_deadline = command.payload.get("proposed_deadline", "未指定")
+        proposed_deadline = format_deadline(command.payload.get("new_deadline"))
         impacted_tasks = command.payload.get("impacted_tasks", [])
         risk_level = command.payload.get("risk_level", "HIGH")
 
@@ -151,19 +160,50 @@ class FeishuCollaborationAdapter(CollaborationAdapter):
         return result
 
     def update_task(self, command: ActionCommand) -> ActionResult:
-        """Calls Feishu Task OpenAPI to update task deadline and generates a TaskUpdatedEvent."""
-        task_id = command.payload.get("task_id", "task")
-        deadline_str = command.payload.get("deadline")
-        deadline_dt = (
-            datetime.fromisoformat(deadline_str)
-            if isinstance(deadline_str, str)
-            else (deadline_str or datetime.now(UTC))
-        )
+        """Updates the task deadline in OrgPilot, and in Feishu Task when write-back is on.
 
-        self._run_async(self.client.update_task_deadline(task_guid=task_id, deadline=deadline_dt))
+        A failed Feishu call is reported as a FAILED result and leaves OrgPilot's
+        deadline unchanged, so the two never silently disagree.
+        """
+        task_id = command.payload.get("task_id", "task")
+        deadline_str = command.payload.get("new_deadline")
+        if not deadline_str:
+            # Never invent a deadline: falling back to "now" used to reschedule the
+            # task to the moment of approval.
+            result = ActionResult(
+                command_id=command.command_id,
+                action_id=command.action_id,
+                status=CommandStatus.FAILED,
+                output={"task_id": task_id},
+                error="update_task payload has no new_deadline",
+                executed_at=command.created_at,
+            )
+            self.audit_log.append((command, result))
+            return result
+        deadline_dt = datetime.fromisoformat(str(deadline_str))
+
+        if self.task_writeback:
+            try:
+                self._run_async(
+                    self.client.update_task_deadline(task_guid=task_id, deadline=deadline_dt)
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Feishu update_task_deadline for %s failed: %s", task_id, str(exc) or repr(exc)
+                )
+                result = ActionResult(
+                    command_id=command.command_id,
+                    action_id=command.action_id,
+                    status=CommandStatus.FAILED,
+                    output={"task_id": task_id, "deadline": deadline_dt.isoformat()},
+                    error=f"update_task_deadline for {task_id} failed: {exc}",
+                    executed_at=command.created_at,
+                )
+                self.audit_log.append((command, result))
+                return result
 
         # Generate local projection event
-        now = datetime.now(UTC)
+        now = self.clock.now()
         evt = TaskUpdatedEvent(
             project_id=self.project_id,
             event_id=f"evt-feishu-task-upd-{command.command_id}",
@@ -183,7 +223,11 @@ class FeishuCollaborationAdapter(CollaborationAdapter):
             command_id=command.command_id,
             action_id=command.action_id,
             status=CommandStatus.SUCCESS,
-            output={"task_id": task_id, "deadline": deadline_dt.isoformat()},
+            output={
+                "task_id": task_id,
+                "deadline": deadline_dt.isoformat(),
+                "feishu_task_synced": self.task_writeback,
+            },
             executed_at=command.created_at,
         )
         self.audit_log.append((command, result))

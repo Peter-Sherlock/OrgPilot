@@ -1,6 +1,7 @@
 """Build source-backed coordination cases and candidate actions from current state."""
 
 from collections import defaultdict
+from collections.abc import Iterable
 
 from orgpilot.domain.enums import (
     ActionType,
@@ -15,6 +16,7 @@ from orgpilot.domain.models import (
     DependencyImpact,
     OrgState,
     TaskHealthClaim,
+    TaskState,
 )
 
 _HEALTH_SEVERITY = {
@@ -89,10 +91,9 @@ class CoordinationService:
                             targets=pm_targets,
                             reason_refs=(primary_claim.source_event_id,),
                             expected_effect=f"propose new deadline {exp_iso}",
-                            payload={
-                                "task_id": task.task_id,
-                                "new_deadline": exp_iso,
-                            },
+                            payload=_reschedule_payload(
+                                task, exp_iso, impacted_by_source[task.task_id], state
+                            ),
                         ),
                     )
 
@@ -157,10 +158,7 @@ class CoordinationService:
                     targets=pm_targets,
                     reason_refs=(primary_claim.source_event_id,),
                     expected_effect=f"propose new deadline {exp_iso}",
-                    payload={
-                        "task_id": task.task_id,
-                        "new_deadline": exp_iso,
-                    },
+                    payload=_reschedule_payload(task, exp_iso, case.impacted_task_ids, state),
                 ),
             )
 
@@ -195,3 +193,22 @@ class CoordinationService:
             ),
             key=lambda claim: (claim.occurred_at, claim.claim_id),
         )
+
+
+def _reschedule_payload(
+    task: TaskState, new_deadline: str, impacted_task_ids: Iterable[str], state: OrgState
+) -> dict[str, object]:
+    """The reschedule proposal every adapter reads: ``new_deadline`` is the canonical key.
+
+    Title and impacted-task titles ride along so an approval card can be read
+    without a second lookup.
+    """
+    return {
+        "task_id": task.task_id,
+        "task_title": task.title,
+        "new_deadline": new_deadline,
+        "impacted_tasks": [
+            state.tasks[task_id].title if task_id in state.tasks else task_id
+            for task_id in sorted(impacted_task_ids)
+        ],
+    }

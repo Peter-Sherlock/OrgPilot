@@ -12,10 +12,12 @@ from orgpilot.domain.enums import (
     ActionType,
     AgentTerminationReason,
     ApprovalStatus,
+    CommandStatus,
     CoordinationCaseStatus,
 )
 from orgpilot.domain.models import (
     ActionCommand,
+    ActionResult,
     AgentTurnTrace,
     OrgState,
 )
@@ -185,26 +187,21 @@ class CoordinationAgent:
                                 created_at=current_time,
                                 idempotency_key=f"idem:update:{case.source_task_id}:r{self._turn_count}",
                             )
-                            self.adapter.execute(update_cmd)
+                            update_result = self.adapter.execute(update_cmd)
                             self.case_ledger.record_command(case.case_id, update_cmd, current_time)
                             executed_cmd_ids.append(update_cmd.command_id)
-                            self.case_ledger.transition(
+                            self._close_after_update(
                                 case.case_id,
-                                CoordinationCaseStatus.RESOLVED,
+                                update_result,
                                 current_time,
-                                terminal_reason="reschedule approved and task updated",
-                                candidate_actions=(),
+                                "reschedule approved and task updated",
                             )
                         elif req.action_type is ActionType.UPDATE_TASK:
-                            self.adapter.execute(command)
+                            update_result = self.adapter.execute(command)
                             self.case_ledger.record_command(case.case_id, command, current_time)
                             executed_cmd_ids.append(command.command_id)
-                            self.case_ledger.transition(
-                                case.case_id,
-                                CoordinationCaseStatus.RESOLVED,
-                                current_time,
-                                terminal_reason="task update executed",
-                                candidate_actions=(),
+                            self._close_after_update(
+                                case.case_id, update_result, current_time, "task update executed"
                             )
                     elif req.status is ApprovalStatus.REJECTED:
                         self.case_ledger.transition(
@@ -240,6 +237,31 @@ class CoordinationAgent:
         )
 
         return trace, generated_events
+
+    def _close_after_update(
+        self,
+        case_id: str,
+        result: ActionResult,
+        current_time: datetime,
+        resolved_reason: str,
+    ) -> None:
+        """Resolves the case only when the approved update actually took effect."""
+        if result.status is CommandStatus.FAILED:
+            self.case_ledger.transition(
+                case_id,
+                CoordinationCaseStatus.ESCALATED,
+                current_time,
+                terminal_reason=f"approved update failed: {result.error or 'unknown error'}",
+                candidate_actions=(),
+            )
+            return
+        self.case_ledger.transition(
+            case_id,
+            CoordinationCaseStatus.RESOLVED,
+            current_time,
+            terminal_reason=resolved_reason,
+            candidate_actions=(),
+        )
 
     def _determine_termination_reason(self) -> AgentTerminationReason:
         all_cases = self.case_ledger.get_all_cases()
