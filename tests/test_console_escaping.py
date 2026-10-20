@@ -26,7 +26,7 @@ CONSOLE_HTML = (
 # In-page values the console computes itself. None of them carries server data, so they
 # may be interpolated raw. Keep this list short: anything else goes through escapeHtml.
 RAW_ALLOWED = {
-    "badgeBg",  # DAG node colour: one of four hex literals chosen by health/status
+    "badgeBg",  # DAG node colour: one of five hex literals returned by dagNodeColor
     "borderStroke",  # DAG node border colour: one of two hex literals
     "borderWidth",  # DAG node border width: one of two numeric literals
     "criticalDot",  # static <circle> markup or ''
@@ -355,15 +355,16 @@ def test_console_renders_hostile_data_as_text(tmp_path: Path) -> None:
             "recommended_actions": [PAYLOAD],
         },
         "dag": {
+            # Same shape as the real /dag response (DagNode in gateway/schemas.py).
             "nodes": [
                 {
-                    "id": "task-x",
+                    "task_id": "task-x",
                     "title": PAYLOAD,
                     "owner_id": PAYLOAD,
                     "workflow_status": PAYLOAD,
-                    "health": "AT_RISK",
-                    "level": 0,
-                    "is_critical": True,
+                    "health_status": PAYLOAD,
+                    "layer": 0,
+                    "is_critical_path": True,
                 }
             ],
             "edges": [],
