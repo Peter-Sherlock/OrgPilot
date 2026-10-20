@@ -59,28 +59,62 @@ def test_feishu_adapter_request_approval() -> None:
     assert client.sent_cards[0]["receive_id"] == "ou_carol_pm"
 
 
-def test_feishu_adapter_update_task() -> None:
-    client = MockFeishuClient()
-    adapter = FeishuCollaborationAdapter(client=client, project_id="feishu-proj")
-
-    cmd = ActionCommand(
+def _update_task_command() -> ActionCommand:
+    return ActionCommand(
         command_id="cmd:3",
         action_id="act:3",
         action_type=ActionType.UPDATE_TASK,
         targets=("system",),
-        payload={"task_id": "backend_api", "deadline": NOW.isoformat()},
+        payload={"task_id": "backend_api", "new_deadline": NOW.isoformat()},
         idempotency_key="idem:3",
         created_at=NOW,
     )
 
-    result = adapter.execute(cmd)
+
+def test_feishu_adapter_update_task_stays_local_by_default() -> None:
+    """Imported task ids are not Feishu task guids, so the default never patches Feishu."""
+    client = MockFeishuClient()
+    adapter = FeishuCollaborationAdapter(client=client, project_id="feishu-proj")
+
+    result = adapter.execute(_update_task_command())
     assert result.status is CommandStatus.SUCCESS
-    assert len(client.updated_tasks) == 1
+    assert result.output["feishu_task_synced"] is False
+    assert client.updated_tasks == []
 
     generated_events = adapter.pop_generated_events()
     assert len(generated_events) == 1
     assert generated_events[0].event_type == "task.updated"
     assert generated_events[0].payload.task_id == "backend_api"
+
+
+def test_feishu_adapter_update_task_writes_back_when_enabled() -> None:
+    client = MockFeishuClient()
+    adapter = FeishuCollaborationAdapter(
+        client=client, project_id="feishu-proj", task_writeback=True
+    )
+
+    result = adapter.execute(_update_task_command())
+    assert result.status is CommandStatus.SUCCESS
+    assert result.output["feishu_task_synced"] is True
+    assert len(client.updated_tasks) == 1
+    assert len(adapter.pop_generated_events()) == 1
+
+
+def test_feishu_adapter_update_task_failure_is_reported_not_raised() -> None:
+    """A rejected Feishu Task call returns FAILED and leaves OrgPilot's deadline alone."""
+
+    class RejectingClient(MockFeishuClient):
+        async def update_task_deadline(self, task_guid: str, deadline: datetime) -> dict:
+            raise RuntimeError("Feishu update task failed: task not found")
+
+    adapter = FeishuCollaborationAdapter(
+        client=RejectingClient(), project_id="feishu-proj", task_writeback=True
+    )
+
+    result = adapter.execute(_update_task_command())
+    assert result.status is CommandStatus.FAILED
+    assert "task not found" in (result.error or "")
+    assert adapter.pop_generated_events() == []
 
 
 def test_feishu_adapter_notify_group() -> None:
@@ -185,3 +219,14 @@ def test_feishu_adapter_reports_failed_when_text_send_raises() -> None:
     assert result.error is not None
     assert "Feishu unavailable" in result.error
     assert adapter.audit_log[-1][1].status is CommandStatus.FAILED
+
+
+def test_feishu_adapter_update_task_without_new_deadline_fails_closed() -> None:
+    """A payload without new_deadline must not reschedule the task to "now"."""
+    adapter = FeishuCollaborationAdapter(client=MockFeishuClient(), project_id="feishu-proj")
+    cmd = _update_task_command().model_copy(update={"payload": {"task_id": "backend_api"}})
+
+    result = adapter.execute(cmd)
+    assert result.status is CommandStatus.FAILED
+    assert "new_deadline" in (result.error or "")
+    assert adapter.pop_generated_events() == []

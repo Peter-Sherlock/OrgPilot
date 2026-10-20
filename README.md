@@ -54,7 +54,7 @@ PM 发 `/同步`（或用自然语言请求同步，这时要先点确认卡片�
 | Mock 闭环 Agent（CaseLedger、三阶段动作、审批门禁、有界循环） | ✅ 已验证 | 同上 |
 | 分层意图识别（ADR-0008 第 1–3 步） | ✅ 离线评测通过 | DeepSeek V4.1 Flash，提示词已冻结，见[评测](#评测) |
 | SQL 持久化 + FastAPI 网关 | 🟡 原型 | 默认 SQLite、单实例；PostgreSQL 没做过环境验证 |
-| 飞书接入（Webhook、WebSocket 长连接、交互卡片） | 🟡 代码完成 | 2026-10-14 在测试企业做过单账号冒烟；多账号收发、审批、改期写回没在真实租户跑通 |
+| 飞书接入（Webhook、WebSocket 长连接、交互卡片） | 🟡 代码完成 | 报延期 → 审批卡片 → 批准改期的整条链路有端到端测试（Mock 飞书客户端）；真实租户里只做过单账号冒烟，演示步骤见 [`docs/feishu-demo-runbook.md`](docs/feishu-demo-runbook.md) |
 | 团队名单导入 `team.yaml`（ADR-0009） | 🟡 预览已实测 | 真实租户里预览导入通过；正式导入未验证 |
 | Web 控制台（DAG、解释时间线、审批台、多角色沙箱聊天） | ✅ 可本地演示 | Mock 模式下不需要任何凭据 |
 | 协调层对比 benchmark（对比 Chatbot / 规则提醒 / 只维护状态的 Agent） | ⬜ 未开始 | 设计见 `OrgPilot-Initial-Design.md` §15 |
@@ -145,6 +145,10 @@ uv run orgpilot team show
 ```
 
 演示用的"第一个发消息的人自动成为 PM"只在 `ORGPILOT_DEMO_MODE=true` 时生效，真实团队请用名单导入。
+完整的真实演示步骤和检查点见 [`docs/feishu-demo-runbook.md`](docs/feishu-demo-runbook.md)。
+
+PM 批准改期后，更新的是 OrgPilot 里的任务截止时间。名单导入的任务不在飞书任务里，所以默认不调用飞书任务接口；
+只有任务 ID 本身就是飞书任务 guid 时，才设置 `ORGPILOT_FEISHU_TASK_WRITEBACK=true` 同步写回。
 
 ## 关键设计取舍
 
@@ -156,7 +160,7 @@ uv run orgpilot team show
 
 ## 已知限制
 
-- 对话状态（待回答的追问、待确认的同步卡片）只存在内存里，服务重启会丢失；
+- 对话状态（待回答的追问、待确认的同步卡片）和进行中的同步会话只存在内存里，服务重启会丢失；
 - 只处理私聊，群聊消息直接拒收；飞书多维表格和日历还没接入；
 - claim 合并规则（ADR-0008 第 4 步）没实现；ADR-0008 登记了 7 个待修的意图识别已知问题；
 - 单实例部署，PostgreSQL 未验证；
@@ -170,6 +174,7 @@ uv run orgpilot team show
 | [`docs/event-semantics.md`](docs/event-semantics.md) | 事件信封、生命周期、幂等与 LLM 边界 |
 | [`docs/ground-truth-scenarios.md`](docs/ground-truth-scenarios.md) | P0 / M1 回放场景规格 |
 | [`docs/feishu-setup-guide.md`](docs/feishu-setup-guide.md) | 飞书自建应用、权限与名单导入 |
+| [`docs/feishu-demo-runbook.md`](docs/feishu-demo-runbook.md) | 真实飞书演示的步骤、检查点与排错 |
 | [`docs/development.md`](docs/development.md) | 开发环境、Git 工作流、完成标准 |
 | [`docs/development-log.md`](docs/development-log.md) | 每一步已实现、已验证、未覆盖的内容 |
 | [`evals/intent/LABELING.md`](evals/intent/LABELING.md) | 意图评测标注规则 |

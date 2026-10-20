@@ -7,6 +7,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+from orgpilot.domain.clock import Clock, SystemClock
 from orgpilot.domain.enums import WorkflowStatus
 from orgpilot.events.models import (
     EventSource,
@@ -16,7 +17,7 @@ from orgpilot.events.models import (
     TaskCreatedEvent,
     TaskCreatedPayload,
 )
-from orgpilot.feishu.cards import build_approval_updated_card
+from orgpilot.feishu.cards import build_approval_updated_card, format_deadline
 from orgpilot.intent.replies import WELCOME_TEXT
 
 if TYPE_CHECKING:
@@ -36,8 +37,10 @@ class FeishuWebhookHandler:
         verification_token: str | None = None,
         router: "MessageRouter | None" = None,
         demo_mode: bool = False,
+        clock: Clock | None = None,
     ) -> None:
         self.service: GatewayService = service
+        self.clock: Clock = clock or getattr(service, "clock", None) or SystemClock()
         self.project_id = project_id
         self.verification_token = verification_token
         self._router = router
@@ -114,7 +117,7 @@ class FeishuWebhookHandler:
         occurred_at = (
             datetime.fromtimestamp(int(occurred_ts) / 1000, tz=UTC)
             if occurred_ts
-            else datetime.now(UTC)
+            else self.clock.now()
         )
         # Feishu timestamps are UTC epoch millis; relative phrases like "明天下午5点"
         # must resolve against the team's business-timezone date, not UTC (B5).
@@ -258,7 +261,7 @@ class FeishuWebhookHandler:
         approval_id = action_val.get("approval_id")
 
         operator = event_data.get("operator", {}).get("open_id")
-        now = datetime.now(UTC)
+        now = self.clock.now()
 
         if decision in {"sync_confirm", "sync_cancel"}:
             return await self.router.handle_sync_card_action(
@@ -293,15 +296,18 @@ class FeishuWebhookHandler:
         # Build in-place updated card
         task_id = req.proposed_command.payload.get("task_id", "task")
         task_title = req.proposed_command.payload.get("task_title", task_id)
-        target_deadline = req.proposed_command.payload.get("proposed_deadline", "目标排期")
+        target_deadline = format_deadline(
+            req.proposed_command.payload.get("new_deadline"), fallback="目标排期"
+        )
 
+        approver = agent.projector.state.members.get(operator)
         updated_card = build_approval_updated_card(
             task_id=task_id,
             task_title=task_title,
             proposed_deadline_str=str(target_deadline),
             decision=decision,
-            approver_name=operator,
-            decided_at_str=now.strftime("%Y-%m-%d %H:%M:%S UTC"),
+            approver_name=approver.display_name if approver else operator,
+            decided_at_str=self.service.to_business_timezone(now).strftime("%Y-%m-%d %H:%M"),
         )
 
         return {

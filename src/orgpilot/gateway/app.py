@@ -12,10 +12,11 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from orgpilot.adapter.base import CollaborationAdapter
 from orgpilot.adapter.mock import MockCollaborationAdapter
 from orgpilot.config import OrgPilotSettings
+from orgpilot.domain.clock import Clock, SystemClock
 from orgpilot.extraction.client import AnthropicCompatibleLLMClient, LLMClient
 from orgpilot.extraction.extractor import ClaimExtractor
 from orgpilot.feishu.adapter import FeishuCollaborationAdapter
-from orgpilot.feishu.client import AsyncFeishuClient
+from orgpilot.feishu.client import AsyncFeishuClient, FeishuClient
 from orgpilot.feishu.ws import FeishuWebSocketListener
 from orgpilot.gateway.routes import approvals, cases, coordination, dag, events, feishu
 from orgpilot.gateway.service import GatewayService
@@ -23,40 +24,50 @@ from orgpilot.intent.router import MessageRouter
 from orgpilot.storage.database import Database
 
 
-def create_app(
-    db: Database | None = None,
-    settings: OrgPilotSettings | None = None,
-) -> FastAPI:
-    """Creates and configures the FastAPI event gateway application."""
-    runtime_settings = settings or OrgPilotSettings.from_env()
-    runtime_settings.validate()
-    database = db or Database(runtime_settings.database_url)
+def build_gateway_service(
+    settings: OrgPilotSettings,
+    database: Database,
+    clock: Clock | None = None,
+    feishu_client: FeishuClient | None = None,
+) -> tuple[GatewayService, LLMClient | None]:
+    """Wires the gateway service, adapter, extractor, and intent router from settings.
 
+    Shared by the HTTP app and the standalone ``start-feishu-ws`` listener so both
+    run the same adapter, intent client, and business timezone. Returns the LLM
+    client too, because the caller owns closing it. ``feishu_client`` replaces the
+    real OpenAPI client (tests drive the full wiring against a mock).
+    """
+    runtime_clock: Clock = clock or SystemClock()
     llm_client: LLMClient | None = None
-    if runtime_settings.llm_provider == "aihubmix":
+    if settings.llm_provider == "aihubmix":
         llm_client = AnthropicCompatibleLLMClient(
-            api_key=runtime_settings.aihubmix_api_key or "",
-            base_url=runtime_settings.aihubmix_base_url,
-            model=runtime_settings.aihubmix_model,
-            thinking=runtime_settings.llm_thinking,
+            api_key=settings.aihubmix_api_key or "",
+            base_url=settings.aihubmix_base_url,
+            model=settings.aihubmix_model,
+            thinking=settings.llm_thinking,
         )
-    elif runtime_settings.llm_provider == "deepseek":
+    elif settings.llm_provider == "deepseek":
         llm_client = AnthropicCompatibleLLMClient(
-            api_key=runtime_settings.deepseek_api_key or "",
-            base_url=runtime_settings.deepseek_base_url,
-            model=runtime_settings.deepseek_model,
-            thinking=runtime_settings.llm_thinking,
+            api_key=settings.deepseek_api_key or "",
+            base_url=settings.deepseek_base_url,
+            model=settings.deepseek_model,
+            thinking=settings.llm_thinking,
         )
     extractor = ClaimExtractor(llm_client=llm_client)
 
-    if runtime_settings.collaboration_adapter == "feishu":
-        feishu_client = AsyncFeishuClient(
-            app_id=runtime_settings.feishu_app_id or "",
-            app_secret=runtime_settings.feishu_app_secret or "",
+    if settings.collaboration_adapter == "feishu":
+        client: FeishuClient = feishu_client or AsyncFeishuClient(
+            app_id=settings.feishu_app_id or "",
+            app_secret=settings.feishu_app_secret or "",
         )
 
         def adapter_factory(project_id: str) -> CollaborationAdapter:
-            return FeishuCollaborationAdapter(client=feishu_client, project_id=project_id)
+            return FeishuCollaborationAdapter(
+                client=client,
+                project_id=project_id,
+                clock=runtime_clock,
+                task_writeback=settings.feishu_task_writeback,
+            )
 
     else:
 
@@ -67,12 +78,26 @@ def create_app(
         database,
         extractor=extractor,
         adapter_factory=adapter_factory,
-        business_timezone=runtime_settings.business_timezone,
+        business_timezone=settings.business_timezone,
+        clock=runtime_clock,
     )
 
     # Layered intent router (ADR-0008 §3): mock provider keeps the heuristic client.
-    intent_router = MessageRouter(service=gateway_service, settings=runtime_settings)
+    intent_router = MessageRouter(service=gateway_service, settings=settings)
     gateway_service.intent_router = intent_router  # type: ignore[attr-defined]
+    return gateway_service, llm_client
+
+
+def create_app(
+    db: Database | None = None,
+    settings: OrgPilotSettings | None = None,
+    clock: Clock | None = None,
+) -> FastAPI:
+    """Creates and configures the FastAPI event gateway application."""
+    runtime_settings = settings or OrgPilotSettings.from_env()
+    runtime_settings.validate()
+    database = db or Database(runtime_settings.database_url)
+    gateway_service, llm_client = build_gateway_service(runtime_settings, database, clock)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:

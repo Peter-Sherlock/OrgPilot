@@ -149,3 +149,42 @@ async def test_feishu_ws_listener_message_and_card_flow(
     # 6. Test build_event_handler
     handler = listener.build_event_handler()
     assert handler is not None
+
+
+def test_shared_wiring_gives_the_listener_the_gateway_adapter_and_router(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The standalone listener and the gateway are wired by the same builder."""
+    from orgpilot.config import OrgPilotSettings
+    from orgpilot.feishu.adapter import FeishuCollaborationAdapter
+    from orgpilot.feishu.client import MockFeishuClient
+    from orgpilot.gateway.app import build_gateway_service
+
+    monkeypatch.setenv("ORGPILOT_COLLABORATION_ADAPTER", "feishu")
+    monkeypatch.setenv("FEISHU_APP_ID", "cli_test")
+    monkeypatch.setenv("FEISHU_APP_SECRET", "sec_test")
+    monkeypatch.setenv("ORGPILOT_FEISHU_TASK_WRITEBACK", "true")
+    settings = OrgPilotSettings.from_env()
+
+    service, _ = build_gateway_service(
+        settings, Database("sqlite+aiosqlite:///:memory:"), feishu_client=MockFeishuClient()
+    )
+
+    adapter = service.adapter_factory("ws-proj")
+    assert isinstance(adapter, FeishuCollaborationAdapter)
+    assert adapter.task_writeback is True
+    assert adapter.clock is service.clock
+    assert service.intent_router.settings is settings
+    assert service.intent_router.dialogue.clock is service.clock
+
+
+def test_standalone_listener_refuses_the_mock_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With the mock adapter, cards and probes would silently never reach Feishu."""
+    from orgpilot import cli
+
+    monkeypatch.setenv("FEISHU_APP_ID", "cli_test")
+    monkeypatch.setenv("FEISHU_APP_SECRET", "sec_test")
+    monkeypatch.setenv("ORGPILOT_COLLABORATION_ADAPTER", "mock")
+
+    with pytest.raises(SystemExit, match="ORGPILOT_COLLABORATION_ADAPTER=feishu"):
+        cli._start_feishu_ws()

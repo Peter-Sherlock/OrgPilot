@@ -12,11 +12,12 @@ register their clarifications here so the router has a single source of truth fo
 "what is the bot waiting for from this person".
 """
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from pydantic import Field
 
 from orgpilot.config import DEFAULT_MAX_TOPIC_REASKS
+from orgpilot.domain.clock import Clock, SystemClock
 from orgpilot.extraction.models import StrictModel
 
 DEFAULT_CLARIFICATION_TTL = timedelta(hours=24)
@@ -73,7 +74,9 @@ class DialogueStateStore:
         confirmation_ttl: timedelta = DEFAULT_CONFIRMATION_TTL,
         max_clarification_rounds: int = DEFAULT_MAX_CLARIFICATION_ROUNDS,
         max_topic_reasks: int = DEFAULT_MAX_TOPIC_REASKS,
+        clock: Clock | None = None,
     ) -> None:
+        self.clock: Clock = clock or SystemClock()
         self.clarification_ttl = clarification_ttl
         self.confirmation_ttl = confirmation_ttl
         self.max_clarification_rounds = max_clarification_rounds
@@ -104,7 +107,7 @@ class DialogueStateStore:
             missing=missing or {},
             asked_rounds=asked_rounds,
             reask_count=reask_count,
-            created_at=created_at or datetime.now(UTC),
+            created_at=created_at or self.clock.now(),
             source=source,
         )
         self._clarifications[(project_id, sender_id)] = entry
@@ -117,7 +120,7 @@ class DialogueStateStore:
         entry = self._clarifications.get(key)
         if entry is None:
             return None
-        checked = now or datetime.now(UTC)
+        checked = now or self.clock.now()
         if checked - entry.created_at > self.clarification_ttl:
             del self._clarifications[key]
             return None
@@ -139,7 +142,7 @@ class DialogueStateStore:
         entry = PendingSyncConfirmation(
             initiated_by=initiated_by,
             member_ids=list(member_ids),
-            created_at=created_at or datetime.now(UTC),
+            created_at=created_at or self.clock.now(),
         )
         self._confirmations[(project_id, sender_id)] = entry
         return entry
@@ -151,7 +154,7 @@ class DialogueStateStore:
         entry = self._confirmations.get(key)
         if entry is None:
             return None
-        checked = now or datetime.now(UTC)
+        checked = now or self.clock.now()
         if checked - entry.created_at > self.confirmation_ttl:
             del self._confirmations[key]
             return None

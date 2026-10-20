@@ -1,7 +1,5 @@
 """Event and natural language message ingestion endpoints."""
 
-from datetime import UTC, datetime
-
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from orgpilot.gateway.schemas import (
@@ -58,7 +56,7 @@ async def ingest_message(
     occurred_at = (
         service.to_business_timezone(body.occurred_at)
         if body.occurred_at is not None
-        else service.to_business_timezone(datetime.now(UTC))
+        else service.to_business_timezone(service.clock.now())
     )
     try:
         is_act, ext_events, agent, reason, round_num, error = await service.ingest_message(

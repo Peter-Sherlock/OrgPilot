@@ -61,6 +61,9 @@ class OrgPilotSettings:
     feishu_app_secret: str | None = field(default=None, repr=False)
     feishu_verification_token: str | None = field(default=None, repr=False)
     feishu_project_id: str = "feishu-project"
+    # Approved reschedules always update OrgPilot; they also patch Feishu Task only
+    # when on, which requires task ids that are real Feishu task guids.
+    feishu_task_writeback: bool = False
     # Demo-only first-contact bootstrap (ADR-0009 §8); real teams import team.yaml.
     demo_mode: bool = False
     timezone: str = DEFAULT_TIMEZONE
@@ -105,6 +108,10 @@ class OrgPilotSettings:
             feishu_app_secret=_optional_env("FEISHU_APP_SECRET"),
             feishu_verification_token=_optional_env("FEISHU_VERIFICATION_TOKEN"),
             feishu_project_id=os.getenv("ORGPILOT_FEISHU_PROJECT_ID", "feishu-project"),
+            feishu_task_writeback=os.getenv("ORGPILOT_FEISHU_TASK_WRITEBACK", "false")
+            .strip()
+            .lower()
+            in {"1", "true", "yes", "on"},
             demo_mode=os.getenv("ORGPILOT_DEMO_MODE", "false").strip().lower()
             in {"1", "true", "yes", "on"},
             timezone=os.getenv("ORGPILOT_TIMEZONE", DEFAULT_TIMEZONE).strip(),
