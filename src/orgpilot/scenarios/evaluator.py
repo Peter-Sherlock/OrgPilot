@@ -16,6 +16,7 @@ from orgpilot.scenarios.models import (
     InteractiveGroundTruth,
     ReplayResult,
     ScenarioDefinition,
+    ScenarioRound,
 )
 
 
@@ -39,7 +40,9 @@ def evaluate_ground_truth(result: ReplayResult, truth: GroundTruth) -> GroundTru
     actual_tasks = {
         task_id: ExpectedTaskState(
             workflow_status=task.workflow_status,
-            health_status=task.health_status,
+            health_status=(
+                task.health_status if truth.tasks[task_id].health_status is not None else None
+            ),
             health_conflict=task.health_conflict,
         )
         for task_id, task in result.state.tasks.items()
@@ -105,7 +108,9 @@ def evaluate_ground_truth(result: ReplayResult, truth: GroundTruth) -> GroundTru
 
 
 def evaluate_interactive_ground_truth(
-    result: ReplayResult, truth: InteractiveGroundTruth
+    result: ReplayResult,
+    truth: InteractiveGroundTruth,
+    rounds: tuple[ScenarioRound, ...] = (),
 ) -> GroundTruthReport:
     assertions: list[AssertionResult] = []
 
@@ -147,11 +152,51 @@ def evaluate_interactive_ground_truth(
             if task is not None:
                 actual_tasks[task_id] = ExpectedTaskState(
                     workflow_status=task.workflow_status,
-                    health_status=task.health_status,
+                    health_status=(
+                        task.health_status if exp_task.health_status is not None else None
+                    ),
                     health_conflict=task.health_conflict,
                     deadline=task.deadline if exp_task.deadline is not None else None,
                 )
             check(f"task:{task_id}", exp_task, actual_tasks.get(task_id))
+
+    actual_commitments = {
+        commitment_id: ExpectedCommitment(status=commitment.status)
+        for commitment_id, commitment in result.state.commitments.items()
+    }
+    for commitment_id, exp_commitment in truth.commitments.items():
+        check(f"commitment:{commitment_id}", exp_commitment, actual_commitments.get(commitment_id))
+
+    # Per-round checkpoints. A long scenario can end in the right final state
+    # while being wrong in the middle, so intermediate expectations are checked
+    # against the snapshot taken right after that round's turn.
+    for round_item, snapshot in zip(rounds, result.round_snapshots, strict=False):
+        prefix = f"round_{round_item.round_number}"
+        for approval in round_item.approvals:
+            label = f"{approval.approver_id}:{approval.decision.value}"
+            check(
+                f"{prefix}:approval_applied:{label}",
+                True,
+                label not in snapshot.unmatched_approvals,
+            )
+        if round_item.expected_termination is not None:
+            check(
+                f"{prefix}:termination",
+                round_item.expected_termination,
+                snapshot.termination_reason,
+            )
+        for case_id, expected_status in round_item.expected_case_statuses.items():
+            check(
+                f"{prefix}:case_status:{case_id}",
+                expected_status,
+                snapshot.case_statuses.get(case_id),
+            )
+        for case_id, expected_member in round_item.expected_waiting_for.items():
+            check(
+                f"{prefix}:waiting_for:{case_id}",
+                expected_member,
+                snapshot.case_waiting_for.get(case_id),
+            )
 
     return GroundTruthReport(
         scenario_id=result.scenario_id,
@@ -162,7 +207,9 @@ def evaluate_interactive_ground_truth(
 
 def evaluate_scenario(scenario: ScenarioDefinition, result: ReplayResult) -> GroundTruthReport:
     if scenario.interactive_ground_truth is not None:
-        return evaluate_interactive_ground_truth(result, scenario.interactive_ground_truth)
+        return evaluate_interactive_ground_truth(
+            result, scenario.interactive_ground_truth, scenario.rounds
+        )
     if scenario.ground_truth is not None:
         return evaluate_ground_truth(result, scenario.ground_truth)
     raise ValueError(f"Scenario {scenario.scenario_id!r} has no declared ground truth")
