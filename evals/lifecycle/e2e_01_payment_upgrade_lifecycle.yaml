@@ -1,0 +1,887 @@
+# 「星云」电商 App 支付链路升级 —— 从立项到结项的全生命周期协同场景
+#
+# 设计文档：docs/full-lifecycle-scenario-design.md
+#
+# 这份场景的 ground truth 描述的是「一个正确的协调 Agent 应该怎么做」，
+# 不是「当前内核实际怎么做」。两者的差距由 tests/test_lifecycle_scenario.py
+# 中的 KNOWN_DEFECTS 逐条登记并按根因归类；修好一个缺陷，对应断言转绿，
+# 该测试会要求同步删除登记项（棘轮），差距只能缩小，不能悄悄变大。
+#
+# 因此它不放在 evals/scenarios/（那里的场景必须全部通过），
+# 单独运行：uv run orgpilot replay evals/lifecycle/e2e_01_payment_upgrade_lifecycle.yaml
+#
+# 团队：pm_carol(PM) arch_grace(架构) eng_alice/eng_bob(后端) eng_david(前端)
+#       eng_emma(客户端) qa_frank(QA)
+#
+# DAG（基线关键路径 T1 → T2 → T4 → T6 → T7 → T8）：
+#   t1_gateway ─┬─> t2_channel ─┬─> t4_cashier_h5 ─┐
+#               │               └─> t5_cashier_app ┴─> t6_integration ─> t7_loadtest ─> t8_rollout
+#               └─> t3_order ─────> t4_cashier_h5
+
+schema_version: 1
+scenario_id: e2e_01_payment_upgrade_lifecycle
+title: Six-week payment upgrade from kickoff to closure
+description: A seven-person team runs an eight-task payment upgrade over six weeks. The scenario chains
+  vague risk reports, follow-up questions, reschedule approvals, conflicting claims from different reporters,
+  a silently missed deadline, a leave-driven reschedule, an unresponsive member, and a regression that
+  reopens a finished task. Ground truth encodes correct coordination behaviour; known kernel gaps are
+  tracked in tests/test_lifecycle_scenario.py.
+project_id: xingyun-payment-upgrade
+rounds:
+
+  # Beat 0 · 立项（W0 周一）
+  # 7 人入组，8 个任务按拓扑序建立（projector 要求依赖必须已存在）。
+  # 期望：DAG 建立、无任何风险，Agent 无事可做。
+  - round_number: 1
+    current_time: '2026-10-12T10:00:00+08:00'
+    expected_termination: no_action
+    events:
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r1-m-carol
+      event_type: member.registered
+      source: human
+      source_ref: kickoff:roster
+      occurred_at: '2026-10-12T09:00:00+08:00'
+      received_at: '2026-10-12T09:00:00+08:00'
+      payload:
+        member_id: pm_carol
+        display_name: Carol
+        role: pm
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r1-m-grace
+      event_type: member.registered
+      source: human
+      source_ref: kickoff:roster
+      occurred_at: '2026-10-12T09:01:00+08:00'
+      received_at: '2026-10-12T09:01:00+08:00'
+      payload:
+        member_id: arch_grace
+        display_name: Grace
+        role: architect
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r1-m-alice
+      event_type: member.registered
+      source: human
+      source_ref: kickoff:roster
+      occurred_at: '2026-10-12T09:02:00+08:00'
+      received_at: '2026-10-12T09:02:00+08:00'
+      payload:
+        member_id: eng_alice
+        display_name: Alice
+        role: backend
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r1-m-bob
+      event_type: member.registered
+      source: human
+      source_ref: kickoff:roster
+      occurred_at: '2026-10-12T09:03:00+08:00'
+      received_at: '2026-10-12T09:03:00+08:00'
+      payload:
+        member_id: eng_bob
+        display_name: Bob
+        role: backend
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r1-m-david
+      event_type: member.registered
+      source: human
+      source_ref: kickoff:roster
+      occurred_at: '2026-10-12T09:04:00+08:00'
+      received_at: '2026-10-12T09:04:00+08:00'
+      payload:
+        member_id: eng_david
+        display_name: David
+        role: frontend
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r1-m-emma
+      event_type: member.registered
+      source: human
+      source_ref: kickoff:roster
+      occurred_at: '2026-10-12T09:05:00+08:00'
+      received_at: '2026-10-12T09:05:00+08:00'
+      payload:
+        member_id: eng_emma
+        display_name: Emma
+        role: client
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r1-m-frank
+      event_type: member.registered
+      source: human
+      source_ref: kickoff:roster
+      occurred_at: '2026-10-12T09:06:00+08:00'
+      received_at: '2026-10-12T09:06:00+08:00'
+      payload:
+        member_id: qa_frank
+        display_name: Frank
+        role: qa
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r1-t1
+      event_type: task.created
+      source: task
+      source_ref: task-system:t1_gateway
+      occurred_at: '2026-10-12T09:10:00+08:00'
+      received_at: '2026-10-12T09:10:00+08:00'
+      payload:
+        task_id: t1_gateway
+        title: 支付网关重构
+        owner_id: eng_alice
+        workflow_status: todo
+        deadline: '2026-10-20T18:00:00+08:00'
+        dependencies: []
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r1-t2
+      event_type: task.created
+      source: task
+      source_ref: task-system:t2_channel
+      occurred_at: '2026-10-12T09:11:00+08:00'
+      received_at: '2026-10-12T09:11:00+08:00'
+      payload:
+        task_id: t2_channel
+        title: 三方支付渠道接入
+        owner_id: eng_alice
+        workflow_status: todo
+        deadline: '2026-10-27T18:00:00+08:00'
+        dependencies:
+        - t1_gateway
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r1-t3
+      event_type: task.created
+      source: task
+      source_ref: task-system:t3_order
+      occurred_at: '2026-10-12T09:12:00+08:00'
+      received_at: '2026-10-12T09:12:00+08:00'
+      payload:
+        task_id: t3_order
+        title: 订单服务改造
+        owner_id: eng_bob
+        workflow_status: todo
+        deadline: '2026-10-27T18:00:00+08:00'
+        dependencies:
+        - t1_gateway
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r1-t4
+      event_type: task.created
+      source: task
+      source_ref: task-system:t4_cashier_h5
+      occurred_at: '2026-10-12T09:13:00+08:00'
+      received_at: '2026-10-12T09:13:00+08:00'
+      payload:
+        task_id: t4_cashier_h5
+        title: H5 收银台前端
+        owner_id: eng_david
+        workflow_status: todo
+        deadline: '2026-11-03T18:00:00+08:00'
+        dependencies:
+        - t2_channel
+        - t3_order
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r1-t5
+      event_type: task.created
+      source: task
+      source_ref: task-system:t5_cashier_app
+      occurred_at: '2026-10-12T09:14:00+08:00'
+      received_at: '2026-10-12T09:14:00+08:00'
+      payload:
+        task_id: t5_cashier_app
+        title: App 收银页
+        owner_id: eng_emma
+        workflow_status: todo
+        deadline: '2026-11-03T18:00:00+08:00'
+        dependencies:
+        - t2_channel
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r1-t6
+      event_type: task.created
+      source: task
+      source_ref: task-system:t6_integration
+      occurred_at: '2026-10-12T09:15:00+08:00'
+      received_at: '2026-10-12T09:15:00+08:00'
+      payload:
+        task_id: t6_integration
+        title: 全链路联调
+        owner_id: qa_frank
+        workflow_status: todo
+        deadline: '2026-11-10T18:00:00+08:00'
+        dependencies:
+        - t4_cashier_h5
+        - t5_cashier_app
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r1-t7
+      event_type: task.created
+      source: task
+      source_ref: task-system:t7_loadtest
+      occurred_at: '2026-10-12T09:16:00+08:00'
+      received_at: '2026-10-12T09:16:00+08:00'
+      payload:
+        task_id: t7_loadtest
+        title: 压测与验收
+        owner_id: qa_frank
+        workflow_status: todo
+        deadline: '2026-11-14T18:00:00+08:00'
+        dependencies:
+        - t6_integration
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r1-t8
+      event_type: task.created
+      source: task
+      source_ref: task-system:t8_rollout
+      occurred_at: '2026-10-12T09:17:00+08:00'
+      received_at: '2026-10-12T09:17:00+08:00'
+      payload:
+        task_id: t8_rollout
+        title: 灰度发布
+        owner_id: eng_alice
+        workflow_status: todo
+        deadline: '2026-11-20T18:00:00+08:00'
+        dependencies:
+        - t7_loadtest
+
+  # Beat 1 · 正常推进（W1 周二站会）
+  # T1、T3 开工；Bob 承诺「T3 10/27 18:00 前完成」，这条承诺稍后会被悄悄打破。
+  - round_number: 2
+    current_time: '2026-10-13T10:00:00+08:00'
+    expected_termination: no_action
+    events:
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r2-t1-doing
+      event_type: task.workflow_changed
+      source: task
+      source_ref: task-system:t1_gateway
+      actor_id: eng_alice
+      occurred_at: '2026-10-13T09:30:00+08:00'
+      received_at: '2026-10-13T09:30:00+08:00'
+      payload:
+        task_id: t1_gateway
+        from_status: todo
+        to_status: doing
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r2-t3-doing
+      event_type: task.workflow_changed
+      source: task
+      source_ref: task-system:t3_order
+      actor_id: eng_bob
+      occurred_at: '2026-10-13T09:35:00+08:00'
+      received_at: '2026-10-13T09:35:00+08:00'
+      payload:
+        task_id: t3_order
+        from_status: todo
+        to_status: doing
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r2-bob-commit
+      event_type: commitment.made
+      source: message
+      source_ref: feishu:group:xingyun:r2-bob-commit
+      actor_id: eng_bob
+      occurred_at: '2026-10-13T09:40:00+08:00'
+      received_at: '2026-10-13T09:40:00+08:00'
+      payload:
+        commitment_id: c_bob_t3_done
+        target_type: task
+        target_id: t3_order
+        predicate: workflow_status
+        expected_value: done
+        due_at: '2026-10-27T18:00:00+08:00'
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r2-t1-ok
+      event_type: task.health_reported
+      source: message
+      source_ref: feishu:group:xingyun:r2-t1-ok
+      actor_id: eng_alice
+      occurred_at: '2026-10-13T09:45:00+08:00'
+      received_at: '2026-10-13T09:45:00+08:00'
+      payload:
+        task_id: t1_gateway
+        health_status: on_track
+        confidence: 0.9
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r2-t3-ok
+      event_type: task.health_reported
+      source: message
+      source_ref: feishu:group:xingyun:r2-t3-ok
+      actor_id: eng_bob
+      occurred_at: '2026-10-13T09:50:00+08:00'
+      received_at: '2026-10-13T09:50:00+08:00'
+      payload:
+        task_id: t3_order
+        health_status: on_track
+        confidence: 0.9
+
+  # Beat 2 · 第一个模糊信号（W1 周五 10:00）
+  # Alice 说 T1 有风险但没给时间 → Agent 应私聊 Alice 追问恢复时间。
+  - round_number: 3
+    current_time: '2026-10-16T10:00:00+08:00'
+    expected_termination: waiting_response
+    expected_case_statuses:
+      case:task-health:t1_gateway: waiting_for_response
+    expected_waiting_for:
+      case:task-health:t1_gateway: eng_alice
+    events:
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r3-t1-risk
+      event_type: task.health_reported
+      source: message
+      source_ref: feishu:group:xingyun:r3-t1-risk
+      actor_id: eng_alice
+      occurred_at: '2026-10-16T09:20:00+08:00'
+      received_at: '2026-10-16T09:20:00+08:00'
+      payload:
+        task_id: t1_gateway
+        health_status: at_risk
+        blocker: 旧网关回调验签与新协议不兼容，需要重写验签模块
+        confidence: 0.85
+
+  # Beat 4a · Alice 在追问窗口内回复（11:10）
+  # ETA 10/22 18:00 晚于 deadline 10/20 18:00。
+  # 期望：拿到 ETA 后发现超期，向 PM 提交改期审批（而不是认为「问到时间了，结案」）。
+  - round_number: 4
+    current_time: '2026-10-16T11:30:00+08:00'
+    expected_termination: waiting_approval
+    expected_case_statuses:
+      case:task-health:t1_gateway: waiting_for_approval
+    expected_waiting_for:
+      case:task-health:t1_gateway: pm_carol
+    events:
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r4-t1-eta
+      event_type: task.health_reported
+      source: message
+      source_ref: feishu:group:xingyun:r4-t1-eta
+      actor_id: eng_alice
+      occurred_at: '2026-10-16T11:10:00+08:00'
+      received_at: '2026-10-16T11:10:00+08:00'
+      payload:
+        task_id: t1_gateway
+        health_status: delayed
+        expected_completion: '2026-10-22T18:00:00+08:00'
+        blocker: 旧网关回调验签与新协议不兼容，需要重写验签模块
+        confidence: 0.95
+
+  # Beat 4b · PM Carol 批准 T1 改期到 10/22 18:00。
+  - round_number: 5
+    current_time: '2026-10-16T15:00:00+08:00'
+    approvals:
+    - approver_id: pm_carol
+      decision: approved
+    expected_termination: all_resolved
+    expected_case_statuses:
+      case:task-health:t1_gateway: resolved
+    events: []
+
+  # W2 周四 · T1 按新期限完成，Alice 转入 T2。
+  - round_number: 6
+    current_time: '2026-10-22T19:00:00+08:00'
+    expected_termination: all_resolved
+    events:
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r6-t1-done
+      event_type: task.workflow_changed
+      source: task
+      source_ref: task-system:t1_gateway
+      actor_id: eng_alice
+      occurred_at: '2026-10-22T17:30:00+08:00'
+      received_at: '2026-10-22T17:30:00+08:00'
+      payload:
+        task_id: t1_gateway
+        from_status: doing
+        to_status: done
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r6-t2-doing
+      event_type: task.workflow_changed
+      source: task
+      source_ref: task-system:t2_channel
+      actor_id: eng_alice
+      occurred_at: '2026-10-22T18:00:00+08:00'
+      received_at: '2026-10-22T18:00:00+08:00'
+      payload:
+        task_id: t2_channel
+        from_status: todo
+        to_status: doing
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r6-t2-ok
+      event_type: task.health_reported
+      source: message
+      source_ref: feishu:group:xingyun:r6-t2-ok
+      actor_id: eng_alice
+      occurred_at: '2026-10-22T18:10:00+08:00'
+      received_at: '2026-10-22T18:10:00+08:00'
+      payload:
+        task_id: t2_channel
+        health_status: on_track
+        confidence: 0.9
+
+  # Beat 5 · 多来源冲突（W2 周六周会）
+  # Bob 说 T3 正常；QA Frank 说 Bob 的接口一直没给，T3 有风险。
+  # 期望：保留冲突，向任务负责人 Bob（而不是报告人 Frank）追问恢复时间。
+  - round_number: 7
+    current_time: '2026-10-24T10:00:00+08:00'
+    expected_termination: waiting_response
+    expected_case_statuses:
+      case:task-health:t3_order: waiting_for_response
+    expected_waiting_for:
+      case:task-health:t3_order: eng_bob
+    events:
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r7-t3-bob-ok
+      event_type: task.health_reported
+      source: message
+      source_ref: feishu:group:xingyun:r7-t3-bob-ok
+      actor_id: eng_bob
+      occurred_at: '2026-10-24T09:30:00+08:00'
+      received_at: '2026-10-24T09:30:00+08:00'
+      payload:
+        task_id: t3_order
+        health_status: on_track
+        confidence: 0.8
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r7-t3-frank-risk
+      event_type: task.health_reported
+      source: message
+      source_ref: feishu:group:xingyun:r7-t3-frank-risk
+      actor_id: qa_frank
+      occurred_at: '2026-10-24T09:40:00+08:00'
+      received_at: '2026-10-24T09:40:00+08:00'
+      payload:
+        task_id: t3_order
+        health_status: at_risk
+        blocker: 订单服务新接口仍未提供联调环境
+        confidence: 0.8
+
+  # Beat 5b · Bob 给出 ETA 10/27 12:00（早于 deadline）→ 无需改期，结案。
+  - round_number: 8
+    current_time: '2026-10-24T11:00:00+08:00'
+    expected_termination: all_resolved
+    expected_case_statuses:
+      case:task-health:t3_order: resolved
+    events:
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r8-t3-bob-eta
+      event_type: task.health_reported
+      source: message
+      source_ref: feishu:group:xingyun:r8-t3-bob-eta
+      actor_id: eng_bob
+      occurred_at: '2026-10-24T10:50:00+08:00'
+      received_at: '2026-10-24T10:50:00+08:00'
+      payload:
+        task_id: t3_order
+        health_status: at_risk
+        expected_completion: '2026-10-27T12:00:00+08:00'
+        blocker: 联调环境数据库迁移失败，正在修复
+        confidence: 0.9
+
+  # Beat 3 · 沉默逾期（W3 周三晨检）
+  # T2 昨天按时完成，Emma 开工 T5。
+  # 但 T3 的 deadline（10/27 18:00）和 Bob 的承诺都已过期，T3 仍是 doing，没有任何人说话。
+  # 期望：Agent 主动发现逾期并追问 Bob，而不是报告「一切正常」。
+  - round_number: 9
+    current_time: '2026-10-28T10:00:00+08:00'
+    expected_termination: waiting_response
+    events:
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r9-t2-done
+      event_type: task.workflow_changed
+      source: task
+      source_ref: task-system:t2_channel
+      actor_id: eng_alice
+      occurred_at: '2026-10-27T16:00:00+08:00'
+      received_at: '2026-10-27T16:00:00+08:00'
+      payload:
+        task_id: t2_channel
+        from_status: doing
+        to_status: done
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r9-t5-doing
+      event_type: task.workflow_changed
+      source: task
+      source_ref: task-system:t5_cashier_app
+      actor_id: eng_emma
+      occurred_at: '2026-10-27T17:00:00+08:00'
+      received_at: '2026-10-27T17:00:00+08:00'
+      payload:
+        task_id: t5_cashier_app
+        from_status: todo
+        to_status: doing
+
+  # W3 周三 10:20 · Bob 完成 T3（比承诺晚了 16 小时），David 开工 T4。
+  - round_number: 10
+    current_time: '2026-10-28T10:30:00+08:00'
+    expected_termination: all_resolved
+    events:
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r10-t3-done
+      event_type: task.workflow_changed
+      source: task
+      source_ref: task-system:t3_order
+      actor_id: eng_bob
+      occurred_at: '2026-10-28T10:20:00+08:00'
+      received_at: '2026-10-28T10:20:00+08:00'
+      payload:
+        task_id: t3_order
+        from_status: doing
+        to_status: done
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r10-t4-doing
+      event_type: task.workflow_changed
+      source: task
+      source_ref: task-system:t4_cashier_h5
+      actor_id: eng_david
+      occurred_at: '2026-10-28T10:25:00+08:00'
+      received_at: '2026-10-28T10:25:00+08:00'
+      payload:
+        task_id: t4_cashier_h5
+        from_status: todo
+        to_status: doing
+
+  # Beat 6 · 人员变动（W3 周三 14:30）
+  # Emma 10/29–11/02 休婚假，直接给出 T5 新 ETA 11/06 18:00（晚于 deadline 11/03）。
+  # 期望：直接进入改期审批（对照组：这是 M1 已验证过的「带 ETA 直报」路径）。
+  - round_number: 11
+    current_time: '2026-10-28T15:00:00+08:00'
+    expected_termination: waiting_approval
+    expected_case_statuses:
+      case:task-health:t5_cashier_app: waiting_for_approval
+    expected_waiting_for:
+      case:task-health:t5_cashier_app: pm_carol
+    events:
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r11-t5-leave
+      event_type: task.health_reported
+      source: message
+      source_ref: feishu:group:xingyun:r11-t5-leave
+      actor_id: eng_emma
+      occurred_at: '2026-10-28T14:30:00+08:00'
+      received_at: '2026-10-28T14:30:00+08:00'
+      payload:
+        task_id: t5_cashier_app
+        health_status: delayed
+        expected_completion: '2026-11-06T18:00:00+08:00'
+        blocker: 10/29–11/02 婚假，App 收银页需顺延
+        confidence: 0.95
+
+  # Beat 6b · Carol 批准 T5 改期到 11/06 18:00。
+  - round_number: 12
+    current_time: '2026-10-28T16:00:00+08:00'
+    approvals:
+    - approver_id: pm_carol
+      decision: approved
+    expected_termination: all_resolved
+    expected_case_statuses:
+      case:task-health:t5_cashier_app: resolved
+    events: []
+
+  # Beat 7 · 失联（W3 周五）
+  # David 说 T4 有兼容问题但没给时间，随后不再回复。
+  - round_number: 13
+    current_time: '2026-10-30T10:00:00+08:00'
+    expected_termination: waiting_response
+    expected_case_statuses:
+      case:task-health:t4_cashier_h5: waiting_for_response
+    expected_waiting_for:
+      case:task-health:t4_cashier_h5: eng_david
+    events:
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r13-t4-risk
+      event_type: task.health_reported
+      source: message
+      source_ref: feishu:group:xingyun:r13-t4-risk
+      actor_id: eng_david
+      occurred_at: '2026-10-30T09:30:00+08:00'
+      received_at: '2026-10-30T09:30:00+08:00'
+      payload:
+        task_id: t4_cashier_h5
+        health_status: at_risk
+        blocker: 收银台适配三方 SDK 回调页有兼容问题
+        confidence: 0.8
+
+  # Beat 7b · 一天过去 David 仍未回复 → 升级给 PM（对照组：M1-05 已验证路径）。
+  - round_number: 14
+    current_time: '2026-10-31T10:00:00+08:00'
+    expected_termination: escalated
+    expected_case_statuses:
+      case:task-health:t4_cashier_h5: escalated
+    events: []
+
+  # W4 周一 · David 回归并完成 T4。
+  # 期望：被升级的问题已经随任务完成而消失，项目回到「无待办」，而不是永远停在 escalated。
+  - round_number: 15
+    current_time: '2026-11-03T10:00:00+08:00'
+    expected_termination: all_resolved
+    events:
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r15-t4-done
+      event_type: task.workflow_changed
+      source: task
+      source_ref: task-system:t4_cashier_h5
+      actor_id: eng_david
+      occurred_at: '2026-11-02T20:00:00+08:00'
+      received_at: '2026-11-02T20:00:00+08:00'
+      payload:
+        task_id: t4_cashier_h5
+        from_status: doing
+        to_status: done
+
+  # W4 周三 · Emma 休假归来完成 T5（新期限内），Frank 开始联调 T6。
+  - round_number: 16
+    current_time: '2026-11-05T18:30:00+08:00'
+    expected_termination: all_resolved
+    events:
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r16-t5-done
+      event_type: task.workflow_changed
+      source: task
+      source_ref: task-system:t5_cashier_app
+      actor_id: eng_emma
+      occurred_at: '2026-11-05T18:00:00+08:00'
+      received_at: '2026-11-05T18:00:00+08:00'
+      payload:
+        task_id: t5_cashier_app
+        from_status: doing
+        to_status: done
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r16-t6-doing
+      event_type: task.workflow_changed
+      source: task
+      source_ref: task-system:t6_integration
+      actor_id: qa_frank
+      occurred_at: '2026-11-05T18:10:00+08:00'
+      received_at: '2026-11-05T18:10:00+08:00'
+      payload:
+        task_id: t6_integration
+        from_status: todo
+        to_status: doing
+
+  # Beat 8 · 缺陷回流（W4 周六）
+  # 联调发现 T1 验签在高并发下偶发失败，Frank 把 T1 从 done 打回 doing。
+  # Alice 给出修复 ETA 11/09 18:00，晚于 T1 当前 deadline。
+  # 期望：同一个任务第二次出险，Agent 照样开案并提交改期审批。
+  - round_number: 17
+    current_time: '2026-11-07T10:00:00+08:00'
+    expected_termination: waiting_approval
+    events:
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r17-t1-reopen
+      event_type: task.workflow_changed
+      source: task
+      source_ref: task-system:t1_gateway
+      actor_id: qa_frank
+      occurred_at: '2026-11-07T09:00:00+08:00'
+      received_at: '2026-11-07T09:00:00+08:00'
+      payload:
+        task_id: t1_gateway
+        from_status: done
+        to_status: doing
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r17-t1-regress
+      event_type: task.health_reported
+      source: message
+      source_ref: feishu:group:xingyun:r17-t1-regress
+      actor_id: eng_alice
+      occurred_at: '2026-11-07T09:30:00+08:00'
+      received_at: '2026-11-07T09:30:00+08:00'
+      payload:
+        task_id: t1_gateway
+        health_status: delayed
+        expected_completion: '2026-11-09T18:00:00+08:00'
+        blocker: 高并发下验签偶发失败，需修复
+        confidence: 0.95
+
+  # Beat 8b · Carol 批准 T1 第二次改期到 11/09 18:00。
+  - round_number: 18
+    current_time: '2026-11-07T11:00:00+08:00'
+    approvals:
+    - approver_id: pm_carol
+      decision: approved
+    expected_termination: all_resolved
+    events: []
+
+  # W5 周一 · T1 修复完成。
+  - round_number: 19
+    current_time: '2026-11-09T19:00:00+08:00'
+    expected_termination: all_resolved
+    events:
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r19-t1-done
+      event_type: task.workflow_changed
+      source: task
+      source_ref: task-system:t1_gateway
+      actor_id: eng_alice
+      occurred_at: '2026-11-09T17:00:00+08:00'
+      received_at: '2026-11-09T17:00:00+08:00'
+      payload:
+        task_id: t1_gateway
+        from_status: doing
+        to_status: done
+
+  # W5 周二 · 联调完成，Frank 开始压测，并承诺 11/14 18:00 前完成（对照组：按时兑现）。
+  - round_number: 20
+    current_time: '2026-11-10T10:00:00+08:00'
+    expected_termination: all_resolved
+    events:
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r20-t6-done
+      event_type: task.workflow_changed
+      source: task
+      source_ref: task-system:t6_integration
+      actor_id: qa_frank
+      occurred_at: '2026-11-10T09:00:00+08:00'
+      received_at: '2026-11-10T09:00:00+08:00'
+      payload:
+        task_id: t6_integration
+        from_status: doing
+        to_status: done
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r20-t7-doing
+      event_type: task.workflow_changed
+      source: task
+      source_ref: task-system:t7_loadtest
+      actor_id: qa_frank
+      occurred_at: '2026-11-10T09:10:00+08:00'
+      received_at: '2026-11-10T09:10:00+08:00'
+      payload:
+        task_id: t7_loadtest
+        from_status: todo
+        to_status: doing
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r20-frank-commit
+      event_type: commitment.made
+      source: message
+      source_ref: feishu:group:xingyun:r20-frank-commit
+      actor_id: qa_frank
+      occurred_at: '2026-11-10T09:15:00+08:00'
+      received_at: '2026-11-10T09:15:00+08:00'
+      payload:
+        commitment_id: c_frank_t7_done
+        target_type: task
+        target_id: t7_loadtest
+        predicate: workflow_status
+        expected_value: done
+        due_at: '2026-11-14T18:00:00+08:00'
+
+  # W5 周五 · 压测通过，Alice 开始灰度。
+  - round_number: 21
+    current_time: '2026-11-13T18:00:00+08:00'
+    expected_termination: all_resolved
+    events:
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r21-t7-done
+      event_type: task.workflow_changed
+      source: task
+      source_ref: task-system:t7_loadtest
+      actor_id: qa_frank
+      occurred_at: '2026-11-13T17:00:00+08:00'
+      received_at: '2026-11-13T17:00:00+08:00'
+      payload:
+        task_id: t7_loadtest
+        from_status: doing
+        to_status: done
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r21-t8-doing
+      event_type: task.workflow_changed
+      source: task
+      source_ref: task-system:t8_rollout
+      actor_id: eng_alice
+      occurred_at: '2026-11-13T17:30:00+08:00'
+      received_at: '2026-11-13T17:30:00+08:00'
+      payload:
+        task_id: t8_rollout
+        from_status: todo
+        to_status: doing
+
+  # Beat 9 · 结项（W6 周五）· 灰度全量完成，8 个任务全部 done。
+  - round_number: 22
+    current_time: '2026-11-20T18:00:00+08:00'
+    expected_termination: all_resolved
+    events:
+    - schema_version: 1
+      project_id: xingyun-payment-upgrade
+      event_id: lc-r22-t8-done
+      event_type: task.workflow_changed
+      source: task
+      source_ref: task-system:t8_rollout
+      actor_id: eng_alice
+      occurred_at: '2026-11-20T16:00:00+08:00'
+      received_at: '2026-11-20T16:00:00+08:00'
+      payload:
+        task_id: t8_rollout
+        from_status: doing
+        to_status: done
+
+interactive_ground_truth:
+  total_rounds: 22
+  final_termination_reason: all_resolved
+  final_cases:
+    case:task-health:t1_gateway: resolved
+    case:task-health:t3_order: resolved
+    case:task-health:t5_cashier_app: resolved
+  case_terminal_reasons:
+    case:task-health:t1_gateway: reschedule approved
+    case:task-health:t3_order: recovery estimate received
+    case:task-health:t5_cashier_app: reschedule approved
+  tasks:
+    t1_gateway:
+      workflow_status: done
+      deadline: '2026-11-09T18:00:00+08:00'
+    t2_channel:
+      workflow_status: done
+      health_status: on_track
+    t3_order:
+      workflow_status: done
+    t4_cashier_h5:
+      workflow_status: done
+    t5_cashier_app:
+      workflow_status: done
+      deadline: '2026-11-06T18:00:00+08:00'
+    t6_integration:
+      workflow_status: done
+    t7_loadtest:
+      workflow_status: done
+    t8_rollout:
+      workflow_status: done
+  commitments:
+    c_bob_t3_done:
+      status: broken
+    c_frank_t7_done:
+      status: fulfilled
