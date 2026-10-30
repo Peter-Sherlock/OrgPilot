@@ -1,4 +1,4 @@
-"""In-memory dialogue state store keyed by (project, sender) (ADR-0008 layer 0).
+"""Dialogue state store keyed by (project, sender) (ADR-0008 layer 0).
 
 Two state kinds live here and NOWHERE else for routing decisions:
 
@@ -6,10 +6,15 @@ Two state kinds live here and NOWHERE else for routing decisions:
   the router itself) with the partially-completed claim it wants to finish;
 - ``PendingSyncConfirmation``: a sync confirmation card awaiting yes/no.
 
-The store is intentionally in-memory for this step: a process restart loses all
-pending dialogue state (documented limitation, see development log). Sync probes
-register their clarifications here so the router has a single source of truth for
-"what is the bot waiting for from this person".
+Sync probes register their clarifications here so the router has a single source
+of truth for "what is the bot waiting for from this person".
+
+The store itself is synchronous and in-memory; the router checkpoints each
+project's entries to SQL at the end of every turn and restores them on first
+access after a restart (ADR-0013), via :meth:`DialogueStateStore.export_project`
+and :meth:`DialogueStateStore.restore_project`. Expiry stays a pure function of
+the persisted ``created_at`` and the injected clock, so a restored entry expires
+exactly when it would have without the restart.
 """
 
 from datetime import datetime, timedelta
@@ -63,6 +68,13 @@ class PendingSyncConfirmation(StrictModel):
     initiated_by: str
     member_ids: list[str] = Field(default_factory=list)
     created_at: datetime
+
+
+class DialogueSnapshot(StrictModel):
+    """One project's dialogue state keyed by sender, as persisted (ADR-0013)."""
+
+    clarifications: dict[str, PendingClarification] = Field(default_factory=dict)
+    confirmations: dict[str, PendingSyncConfirmation] = Field(default_factory=dict)
 
 
 class DialogueStateStore:
@@ -162,3 +174,27 @@ class DialogueStateStore:
 
     def clear_pending_sync_confirmation(self, project_id: str, sender_id: str) -> None:
         self._confirmations.pop((project_id, sender_id), None)
+
+    # -- persistence (ADR-0013) ---------------------------------------------------
+
+    def export_project(self, project_id: str) -> DialogueSnapshot:
+        """Every entry of one project, expired or not: expiry is decided on access."""
+        return DialogueSnapshot(
+            clarifications={
+                sender: entry
+                for (project, sender), entry in self._clarifications.items()
+                if project == project_id
+            },
+            confirmations={
+                sender: entry
+                for (project, sender), entry in self._confirmations.items()
+                if project == project_id
+            },
+        )
+
+    def restore_project(self, project_id: str, snapshot: DialogueSnapshot) -> None:
+        """Loads persisted entries; an entry already in memory is newer and wins."""
+        for sender, clarification in snapshot.clarifications.items():
+            self._clarifications.setdefault((project_id, sender), clarification)
+        for sender, confirmation in snapshot.confirmations.items():
+            self._confirmations.setdefault((project_id, sender), confirmation)

@@ -77,6 +77,7 @@ async def start_progress_sync_endpoint(
         initiated_by=initiated_by,
         custom_intro=custom_intro,
     )
+    await service.save_conversation_state(project_id)
     return session.model_dump(mode="json")
 
 

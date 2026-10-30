@@ -79,7 +79,7 @@
           <span id="statAtRisk" class="text-xl font-bold text-amber-400">0 🟡</span>
           <span id="statDelayed" class="text-xl font-bold text-rose-400">0 🔴</span>
         </div>
-        <p class="text-xs text-slate-500 mt-1">正常 / 风险 / 延期</p>
+        <p id="statHealthSub" class="text-xs text-slate-500 mt-1">正常 / 风险 / 延期</p>
       </div>
       <div class="w-11 h-11 rounded-lg bg-slate-800 flex items-center justify-center text-xl">🩺</div>
     </div>
@@ -124,6 +124,7 @@
       <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span> 风险/受阻</span>
       <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span> 延误</span>
       <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-purple-500"></span> 已完成</span>
+      <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-slate-500"></span> 未上报</span>
       <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-cyan-400"></span> 关键路径</span>
     </div>
   </div>
@@ -293,9 +294,13 @@
       <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-5 flex flex-col justify-between">
         <div>
           <h3 class="text-sm font-semibold text-slate-200 flex items-center gap-2"><span>🛡️</span> PM 快速审批决策面板</h3>
+          <p id="approvalOperator" class="text-xs text-slate-400 mt-1">当前操作人: 加载中...</p>
           <div id="approvalsListContainer" class="mt-4 space-y-3 max-h-[300px] overflow-auto"></div>
         </div>
-        <div class="pt-4 border-t border-slate-800 text-xs text-slate-500 text-right">审批后将自动驱动 Agent 推进任务改期与群通知</div>
+        <div class="pt-4 border-t border-slate-800 text-xs text-slate-500 flex items-center justify-between gap-3">
+          <span id="approvalStatus" class="text-slate-300"></span>
+          <span class="text-right">审批后将自动驱动 Agent 推进任务改期与群通知</span>
+        </div>
       </div>
     </div>
 
@@ -326,6 +331,18 @@
   <script>
     let currentZoom = 1.0;
     let dagData = null;
+
+    // Task titles, member names and message text come from Feishu users and team.yaml.
+    // Every such value that lands in an innerHTML template goes through escapeHtml;
+    // tests/test_console_escaping.py fails the build on any interpolation that does not.
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
 
     function getProjectId() { return document.getElementById('projectIdInput').value.trim() || 'feishu-project'; }
 
@@ -385,31 +402,34 @@
       const bubble = document.createElement('div');
       if (isUser) {
         bubble.className = "flex justify-end";
-        bubble.innerHTML = `<div class="chat-bubble-user p-2.5 px-3 rounded-xl text-white max-w-[85%] shadow"><div class="text-[10px] opacity-80 text-right mb-0.5">${senderTitle}</div><p class="whitespace-pre-wrap">${text}</p></div>`;
+        bubble.innerHTML = `<div class="chat-bubble-user p-2.5 px-3 rounded-xl text-white max-w-[85%] shadow"><div class="text-[10px] opacity-80 text-right mb-0.5">${escapeHtml(senderTitle)}</div><p class="whitespace-pre-wrap">${escapeHtml(text)}</p></div>`;
       } else {
         bubble.className = "flex justify-start";
         if (isCard && cardData) {
+          const topRisk = cardData.topological_risks && cardData.topological_risks[0];
+          const riskLine = topRisk ? `【${topRisk.source_task_id}】延误直接阻碍下游【${topRisk.cascading_impact_tasks.join('、')}】` : '无下游阻碍';
+          const recommendationRows = (cardData.recommended_actions || []).map(r => `<div>• ${escapeHtml(r)}</div>`).join('');
           bubble.innerHTML = `
             <div class="p-3.5 bg-slate-900 border border-brand-500/40 rounded-xl text-slate-200 max-w-[95%] shadow-xl space-y-2">
               <div class="flex items-center justify-between border-b border-slate-800 pb-2">
-                <span class="font-bold text-brand-400 flex items-center gap-1.5">📊 ${cardData.title || '项目全景决策简报'}</span>
+                <span class="font-bold text-brand-400 flex items-center gap-1.5">📊 ${escapeHtml(cardData.title || '项目全景决策简报')}</span>
               </div>
               <div class="grid grid-cols-3 gap-1.5 text-center text-[11px] py-1 bg-slate-800/60 rounded-lg">
-                <div><span class="text-emerald-400 font-bold">${cardData.on_track_count || 0}</span> 正常</div>
-                <div><span class="text-amber-400 font-bold">${cardData.at_risk_count || 0}</span> 风险</div>
-                <div><span class="text-rose-400 font-bold">${cardData.delayed_count || 0}</span> 延误</div>
+                <div><span class="text-emerald-400 font-bold">${escapeHtml(cardData.on_track_count || 0)}</span> 正常</div>
+                <div><span class="text-amber-400 font-bold">${escapeHtml(cardData.at_risk_count || 0)}</span> 风险</div>
+                <div><span class="text-rose-400 font-bold">${escapeHtml(cardData.delayed_count || 0)}</span> 延误</div>
               </div>
               <div class="text-[11px] text-slate-300 bg-rose-500/10 border border-rose-500/20 p-2 rounded">
                 <span class="font-bold text-rose-400">⚠️ 关键路径波及：</span>
-                ${cardData.topological_risks && cardData.topological_risks[0] ? `【${cardData.topological_risks[0].source_task_id}】延误直接阻碍下游【${cardData.topological_risks[0].cascading_impact_tasks.join('、')}】` : '无下游阻碍'}
+                ${escapeHtml(riskLine)}
               </div>
               <div class="text-[11px] text-slate-400 space-y-1">
                 <span class="font-semibold text-slate-300">💡 协同决策建议：</span>
-                ${(cardData.recommended_actions || []).map(r => `<div>• ${r}</div>`).join('')}
+                ${recommendationRows}
               </div>
             </div>`;
         } else {
-          bubble.innerHTML = `<div class="chat-bubble-bot p-2.5 px-3 rounded-xl text-slate-200 max-w-[85%] shadow space-y-0.5"><div class="text-[10px] text-brand-400 font-semibold mb-0.5 flex items-center gap-1"><span>🤖</span> ${senderTitle}</div><p class="whitespace-pre-wrap">${text}</p></div>`;
+          bubble.innerHTML = `<div class="chat-bubble-bot p-2.5 px-3 rounded-xl text-slate-200 max-w-[85%] shadow space-y-0.5"><div class="text-[10px] text-brand-400 font-semibold mb-0.5 flex items-center gap-1"><span>🤖</span> ${escapeHtml(senderTitle)}</div><p class="whitespace-pre-wrap">${escapeHtml(text)}</p></div>`;
         }
       }
       container.appendChild(bubble);
@@ -486,12 +506,35 @@
       const res = await fetch(`/api/v1/projects/${pid}/dag`);
       if (!res.ok) return;
       dagData = await res.json();
-      document.getElementById('statTotalTasks').textContent = dagData.total_tasks;
-      document.getElementById('statCompletedSub').textContent = `已完成: ${dagData.completed_tasks}`;
-      document.getElementById('statOnTrack').textContent = `${dagData.health_distribution.ON_TRACK || 0} 🟢`;
-      document.getElementById('statAtRisk').textContent = `${dagData.health_distribution.AT_RISK || 0} 🟡`;
-      document.getElementById('statDelayed').textContent = `${dagData.health_distribution.DELAYED || 0} 🔴`;
+      // Shape: DagResponse in gateway/schemas.py; tests/test_console_api_contract.py pins it.
+      const s = dagData.summary;
+      const unreported = s.total_tasks - s.completed_count - s.on_track_count - s.at_risk_count - s.delayed_count;
+      document.getElementById('statTotalTasks').textContent = s.total_tasks;
+      document.getElementById('statCompletedSub').textContent = `已完成: ${s.completed_count}`;
+      document.getElementById('statOnTrack').textContent = `${s.on_track_count} 🟢`;
+      document.getElementById('statAtRisk').textContent = `${s.at_risk_count} 🟡`;
+      document.getElementById('statDelayed').textContent = `${s.delayed_count} 🔴`;
+      document.getElementById('statHealthSub').textContent =
+        unreported > 0 ? `正常 / 风险 / 延期 · 未上报 ${unreported}` : '正常 / 风险 / 延期';
       renderDagSvg(dagData);
+    }
+
+    // health_status / workflow_status carry the lowercase enum values from domain/enums.py.
+    const HEALTH_LABELS = { on_track: '正常', at_risk: '风险', delayed: '延期', unknown: '未上报' };
+    const HEALTH_BADGE_CLASSES = {
+      on_track: 'bg-emerald-500/20 text-emerald-300',
+      at_risk: 'bg-amber-500/20 text-amber-300',
+      delayed: 'bg-rose-500/20 text-rose-300',
+      unknown: 'bg-slate-500/20 text-slate-300',
+    };
+
+    function dagNodeColor(n) {
+      if (n.workflow_status === 'done') return '#a855f7';
+      if (n.health_status === 'delayed') return '#f43f5e';
+      // is_at_risk also covers tasks downstream of a delay (risk propagation).
+      if (n.health_status === 'at_risk' || n.is_at_risk || n.workflow_status === 'blocked') return '#f59e0b';
+      if (n.health_status === 'on_track') return '#10b981';
+      return '#64748b';
     }
 
     function renderDagSvg(data) {
@@ -502,11 +545,9 @@
         return;
       }
 
-      const nodeMap = {};
       const layers = {};
       data.nodes.forEach(n => {
-        nodeMap[n.id] = n;
-        const l = n.level || 0;
+        const l = n.layer || 0;
         layers[l] = layers[l] || [];
         layers[l].push(n);
       });
@@ -521,7 +562,7 @@
         const nodesInCol = layers[lvl];
         const startY = 60;
         nodesInCol.forEach((node, rowIdx) => {
-          nodePositions[node.id] = {
+          nodePositions[node.task_id] = {
             x: startX + colIdx * layerWidth,
             y: startY + rowIdx * (nodeHeight + 40),
             node: node
@@ -530,8 +571,8 @@
       });
 
       data.edges.forEach(edge => {
-        const from = nodePositions[edge.source];
-        const to = nodePositions[edge.target];
+        const from = nodePositions[edge.from_task];
+        const to = nodePositions[edge.to_task];
         if (!from || !to) return;
         const x1 = from.x + 160, y1 = from.y + 35, x2 = to.x, y2 = to.y + 35;
         let strokeColor = edge.is_impacted ? '#f43f5e' : (edge.is_critical ? '#38bdf8' : '#475569');
@@ -556,21 +597,20 @@
         gNode.setAttribute('class', 'dag-node cursor-pointer');
         gNode.onclick = () => openDrawer(n);
 
-        let badgeBg = '#10b981';
-        if (n.health === 'AT_RISK') badgeBg = '#f59e0b';
-        if (n.health === 'DELAYED') badgeBg = '#f43f5e';
-        if (n.workflow_status === 'COMPLETED') badgeBg = '#a855f7';
-
-        let borderStroke = n.is_critical ? '#38bdf8' : '#334155';
-        let borderWidth = n.is_critical ? '2.5' : '1.5';
+        const badgeBg = dagNodeColor(n);
+        const borderStroke = n.is_critical_path ? '#38bdf8' : '#334155';
+        const borderWidth = n.is_critical_path ? '2.5' : '1.5';
+        // Truncate first, then escape: escaping first could cut an entity like "&amp;" in half.
+        const shortTitle = n.title.length > 9 ? n.title.substring(0, 8) + '…' : n.title;
+        const criticalDot = n.is_critical_path ? '<circle cx="145" cy="18" r="4" fill="#38bdf8" />' : '';
 
         gNode.innerHTML = `
           <rect width="160" height="70" rx="10" fill="#1e293b" stroke="${borderStroke}" stroke-width="${borderWidth}" />
           <rect x="0" y="0" width="6" height="70" rx="3" fill="${badgeBg}" />
-          <text x="14" y="24" fill="#f8fafc" font-size="12" font-weight="bold">${n.title.length > 9 ? n.title.substring(0, 8) + '…' : n.title}</text>
-          <text x="14" y="44" fill="#94a3b8" font-size="10" font-family="monospace">👤 ${n.owner_id}</text>
-          <text x="14" y="60" fill="#64748b" font-size="9">${n.workflow_status}</text>
-          ${n.is_critical ? '<circle cx="145" cy="18" r="4" fill="#38bdf8" />' : ''}
+          <text x="14" y="24" fill="#f8fafc" font-size="12" font-weight="bold">${escapeHtml(shortTitle)}</text>
+          <text x="14" y="44" fill="#94a3b8" font-size="10" font-family="monospace">👤 ${escapeHtml(n.owner_id)}</text>
+          <text x="14" y="60" fill="#64748b" font-size="9">${escapeHtml(n.workflow_status)}</text>
+          ${criticalDot}
         `;
         g.appendChild(gNode);
       });
@@ -580,19 +620,20 @@
     function resetDagZoom() { currentZoom = 1.0; document.getElementById('dagRootGroup').setAttribute('transform', 'scale(1.0)'); }
 
     function openDrawer(node) {
-      document.getElementById('drawerTaskId').textContent = node.id;
+      document.getElementById('drawerTaskId').textContent = node.task_id;
       document.getElementById('drawerTitle').textContent = node.title;
       document.getElementById('drawerOwner').textContent = node.owner_id;
       document.getElementById('drawerWorkflow').textContent = node.workflow_status;
-      document.getElementById('drawerDeadline').textContent = node.deadline ? new Date(node.deadline).toLocaleString() : '未设置';
-      
-      const badge = document.getElementById('drawerStatusBadge');
-      badge.textContent = node.health;
-      if (node.health === 'ON_TRACK') badge.className = "px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300";
-      if (node.health === 'AT_RISK') badge.className = "px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300";
-      if (node.health === 'DELAYED') badge.className = "px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-300";
+      const deadline = node.deadline ? new Date(node.deadline).toLocaleString() : '未设置';
+      document.getElementById('drawerDeadline').textContent = node.expected_completion
+        ? `${deadline} / 预计 ${new Date(node.expected_completion).toLocaleString()}`
+        : deadline;
 
-      document.getElementById('drawerBlockers').textContent = node.blocker_reason || '暂无上报阻塞';
+      const badge = document.getElementById('drawerStatusBadge');
+      badge.textContent = HEALTH_LABELS[node.health_status] || node.health_status;
+      badge.className = `px-2.5 py-0.5 rounded-full text-xs font-bold ${HEALTH_BADGE_CLASSES[node.health_status] || HEALTH_BADGE_CLASSES.unknown}`;
+
+      document.getElementById('drawerBlockers').textContent = (node.blockers || []).join('；') || '暂无上报阻塞';
       document.getElementById('nodeDrawer').classList.remove('translate-x-full');
     }
 
@@ -619,22 +660,38 @@
         const item = document.createElement('div');
         item.className = "p-3.5 bg-slate-900/80 border border-slate-800 rounded-xl flex items-start gap-3 text-xs";
         item.innerHTML = `
-          <div class="mt-0.5 px-2 py-0.5 rounded uppercase font-bold text-[10px] ${catBadge}">${entry.category}</div>
+          <div class="mt-0.5 px-2 py-0.5 rounded uppercase font-bold text-[10px] ${catBadge}">${escapeHtml(entry.category)}</div>
           <div class="flex-1">
             <div class="flex items-center justify-between">
-              <h4 class="font-bold text-slate-200">${entry.title}</h4>
-              <span class="text-slate-500 font-mono">${new Date(entry.timestamp).toLocaleTimeString()}</span>
+              <h4 class="font-bold text-slate-200">${escapeHtml(entry.title)}</h4>
+              <span class="text-slate-500 font-mono">${escapeHtml(new Date(entry.timestamp).toLocaleTimeString())}</span>
             </div>
-            <p class="text-slate-400 mt-1">${entry.description}</p>
+            <p class="text-slate-400 mt-1">${escapeHtml(entry.description)}</p>
           </div>
         `;
         container.appendChild(item);
       });
     }
 
+    // The server names the operator (the project PM); the console never chooses an approver.
+    async function loadConsoleOperator(pid) {
+      const res = await fetch(`/api/v1/projects/${pid}/console-context`);
+      const ctx = res.ok ? await res.json() : {};
+      const label = document.getElementById('approvalOperator');
+      if (!ctx.operator_id) {
+        label.textContent = '当前操作人: 项目未登记 PM，控制台无法审批';
+        return null;
+      }
+      label.textContent = `当前操作人: ${ctx.operator_name || ctx.operator_id} (${ctx.operator_id})`;
+      return ctx.operator_id;
+    }
+
     async function loadApprovals() {
       const pid = getProjectId();
-      const res = await fetch(`/api/v1/projects/${pid}/approvals`);
+      const [res, operatorId] = await Promise.all([
+        fetch(`/api/v1/projects/${pid}/approvals`),
+        loadConsoleOperator(pid),
+      ]);
       if (!res.ok) return;
       const approvals = await res.json();
       const container = document.getElementById('approvalsListContainer');
@@ -650,26 +707,44 @@
         item.className = "p-3.5 bg-slate-800/90 border border-amber-500/30 rounded-xl space-y-2 text-xs";
         item.innerHTML = `
           <div class="flex items-center justify-between font-semibold">
-            <span class="text-amber-400">⚠️ 改期审批: ${app.proposed_command.payload.task_id || '任务'}</span>
-            <span class="text-slate-400">审批人: ${app.approver_id}</span>
+            <span class="text-amber-400">⚠️ 改期审批: ${escapeHtml(app.proposed_command.payload.task_id || '任务')}</span>
+            <span class="text-slate-400">审批人: ${escapeHtml(app.approver_id)}</span>
           </div>
-          <p class="text-slate-300">申请改期至：<span class="font-mono text-cyan-300 font-bold">${app.proposed_command.payload.new_deadline || '待定'}</span></p>
+          <p class="text-slate-300">申请改期至：<span class="font-mono text-cyan-300 font-bold">${escapeHtml(app.proposed_command.payload.new_deadline || '待定')}</span></p>
           <div class="flex items-center gap-2 pt-1">
-            <button onclick="decideApproval('${app.approval_id}', 'approved')" class="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded">🟢 批准改期</button>
-            <button onclick="decideApproval('${app.approval_id}', 'rejected')" class="flex-1 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded">🔴 拒绝申请</button>
+            <button data-decision="approved" class="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded">🟢 批准改期</button>
+            <button data-decision="rejected" class="flex-1 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded">🔴 拒绝申请</button>
           </div>
         `;
+        // Bound here rather than in an onclick="..." string: the browser decodes entities in
+        // attributes before running them as JS, so escapeHtml cannot protect that context.
+        // A request designated to someone other than the operator is shown but not decidable here.
+        const canDecide = Boolean(operatorId) && app.approver_id === operatorId;
+        item.querySelectorAll('button[data-decision]').forEach(btn => {
+          btn.disabled = !canDecide;
+          if (!canDecide) {
+            btn.classList.add('opacity-40', 'cursor-not-allowed');
+            btn.title = '该请求的审批人不是当前操作人';
+          }
+          btn.onclick = () => decideApproval(pid, app.approval_id, btn.dataset.decision, operatorId);
+        });
         container.appendChild(item);
       });
     }
 
-    async function decideApproval(approvalId, decision) {
-      const pid = getProjectId();
-      await fetch(`/api/v1/projects/${pid}/approvals/${approvalId}/decision`, {
+    async function decideApproval(pid, approvalId, decision, operatorId) {
+      const status = document.getElementById('approvalStatus');
+      const res = await fetch(`/api/v1/projects/${pid}/approvals/${approvalId}/decision`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ decision: decision, approver_id: 'pm_web_operator', reason: 'Web Console Decision' })
+        body: JSON.stringify({ decision: decision, approver_id: operatorId, reason: 'Web Console Decision' })
       });
+      if (res.ok) {
+        status.textContent = decision === 'approved' ? '✅ 已批准，Agent 已执行改期' : '已拒绝该改期申请';
+      } else {
+        const err = await res.json().catch(() => ({}));
+        status.textContent = `审批失败 (${res.status}): ${err.detail || '未知错误'}`;
+      }
       await refreshData();
     }
 
