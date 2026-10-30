@@ -1,6 +1,9 @@
 """Tests for bounded CoordinationAgent loop and multi-turn execution."""
 
+from collections.abc import Callable
 from datetime import datetime, timedelta
+
+import pytest
 
 from orgpilot.agent.loop import CoordinationAgent
 from orgpilot.domain.enums import (
@@ -145,47 +148,134 @@ def test_agent_run_turn_update_task_approval() -> None:
     assert case.status is CoordinationCaseStatus.RESOLVED
 
 
-def test_agent_escalates_when_the_approved_update_fails() -> None:
-    """An approved reschedule that the platform rejects is escalated, not resolved."""
+def _delay_report(
+    event_id: str, task_id: str, at: datetime, expected_completion: datetime | None = None
+) -> TaskHealthReportedEvent:
+    return TaskHealthReportedEvent(
+        project_id="test-proj",
+        event_id=event_id,
+        event_type="task.health_reported",
+        source=EventSource.MESSAGE,
+        source_ref="ref",
+        actor_id="alice",
+        occurred_at=at,
+        received_at=at,
+        payload=TaskHealthReportedPayload(
+            task_id=task_id,
+            health_status=HealthStatus.DELAYED,
+            expected_completion=expected_completion,
+            confidence=0.95,
+        ),
+    )
 
-    class RejectingClient(MockFeishuClient):
-        async def update_task_deadline(self, task_guid: str, deadline: datetime) -> dict:
-            raise RuntimeError("Feishu update task failed: task not found")
 
+class _RejectingClient(MockFeishuClient):
+    async def update_task_deadline(self, task_guid: str, deadline: datetime) -> dict:
+        raise RuntimeError("Feishu update task failed: task not found")
+
+
+# Each helper returns an agent whose next turn, run at the returned time,
+# escalates case:task-health:t1, one helper per way into ESCALATED.
+
+
+def _before_response_timeout() -> tuple[CoordinationAgent, datetime]:
+    """Alice is asked for a recovery estimate and never answers."""
+    agent = CoordinationAgent(project_id="test-proj")
+    agent.run_turn([*_init_events(), _delay_report("evt-delay", "t1", NOW)], NOW)
+    return agent, NOW + timedelta(hours=3)
+
+
+def _before_rejected_approval_applies() -> tuple[CoordinationAgent, datetime]:
+    """Carol rejects the proposed reschedule."""
+    agent = CoordinationAgent(project_id="test-proj")
+    late = _delay_report("evt-delay-overdue", "t1", NOW, NOW + timedelta(days=5))
+    agent.run_turn([*_init_events(), late], NOW)
+    [pending] = agent.approval_manager.get_pending_requests()
+    agent.approval_manager.reject(
+        pending.approval_id, "carol", "launch date is fixed", NOW + timedelta(hours=1)
+    )
+    return agent, NOW + timedelta(hours=1)
+
+
+def _before_approved_update_fails() -> tuple[CoordinationAgent, datetime]:
+    """Carol approves the reschedule, but writing it back to the platform fails."""
     adapter = FeishuCollaborationAdapter(
-        client=RejectingClient(), project_id="test-proj", task_writeback=True
+        client=_RejectingClient(), project_id="test-proj", task_writeback=True
     )
     agent = CoordinationAgent(project_id="test-proj", adapter=adapter)
-    events = _init_events()
-    events.append(
-        TaskHealthReportedEvent(
-            project_id="test-proj",
-            event_id="evt-delay-overdue",
-            event_type="task.health_reported",
-            source=EventSource.MESSAGE,
-            source_ref="ref",
-            actor_id="alice",
-            occurred_at=NOW,
-            received_at=NOW,
-            payload=TaskHealthReportedPayload(
-                task_id="t1",
-                health_status=HealthStatus.DELAYED,
-                expected_completion=NOW + timedelta(days=5),
-                confidence=0.95,
-            ),
-        )
-    )
-    agent.run_turn(events, NOW)
+    late = _delay_report("evt-delay-overdue", "t1", NOW, NOW + timedelta(days=5))
+    agent.run_turn([*_init_events(), late], NOW)
     [pending] = agent.approval_manager.get_pending_requests()
     agent.approval_manager.approve(pending.approval_id, "carol", NOW + timedelta(hours=1))
+    return agent, NOW + timedelta(hours=1)
 
-    agent.run_turn([], NOW + timedelta(hours=1))
+
+def test_agent_escalates_when_the_approved_update_fails() -> None:
+    """An approved reschedule that the platform rejects is escalated, not resolved."""
+    agent, approved_at = _before_approved_update_fails()
+
+    agent.run_turn([], approved_at)
 
     case = agent.case_ledger.get_case("case:task-health:t1")
     assert case is not None
     assert case.status is CoordinationCaseStatus.ESCALATED
     assert "task not found" in (case.terminal_reason or "")
     assert agent.state.tasks["t1"].deadline == NOW + timedelta(days=2)
+
+
+@pytest.mark.parametrize(
+    "before_escalation",
+    [_before_response_timeout, _before_rejected_approval_applies, _before_approved_update_fails],
+    ids=["response_timeout", "approval_rejected", "approved_update_failed"],
+)
+def test_escalation_is_reported_only_in_the_turn_it_happens(
+    before_escalation: Callable[[], tuple[CoordinationAgent, datetime]],
+) -> None:
+    """Lifecycle defect D5: an old escalated case must not make later turns report it."""
+    agent, escalation_time = before_escalation()
+
+    escalating, _ = agent.run_turn([], escalation_time)
+    quiet, _ = agent.run_turn([], escalation_time + timedelta(days=1))
+
+    assert escalating.termination_reason is AgentTerminationReason.ESCALATED
+    assert quiet.termination_reason is AgentTerminationReason.ALL_RESOLVED
+    # Only the turn report changes; the case keeps its escalated status.
+    case = agent.case_ledger.get_case("case:task-health:t1")
+    assert case is not None
+    assert case.status is CoordinationCaseStatus.ESCALATED
+
+
+def test_a_new_escalation_is_reported_after_an_earlier_one() -> None:
+    agent, first_escalation = _before_response_timeout()
+    agent.run_turn([], first_escalation)
+    t2_reported = first_escalation + timedelta(days=1)
+    t2_created = TaskCreatedEvent(
+        project_id="test-proj",
+        event_id="evt-task-2",
+        event_type="task.created",
+        source=EventSource.TASK,
+        source_ref="setup",
+        occurred_at=t2_reported,
+        received_at=t2_reported,
+        payload=TaskCreatedPayload(
+            task_id="t2",
+            title="Task 2",
+            owner_id="alice",
+            workflow_status=WorkflowStatus.DOING,
+            deadline=t2_reported + timedelta(days=2),
+        ),
+    )
+
+    asked, _ = agent.run_turn(
+        [t2_created, _delay_report("evt-delay-t2", "t2", t2_reported)], t2_reported
+    )
+    escalating, _ = agent.run_turn([], t2_reported + timedelta(hours=3))
+
+    assert asked.termination_reason is AgentTerminationReason.WAITING_RESPONSE
+    assert escalating.termination_reason is AgentTerminationReason.ESCALATED
+    case = agent.case_ledger.get_case("case:task-health:t2")
+    assert case is not None
+    assert case.status is CoordinationCaseStatus.ESCALATED
 
 
 def test_agent_run_turn_direct_update_task_action_approval() -> None:
