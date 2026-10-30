@@ -142,3 +142,60 @@ uv run uvicorn orgpilot.gateway.app:create_app --factory --port 8000
   只在 Mock 上测过；
 - 只处理私聊，群聊消息直接拒收；
 - 这是两个人的演示，不代表多人团队里的效果；协调层的对比实验还没做。
+
+## 8. 卡片转义核对（尚未在真实租户验证）
+
+`feishu/cards.py` 把任务标题、成员名字、成员 / 任务 ID、探针原因和简报建议放进 `lark_md` 前，
+先用 `escape_lark_md` 转成 HTML 实体（`<` → `&#60;`、`*` → `&#42;`、`[` → `&#91;`、`~` → `&sim;`
+等，依据飞书[富文本组件](https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/content-components/rich-text)的"特殊字符转义说明"）。
+这张转义表写在 `markdown` 组件的文档里，`lark_md` 的文档没有单独写转义规则，所以**飞书实际怎么
+渲染还没核对过**，单元测试只证明了生成的 JSON。下面的核对不经过网关、不读 `.env`、不碰
+`orgpilot.db`，最好在不录屏的时候做。
+
+1. 在检出了本分支的目录里（**不要用演示目录**）生成两张没有按钮的卡片，脚本只写文件、不发送：
+
+   ```powershell
+   @'
+   import json, os
+   from orgpilot.feishu.cards import build_approval_updated_card, build_notification_card
+
+   TITLE = "R&D [approve](https://example.com)**urgent**_italic_<at id=all></at>"
+   NAME = "<font color='red'>CEO</font>~~del~~`code`\\"
+   cards = [
+       build_notification_card(
+           task_id="task*payment", task_title=TITLE,
+           new_deadline_str="2026-10-21T17:00:00+08:00",
+           impacted_tasks=["task-checkout", "qa`x"], approver_name=NAME,
+       ),
+       build_approval_updated_card(
+           task_id="task-payment", task_title=TITLE, proposed_deadline_str="2026-10-21 17:00",
+           decision="approved", approver_name=NAME, decided_at_str="2026-10-20 15:00",
+       ),
+   ]
+   path = os.path.join(os.environ["TEMP"], "orgpilot-lark-md-check.json")
+   with open(path, "w", encoding="utf-8") as f:
+       for card in cards:
+           body = {"receive_id": "<A_OPEN_ID>", "msg_type": "interactive",
+                   "content": json.dumps(card, ensure_ascii=False)}
+           f.write(json.dumps(body, ensure_ascii=False) + "\n\n")
+   print(path)
+   '@ | uv run python -
+   ```
+
+2. 打开[飞书 API 调试台](https://open.feishu.cn/api-explorer)，选你的应用，找到"发送消息"
+   （`POST /open-apis/im/v1/messages`），查询参数 `receive_id_type=open_id`。把生成文件里的两段请求体
+   分别贴进去，`<A_OPEN_ID>` 换成**你自己**的 open_id（`uv run orgpilot team show` 里 A 那一行），
+   发送两次。**只发给自己，不要发到群里**：万一转义无效，`<at id=all>` 在群里会 @所有人。
+3. 逐项核对 A 收到的两张卡片：
+
+   | # | 看哪里 | 通过 | 不通过说明什么 |
+   |---|---|---|---|
+   | 1 | 通知卡片里括号中的任务标题 | 原样显示 `R&D [approve](https://example.com)**urgent**_italic_<at id=all></at>`：`approve` 不是链接、`urgent` 不加粗、没有 @所有人 | 链接、加粗或 @ 生效：`lark_md` 不认这些实体，转义方式要换 |
+   | 2 | 同一行的 `R&D` | 显示 `R&D` | 显示 `R&#38;D`：`lark_md` 不解码 `&#38;`，要去掉对 `&` 的转义 |
+   | 3 | 审批人名字（通知卡片加粗处、结果卡片"审批人："后） | 显示 ``<font color='red'>CEO</font>~~del~~`code`\``，不变红、没有删除线 | 变红或出现删除线：转义无效 |
+   | 4 | 名字里的 `~` | 显示 `~` 或形状相近的 `∼` 都算通过 | 显示 `&sim;`：改用 `&#126;` |
+   | 5 | 反引号里的 ID：`task*payment`、``qa`x`` | `*` 和反引号正常显示 | 显示 `&#42;` / `&#96;`：反引号里不解码实体，用户值不能再放进反引号 |
+   | 6 | 标题里的 `_italic_` | 原样显示带下划线 | 变成斜体：下划线目前故意没转义（ID 里常有 `_`），需要补上 |
+   | 7 | 卡片自己的格式：`排期变更通知`、`已批准` | 仍然加粗 | 不加粗：卡片自身的格式被破坏 |
+
+   有任何一项不通过，把截图和是第几项告诉我，再改 `escape_lark_md`。

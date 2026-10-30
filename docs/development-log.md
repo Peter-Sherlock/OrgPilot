@@ -1,5 +1,47 @@
 # 开发记录
 
+## 2026-10-20：飞书卡片 `lark_md` 转义（分支 `fix/feishu-lark-md-escaping`）
+
+修控制台存储型 XSS（PR #7）时顺带审计发现，`feishu/cards.py` 把用户可控的文本原样拼进 `lark_md`：
+任务标题、探针原因、审批人 / 负责人名字、成员 ID，以及同步协调器生成的、内嵌成员名字的简报建议。
+飞书不执行脚本，所以这不是 XSS，而是 Markdown 注入：名字或标题里带 `[批准](http://evil)`、
+`**...**`、`<font>`、`<at id=all></at>` 的成员，可以在发给 PM 或群里的卡片上伪造链接和格式，或者触发 @。
+
+### 改动
+
+- 新增 `escape_lark_md`：依据飞书富文本组件文档的"特殊字符转义说明"，把 `& < > * ~ [ ] \` 和反引号
+  转成 HTML 实体，换行换成空格（防止用户值另起一行伪造卡片行）。`_ - : /` 故意不转：成员 ID、任务 ID
+  和 ISO 时间里都有，而 `lark_md` 文档只把 `*` 列为强调语法；
+- 7 个卡片生成函数里所有用户来源的 `lark_md` 值都经过它；卡片自己的 `**`、反引号、换行不变；
+  `plain_text` 标题和按钮 `value`（回调要用原值）不转义；
+- `build_sync_closed_card` 的 `note` 整体转义：调用方用 operator id 和会话摘要拼出来，现有模板里没有
+  Markdown；
+- 简报建议在卡片层整体转义，而不是在 `sync_coordinator.py` 里转：`ExecutiveBriefing` 也会存库、
+  给控制台用，转义应该发生在具体的渲染端。
+
+### 新增测试
+
+- `tests/test_feishu_cards.py` 新增 30 个（含参数化）：恶意标题和名字在每种卡片里都被转义、按钮
+  `value` 保持原值；普通中文标题、全角标点、带 `_` 的 ID、ISO 时间原样不变；正常卡片的字段内容与
+  改动前逐字一致。
+
+### 未做（如实标注）
+
+- **没有在真实租户上验证渲染效果。** 转义表出自 `markdown`（富文本）组件的文档，`lark_md`（普通文本
+  组件）的文档没有单独写转义规则；反引号里的实体会不会被解码、`&sim;` 显示成什么、`_斜体_` 是否
+  生效，都只能在租户里看。核对步骤写在 `docs/feishu-demo-runbook.md` 第 8 节；
+- 本次没有向飞书发送任何消息，也没有动演示目录、`.env`、`team.yaml`。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS
+pytest: 426 passed, coverage 91.95%（fail_under=90）
+ruff check: All checks passed
+```
+
+---
+
 ## 2026-10-20：修复 Web 控制台存储型 XSS（分支 `fix/console-xss-escaping`）
 
 控制台用 `innerHTML` 模板拼 DOM，任务标题、成员名、消息原文都未转义直接插值。这些数据来自飞书用户
