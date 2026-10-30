@@ -59,6 +59,48 @@ ruff check: All checks passed
 
 ---
 
+## 2026-10-20：飞书卡片 `lark_md` 转义（分支 `fix/feishu-lark-md-escaping`）
+
+修控制台存储型 XSS（PR #7）时顺带审计发现，`feishu/cards.py` 把用户可控的文本原样拼进 `lark_md`：
+任务标题、探针原因、审批人 / 负责人名字、成员 ID，以及同步协调器生成的、内嵌成员名字的简报建议。
+飞书不执行脚本，所以这不是 XSS，而是 Markdown 注入：名字或标题里带 `[批准](http://evil)`、
+`**...**`、`<font>`、`<at id=all></at>` 的成员，可以在发给 PM 或群里的卡片上伪造链接和格式，或者触发 @。
+
+### 改动
+
+- 新增 `escape_lark_md`：依据飞书富文本组件文档的"特殊字符转义说明"，把 `& < > * ~ [ ] \` 和反引号
+  转成 HTML 实体，换行换成空格（防止用户值另起一行伪造卡片行）。`_ - : /` 故意不转：成员 ID、任务 ID
+  和 ISO 时间里都有，而 `lark_md` 文档只把 `*` 列为强调语法；
+- 7 个卡片生成函数里所有用户来源的 `lark_md` 值都经过它；卡片自己的 `**`、反引号、换行不变；
+  `plain_text` 标题和按钮 `value`（回调要用原值）不转义；
+- `build_sync_closed_card` 的 `note` 整体转义：调用方用 operator id 和会话摘要拼出来，现有模板里没有
+  Markdown；
+- 简报建议在卡片层整体转义，而不是在 `sync_coordinator.py` 里转：`ExecutiveBriefing` 也会存库、
+  给控制台用，转义应该发生在具体的渲染端。
+
+### 新增测试
+
+- `tests/test_feishu_cards.py` 新增 30 个（含参数化）：恶意标题和名字在每种卡片里都被转义、按钮
+  `value` 保持原值；普通中文标题、全角标点、带 `_` 的 ID、ISO 时间原样不变；正常卡片的字段内容与
+  改动前逐字一致。
+
+### 未做（如实标注）
+
+- **没有在真实租户上验证渲染效果。** 转义表出自 `markdown`（富文本）组件的文档，`lark_md`（普通文本
+  组件）的文档没有单独写转义规则；反引号里的实体会不会被解码、`&sim;` 显示成什么、`_斜体_` 是否
+  生效，都只能在租户里看。核对步骤写在 `docs/feishu-demo-runbook.md` 第 8 节；
+- 本次没有向飞书发送任何消息，也没有动演示目录、`.env`、`team.yaml`。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS
+pytest: 426 passed, coverage 91.95%（fail_under=90）
+ruff check: All checks passed
+```
+
+---
+
 ## 2026-10-20：修复 Web 控制台存储型 XSS（分支 `fix/console-xss-escaping`）
 
 控制台用 `innerHTML` 模板拼 DOM，任务标题、成员名、消息原文都未转义直接插值。这些数据来自飞书用户
@@ -109,6 +151,57 @@ pytest: 415 passed（新增 19 个，含 Node 行为测试）, coverage 91.94%�
 ruff check: All checks passed
 git diff --check: PASS
 ```
+
+---
+
+## 2026-10-20：接入 GitHub Actions CI（分支 `claude/modest-dubinsky-3c1c14`）
+
+此前仓库没有 `.github/`，PR 上看不到任何检查，测试也只在 Windows 上跑过。新增
+`.github/workflows/ci.yml`：push 到 `main` 和每个 PR 触发，ubuntu-latest + Python 3.12，
+`astral-sh/setup-uv@v10.3.0`，`uv sync --locked`。
+
+### 检查步骤
+
+1. `uv run ruff check .`（不含 `ruff format --check`：main 上有已知格式欠账，如 `intent/router.py`，不在本次范围）；
+2. `uv run pytest --cov=orgpilot --cov-report=term-missing`，覆盖率门槛沿用 pyproject 的 `fail_under = 90`；
+3. `uv run orgpilot replay --all`；
+4. 意图评测离线回放（冻结提示词 `c9850dec6655`）：dev、test、多轮对话三条 `eval-intent --client llm --replay`。
+
+### 实施中的决策
+
+- **评测命令不会因分数变化而失败**：`--client llm --replay` 只在缺录制时返回 1，分数怎么变都返回 0
+  （单条样本评测本来就是 "no pass gate"，对话评测的门槛只作用于 oracle 和 heuristic）。工作流里加了
+  显式核对：从输出中匹配 `Samples` / `Failures` / `Conversations` 三行，与 `BASELINE.md` 的冻结结果
+  （dev 97/102、test 53/58、对话 10/10）逐项比较，不一致即失败；输出格式变了也会失败，不会静默通过。
+  只比较冻结的通过数，不另设阈值；以后改提示词或数据集时，`BASELINE.md` 与工作流里的数字要一起改；
+- **核对本身验证过会失败**：本地把一条录制的意图从 `request_sync` 改成 `chitchat`，dev 变成 96/102，
+  步骤报错退出；挪走一条录制，CLI 报"回放失败"返回 1，经 `pipefail` 让步骤失败；
+- **回放不联网（已验证）**：`_exchange` 在 replay 模式下读完录制就返回，不会走到 HTTP；单元测试
+  `test_replay_mode_reads_recordings_and_fails_on_miss` 用一个一调用就报错的 transport 覆盖了这一点。
+  另外在本地用 socket 守卫（拦截所有非回环地址的 connect 与 DNS 解析）跑完三条命令，记录到的外连
+  尝试为 0；对照组里同一个守卫能拦下一次 httpx 请求。CI 不用任何 secret，`DEEPSEEK_API_KEY=dummy`
+  只为通过配置校验。
+
+### Linux 上的结果
+
+测试第一次在 Linux 上跑，396 个全部通过，没有出现需要修的平台问题，
+所以本分支没有改任何源码或测试。CI 上覆盖率 92.33%，比 Windows 本地的 91.94% 略高；pytest 只剩
+2 条 warning，都是 `lark_oapi` 自身的 DeprecationWarning。
+
+### 验证状态
+
+```text
+本地（Windows，Python 3.14）：ruff 通过；replay 9/9 PASS；pytest 396 passed，coverage 91.94%；
+意图评测离线回放 dev 97/102、test 53/58、对话 10/10，与冻结结果一致
+CI（ubuntu-24.04，CPython 3.12.3）：ruff 通过；pytest 396 passed，coverage 92.33%；replay 9/9 PASS；
+意图评测离线回放 dev 97/102、test 53/58、对话 10/10，与冻结结果一致；job 耗时 1 分 13 秒
+```
+
+### 已知事项
+
+- GitHub 提示 `ubuntu-latest` 自 2026-10-19 起逐步迁到 Ubuntu 26，本次仍跑在 24.04 上；
+  工作流用的是 `ubuntu-latest`，迁移后第一次跑如果出问题，再考虑固定版本；
+- 只固定了 action 的版本（`actions/checkout@v7.0.1`、`astral-sh/setup-uv@v10.3.0`），uv 本身取最新版。
 
 ---
 
