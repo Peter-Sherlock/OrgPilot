@@ -1,6 +1,7 @@
 """Deterministic projection from organization events to current state."""
 
 from collections.abc import Iterable
+from datetime import datetime
 from typing import Any
 
 from orgpilot.domain.enums import ClaimStatus, CommitmentStatus, HealthStatus
@@ -116,7 +117,9 @@ class OrgProjector:
                 "last_update_at": event.occurred_at,
             }
         )
-        self._fulfill_matching_commitments(payload.task_id, "workflow_status", payload.to_status)
+        self._settle_matching_commitments(
+            payload.task_id, "workflow_status", payload.to_status, event.occurred_at
+        )
 
     def _update_task(self, event: TaskUpdatedEvent) -> None:
         payload = event.payload
@@ -176,7 +179,9 @@ class OrgProjector:
                 "last_update_at": event.occurred_at,
             }
         )
-        self._fulfill_matching_commitments(task.task_id, "health_status", resolved_health)
+        self._settle_matching_commitments(
+            task.task_id, "health_status", resolved_health, event.occurred_at
+        )
 
     def _make_commitment(self, event: CommitmentMadeEvent) -> None:
         if event.actor_id is None:
@@ -216,7 +221,18 @@ class OrgProjector:
             }
         )
 
-    def _fulfill_matching_commitments(self, target_id: str, predicate: str, value: object) -> None:
+    def _settle_matching_commitments(
+        self, target_id: str, predicate: str, value: object, occurred_at: datetime
+    ) -> None:
+        """Close the ACTIVE commitments whose predicate this event made true.
+
+        The outcome compares the event's business time with ``due_at``, never the
+        wall clock, so replaying the log gives the same statuses. Reaching the
+        value at ``due_at`` exactly is on time; after it the promise is BROKEN even
+        though the work got done (the task's own state records that). A commitment
+        without ``due_at`` cannot be late. Commitments that expire with no matching
+        event stay ACTIVE here: noticing that needs a time tick (ADR-0014).
+        """
         normalized_value = str(value)
         for commitment_id, commitment in tuple(self.state.commitments.items()):
             if (
@@ -225,8 +241,12 @@ class OrgProjector:
                 and commitment.predicate == predicate
                 and commitment.expected_value == normalized_value
             ):
+                late = commitment.due_at is not None and occurred_at > commitment.due_at
                 self.state.commitments[commitment_id] = commitment.model_copy(
-                    update={"status": CommitmentStatus.FULFILLED}
+                    update={
+                        "status": CommitmentStatus.BROKEN if late else CommitmentStatus.FULFILLED,
+                        "last_update_at": occurred_at,
+                    }
                 )
 
     def _require_task(self, task_id: str) -> TaskState:

@@ -4,6 +4,7 @@ import pytest
 
 from orgpilot.domain.enums import ClaimStatus, CommitmentStatus, HealthStatus, WorkflowStatus
 from orgpilot.domain.errors import DomainInvariantError
+from orgpilot.events.models import OrgEvent
 from orgpilot.state.projector import OrgProjector
 from tests.conftest import make_event
 
@@ -137,6 +138,135 @@ def test_matching_commitment_is_fulfilled_by_workflow_change() -> None:
     )
 
     assert projector.state.commitments["commitment-1"].status is CommitmentStatus.FULFILLED
+
+
+# Test events happen at 2026-09-01 09:<minute>, so this due_at is minute 10. It is
+# also long past by the wall clock: an outcome read from the clock would be BROKEN
+# even for the on-time cases below.
+DUE_AT = "2026-09-01T09:10:00+08:00"
+EXPECTED_VALUE = {"workflow_status": "done", "health_status": "on_track"}
+
+
+def _due_commitment_log(predicate: str) -> list[OrgEvent]:
+    """Alice owns task api and commits to its predicate reaching a value by DUE_AT."""
+    return [
+        make_event(
+            "evt-member-alice",
+            "member.registered",
+            {"member_id": "alice", "display_name": "Alice", "role": "engineer"},
+        ),
+        make_event(
+            "evt-task-api",
+            "task.created",
+            {"task_id": "api", "title": "Api", "owner_id": "alice", "workflow_status": "doing"},
+            minute=1,
+        ),
+        make_event(
+            "evt-commitment",
+            "commitment.made",
+            {
+                "commitment_id": "commitment-1",
+                "target_type": "task",
+                "target_id": "api",
+                "predicate": predicate,
+                "expected_value": EXPECTED_VALUE[predicate],
+                "due_at": DUE_AT,
+            },
+            actor_id="alice",
+            minute=2,
+        ),
+    ]
+
+
+def _projector_with_due_commitment(predicate: str = "workflow_status") -> OrgProjector:
+    projector = OrgProjector("test-project")
+    projector.replay(_due_commitment_log(predicate))
+    return projector
+
+
+def _settling_event(predicate: str, minute: int) -> OrgEvent:
+    """An event on the committed task that makes the commitment's predicate true."""
+    if predicate == "workflow_status":
+        return make_event(
+            "evt-task-done",
+            "task.workflow_changed",
+            {"task_id": "api", "from_status": "doing", "to_status": "done"},
+            minute=minute,
+        )
+    return make_event(
+        "evt-task-on-track",
+        "task.health_reported",
+        {"task_id": "api", "health_status": "on_track", "confidence": 0.9},
+        actor_id="alice",
+        source="message",
+        minute=minute,
+    )
+
+
+@pytest.mark.parametrize("predicate", ["workflow_status", "health_status"])
+@pytest.mark.parametrize("minute", [5, 10], ids=["before_due_at", "at_due_at"])
+def test_commitment_met_by_due_at_is_fulfilled(predicate: str, minute: int) -> None:
+    projector = _projector_with_due_commitment(predicate)
+    event = _settling_event(predicate, minute)
+
+    projector.apply(event)
+
+    commitment = projector.state.commitments["commitment-1"]
+    assert commitment.status is CommitmentStatus.FULFILLED
+    assert commitment.last_update_at == event.occurred_at
+
+
+@pytest.mark.parametrize("predicate", ["workflow_status", "health_status"])
+def test_commitment_met_after_due_at_is_broken(predicate: str) -> None:
+    projector = _projector_with_due_commitment(predicate)
+    late = _settling_event(predicate, minute=11)
+
+    projector.apply(late)
+
+    commitment = projector.state.commitments["commitment-1"]
+    assert commitment.status is CommitmentStatus.BROKEN
+    assert commitment.last_update_at == late.occurred_at
+    # The work itself still counts: only the promise about its timing was broken.
+    task = projector.state.tasks["api"]
+    assert str(getattr(task, predicate)) == EXPECTED_VALUE[predicate]
+
+    # Replaying the same log from scratch gives the same outcome.
+    replayed = OrgProjector("test-project").replay([*_due_commitment_log(predicate), late])
+    assert replayed.commitments == projector.state.commitments
+
+
+def test_unrelated_events_leave_a_due_commitment_untouched() -> None:
+    projector = _projector_with_due_commitment()
+    _create_task(projector, "web", minute=3)
+    before = projector.state.commitments["commitment-1"]
+
+    for event in (
+        # Same task and predicate, another value.
+        make_event(
+            "evt-api-review",
+            "task.workflow_changed",
+            {"task_id": "api", "from_status": "doing", "to_status": "review"},
+            minute=4,
+        ),
+        # Another task reaching the committed value.
+        make_event(
+            "evt-web-done",
+            "task.workflow_changed",
+            {"task_id": "web", "from_status": "doing", "to_status": "done"},
+            minute=5,
+        ),
+        # Same task, another predicate.
+        make_event(
+            "evt-api-on-track",
+            "task.health_reported",
+            {"task_id": "api", "health_status": "on_track", "confidence": 0.9},
+            actor_id="alice",
+            source="message",
+            minute=6,
+        ),
+    ):
+        projector.apply(event)
+        assert projector.state.commitments["commitment-1"] == before
 
 
 @pytest.mark.parametrize(
