@@ -56,6 +56,211 @@ git diff --check: PASS
 
 ---
 
+## 2026-10-20：修复控制台 DAG 不渲染、网页审批必然 403（分支 `fix/console-dag-and-approvals`）
+
+即下一条记录"发现但未修"的前两项，两个问题在 main 上本来就存在。本分支基于 `fix/console-xss-escaping`
+（PR #7），保留它的全部转义。
+
+### 修复
+
+- **DAG 面板**：只改控制台，`/dag` 不动。响应本来就给每个节点带了 `layer`，布局不需要新字段。
+  `loadDag` 改读 `summary.total_tasks/completed_count/on_track_count/at_risk_count/delayed_count`；
+  `renderDagSvg` 改用 `nodes[].task_id/layer/health_status/is_critical_path` 和
+  `edges[].from_task/to_task`；状态按小写枚举值比较（`delayed`、`done`）。原代码比较的
+  `'DELAYED'`、`'COMPLETED'` 一个大小写不对，一个在 `WorkflowStatus` 里根本不存在；
+- 节点配色：已完成紫、延期红、风险或被上游延期波及（`is_at_risk`）或 `blocked` 琥珀、正常绿，新增
+  "未上报"灰。新建任务的健康度是 `unknown`，原来默认画成绿色，看起来像"正常"。健康度卡片副标题
+  显示未上报的任务数；
+- 节点抽屉：状态显示中文标签，阻塞原因读 `blockers` 列表，截止时间后附预计完成时间；
+- **审批 403**：新增 `GET /api/v1/projects/{pid}/console-context`，返回控制台的操作人，即项目 PM
+  （role 为 `pm` 的成员按 id 排序取第一个）。选取逻辑从 `CoordinationService._find_pm_targets`
+  抽成 `pm_member_ids`，两处共用，保证操作人就是协调器给改期请求指定的审批人。控制台拿它作
+  `approver_id`，浏览器不再自己决定审批人；项目没有 PM、或请求的审批人不是当前操作人时按钮置灰；
+- 服务端校验不变：审批人必须等于请求指定的审批人，否则仍是 403。控制台原来忽略响应、静默刷新，
+  现在把失败原因显示在审批面板上。
+
+### 新增测试
+
+- `tests/test_console_api_contract.py`（5 个）：`/dag` 真实响应必须带齐控制台读取的字段，字段清单
+  同时反查 `index.html`，防止清单和控制台脱节；控制台比较的状态字符串必须是 `HealthStatus` /
+  `WorkflowStatus` 的合法值；`/console-context` 返回 PM，用它提交审批得到 200；没有 PM 时操作人
+  为空；
+- 其中的 Node 行为测试用真实 API 响应驱动真实控制台脚本：`loadDag`、`loadApprovals`、点击批准，
+  断言没有异常、统计卡片数字、SVG 节点和边的数量、发出的 `approver_id`，再把控制台实际发出的
+  请求体回放到真实接口，得到 200。对修复前的 `index.html` 运行，5 个里 3 个失败；
+- `test_console_escaping.py` 的 DAG 夹具改成真实 `/dag` 的形状。原夹具用的恰好是错误字段名，所以
+  XSS 测试没能暴露这个问题。
+
+### 手动验证
+
+mock 适配器、端口 8011、临时 SQLite：重置沙箱，经 API 让 Alice 报延期。真实浏览器里 DAG 画出 3 个
+节点、2 条边，支付 SDK 红色、下游两个琥珀色、被波及的边为红色；统计卡片为总数 3、延期 1、未上报 2；
+连接状态"已连接"，控制台没有 JS 报错。点击"批准改期"：`POST .../decision` 返回 200，待审批归零。
+在页面里以 `mallory` 调用审批，面板显示 403 原因。
+
+### 未做（如实标注）
+
+- 控制台没有登录，操作人就是项目 PM：能打开控制台的人就能以 PM 身份审批。唯一的边界是
+  `ORGPILOT_API_TOKEN`，但控制台的 `fetch` 不带 `Authorization` 头，一旦设置 token，控制台全部
+  401。这是原有问题，本次未改；
+- PR #7 合入 main 之前，本分支的 PR diff 会包含它的提交。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS
+pytest: 420 passed（新增 5 个）, coverage 91.96%（fail_under=90）
+ruff check: All checks passed
+```
+
+---
+
+## 2026-10-20：飞书卡片 `lark_md` 转义（分支 `fix/feishu-lark-md-escaping`）
+
+修控制台存储型 XSS（PR #7）时顺带审计发现，`feishu/cards.py` 把用户可控的文本原样拼进 `lark_md`：
+任务标题、探针原因、审批人 / 负责人名字、成员 ID，以及同步协调器生成的、内嵌成员名字的简报建议。
+飞书不执行脚本，所以这不是 XSS，而是 Markdown 注入：名字或标题里带 `[批准](http://evil)`、
+`**...**`、`<font>`、`<at id=all></at>` 的成员，可以在发给 PM 或群里的卡片上伪造链接和格式，或者触发 @。
+
+### 改动
+
+- 新增 `escape_lark_md`：依据飞书富文本组件文档的"特殊字符转义说明"，把 `& < > * ~ [ ] \` 和反引号
+  转成 HTML 实体，换行换成空格（防止用户值另起一行伪造卡片行）。`_ - : /` 故意不转：成员 ID、任务 ID
+  和 ISO 时间里都有，而 `lark_md` 文档只把 `*` 列为强调语法；
+- 7 个卡片生成函数里所有用户来源的 `lark_md` 值都经过它；卡片自己的 `**`、反引号、换行不变；
+  `plain_text` 标题和按钮 `value`（回调要用原值）不转义；
+- `build_sync_closed_card` 的 `note` 整体转义：调用方用 operator id 和会话摘要拼出来，现有模板里没有
+  Markdown；
+- 简报建议在卡片层整体转义，而不是在 `sync_coordinator.py` 里转：`ExecutiveBriefing` 也会存库、
+  给控制台用，转义应该发生在具体的渲染端。
+
+### 新增测试
+
+- `tests/test_feishu_cards.py` 新增 30 个（含参数化）：恶意标题和名字在每种卡片里都被转义、按钮
+  `value` 保持原值；普通中文标题、全角标点、带 `_` 的 ID、ISO 时间原样不变；正常卡片的字段内容与
+  改动前逐字一致。
+
+### 未做（如实标注）
+
+- **没有在真实租户上验证渲染效果。** 转义表出自 `markdown`（富文本）组件的文档，`lark_md`（普通文本
+  组件）的文档没有单独写转义规则；反引号里的实体会不会被解码、`&sim;` 显示成什么、`_斜体_` 是否
+  生效，都只能在租户里看。核对步骤写在 `docs/feishu-demo-runbook.md` 第 8 节；
+- 本次没有向飞书发送任何消息，也没有动演示目录、`.env`、`team.yaml`。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS
+pytest: 426 passed, coverage 91.95%（fail_under=90）
+ruff check: All checks passed
+```
+
+---
+
+## 2026-10-20：修复 Web 控制台存储型 XSS（分支 `fix/console-xss-escaping`）
+
+控制台用 `innerHTML` 模板拼 DOM，任务标题、成员名、消息原文都未转义直接插值。这些数据来自飞书用户
+和 `team.yaml`：成员私聊机器人发一句 `<img src=x onerror=...>`，脚本就会在 PM 打开的控制台里执行。
+
+### 修复
+
+- 新增唯一的 `escapeHtml`（转义 `& < > " '`），套在全部 20 处数据插值上：聊天气泡（发送人、消息
+  原文）、简报卡片（标题、三个计数、关键路径行、每条建议）、DAG 节点（标题、负责人、工作流状态）、
+  时间线（类别、标题、时间、描述）、审批面板（任务、审批人、新截止时间）；
+- DAG 标题先截断再转义，避免把 `&amp;` 这类实体截成半个；
+- 审批按钮原来是 `onclick="decideApproval('${id}', ...)"`。属性值里的实体会先被浏览器解码再当 JS
+  执行，`escapeHtml` 挡不住这个上下文，改为 `data-decision` 加 JS 绑定；
+- 页面内部算出的常量（颜色、Tailwind 类、静态 `<circle>`）不转义，列在测试的白名单里。正常数据下
+  渲染结果不变。
+
+### 新增测试
+
+- `tests/test_console_escaping.py`：解析 `index.html` 内联脚本，凡是赋给 `innerHTML`/`outerHTML`、
+  传给 `insertAdjacentHTML`、或本身含 HTML 标签的模板，每个 `${...}` 都必须是 `escapeHtml(...)`
+  或白名单常量；事件处理器和 URL 属性里禁止插值；sink 只能接字面量，不能再拼接。另有 17 个用例
+  检验检查器本身能抓出违规写法。对 main 上的旧文件运行，报出 24 处；
+- 行为测试：用 Node 跑真实渲染函数（桩 DOM），六个面板灌入恶意数据，断言没有 `img`/`script`
+  元素、没有 `on*` 属性，原文作为文本显示。本机没有 Node 时跳过。
+
+### 手动验证
+
+mock 适配器、端口 8010、临时 SQLite：经 API 写入标题含 `<img onerror>` 的任务、经沙箱输入框发送
+含 HTML 的消息。聊天、时间线、审批、简报卡片都按原文显示，`onerror` 计数器始终为 0；DAG 节点在
+真实浏览器的 SVG 里同样按文本显示。
+
+### 发现但未修（如实标注）
+
+- **DAG 面板在 main 上本来就渲染不出来**：控制台读 `health_distribution`、`completed_tasks`、
+  `nodes[].id/health/level`、`edges[].source/target`，`/dag` 实际返回 `summary`、
+  `nodes[].task_id/health_status`、`edges[].from_task/to_task`。`loadDag` 每 5 秒抛一次异常，
+  DAG 和三个统计卡片一直是空的。与本次修复无关，未改；
+- **控制台审批必然 403**：`decideApproval` 写死 `approver_id: 'pm_web_operator'`，不是任何审批人；
+- **飞书卡片 `lark_md` 注入**：`feishu/cards.py` 把任务标题、阻塞原因、成员名、建议原文直接拼进
+  `lark_md`。飞书客户端不执行脚本，所以不是 XSS，但可以伪造链接、加粗、`<at>` 提醒。转义规则需要
+  在真实租户上核对，本次未改。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS
+pytest: 415 passed（新增 19 个，含 Node 行为测试）, coverage 91.94%（fail_under=90）
+ruff check: All checks passed
+git diff --check: PASS
+```
+
+---
+
+## 2026-10-20：接入 GitHub Actions CI（分支 `claude/modest-dubinsky-3c1c14`）
+
+此前仓库没有 `.github/`，PR 上看不到任何检查，测试也只在 Windows 上跑过。新增
+`.github/workflows/ci.yml`：push 到 `main` 和每个 PR 触发，ubuntu-latest + Python 3.12，
+`astral-sh/setup-uv@v10.3.0`，`uv sync --locked`。
+
+### 检查步骤
+
+1. `uv run ruff check .`（不含 `ruff format --check`：main 上有已知格式欠账，如 `intent/router.py`，不在本次范围）；
+2. `uv run pytest --cov=orgpilot --cov-report=term-missing`，覆盖率门槛沿用 pyproject 的 `fail_under = 90`；
+3. `uv run orgpilot replay --all`；
+4. 意图评测离线回放（冻结提示词 `c9850dec6655`）：dev、test、多轮对话三条 `eval-intent --client llm --replay`。
+
+### 实施中的决策
+
+- **评测命令不会因分数变化而失败**：`--client llm --replay` 只在缺录制时返回 1，分数怎么变都返回 0
+  （单条样本评测本来就是 "no pass gate"，对话评测的门槛只作用于 oracle 和 heuristic）。工作流里加了
+  显式核对：从输出中匹配 `Samples` / `Failures` / `Conversations` 三行，与 `BASELINE.md` 的冻结结果
+  （dev 97/102、test 53/58、对话 10/10）逐项比较，不一致即失败；输出格式变了也会失败，不会静默通过。
+  只比较冻结的通过数，不另设阈值；以后改提示词或数据集时，`BASELINE.md` 与工作流里的数字要一起改；
+- **核对本身验证过会失败**：本地把一条录制的意图从 `request_sync` 改成 `chitchat`，dev 变成 96/102，
+  步骤报错退出；挪走一条录制，CLI 报"回放失败"返回 1，经 `pipefail` 让步骤失败；
+- **回放不联网（已验证）**：`_exchange` 在 replay 模式下读完录制就返回，不会走到 HTTP；单元测试
+  `test_replay_mode_reads_recordings_and_fails_on_miss` 用一个一调用就报错的 transport 覆盖了这一点。
+  另外在本地用 socket 守卫（拦截所有非回环地址的 connect 与 DNS 解析）跑完三条命令，记录到的外连
+  尝试为 0；对照组里同一个守卫能拦下一次 httpx 请求。CI 不用任何 secret，`DEEPSEEK_API_KEY=dummy`
+  只为通过配置校验。
+
+### Linux 上的结果
+
+测试第一次在 Linux 上跑，396 个全部通过，没有出现需要修的平台问题，
+所以本分支没有改任何源码或测试。CI 上覆盖率 92.33%，比 Windows 本地的 91.94% 略高；pytest 只剩
+2 条 warning，都是 `lark_oapi` 自身的 DeprecationWarning。
+
+### 验证状态
+
+```text
+本地（Windows，Python 3.14）：ruff 通过；replay 9/9 PASS；pytest 396 passed，coverage 91.94%；
+意图评测离线回放 dev 97/102、test 53/58、对话 10/10，与冻结结果一致
+CI（ubuntu-24.04，CPython 3.12.3）：ruff 通过；pytest 396 passed，coverage 92.33%；replay 9/9 PASS；
+意图评测离线回放 dev 97/102、test 53/58、对话 10/10，与冻结结果一致；job 耗时 1 分 13 秒
+```
+
+### 已知事项
+
+- GitHub 提示 `ubuntu-latest` 自 2026-10-19 起逐步迁到 Ubuntu 26，本次仍跑在 24.04 上；
+  工作流用的是 `ubuntu-latest`，迁移后第一次跑如果出问题，再考虑固定版本；
+- 只固定了 action 的版本（`actions/checkout@v7.0.1`、`astral-sh/setup-uv@v10.3.0`），uv 本身取最新版。
+
+---
+
 ## 2026-10-20：演示前收尾——修复审批改期链路、注入 Clock（分支 `feat/demo-readiness`）
 
 准备在真实飞书租户录演示前，逐段核对"报延期 → 审批卡片 → 批准改期"的代码路径。这条链路在飞书

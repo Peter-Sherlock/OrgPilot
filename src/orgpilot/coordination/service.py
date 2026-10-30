@@ -27,6 +27,19 @@ _HEALTH_SEVERITY = {
 }
 
 
+def pm_member_ids(state: OrgState) -> tuple[str, ...]:
+    """Members with role "pm", sorted by id; the first one is the designated approver.
+
+    Only "pm" is privileged (ADR-0009 §7): the same role that may start a team-wide
+    sync receives reschedule approvals. Other roles are labels.
+    """
+    return tuple(
+        member.member_id
+        for member in sorted(state.members.values(), key=lambda m: m.member_id)
+        if member.role == "pm"
+    )
+
+
 class CoordinationService:
     """Creates explainable open cases and plans candidate actions based on evidence."""
 
@@ -166,13 +179,7 @@ class CoordinationService:
 
     @staticmethod
     def _find_pm_targets(state: OrgState) -> tuple[str, ...]:
-        # Only "pm" is privileged (ADR-0009 §7): the same role that may start a
-        # team-wide sync receives reschedule approvals. Other roles are labels.
-        return tuple(
-            member.member_id
-            for member in sorted(state.members.values(), key=lambda m: m.member_id)
-            if member.role == "pm"
-        )
+        return pm_member_ids(state)
 
     @staticmethod
     def _is_risky(workflow_status: WorkflowStatus, health_status: HealthStatus) -> bool:

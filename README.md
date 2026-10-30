@@ -1,5 +1,7 @@
 # OrgPilot
 
+[![CI](https://github.com/Peter-Sherlock/OrgPilot/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Peter-Sherlock/OrgPilot/actions/workflows/ci.yml)
+
 面向多人研发团队的有状态协调 Agent。它把飞书私聊消息、任务和成员承诺统一成**可回放的组织状态**，
 在有人报告延期时算出影响范围，决定该问谁、是否升级、是否改期；改期这类高影响动作必须经 PM 审批。
 
@@ -93,6 +95,9 @@ uv run orgpilot eval-intent --split dev --client llm --replay
 uv run orgpilot eval-intent --split test --client llm --replay
 uv run orgpilot eval-intent --conversations --client llm --replay
 ```
+
+CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）在每个 PR 上跑这三条回放，并核对结果与冻结数字
+（dev 97/102、test 53/58、对话 10/10）一致；这三条命令本身不论分数高低都返回 0，所以核对写在工作流里。
 
 ### 协调内核
 
