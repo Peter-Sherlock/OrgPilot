@@ -1,5 +1,64 @@
 # 开发记录
 
+## 2026-10-20：修复控制台 DAG 不渲染、网页审批必然 403（分支 `fix/console-dag-and-approvals`）
+
+即下一条记录"发现但未修"的前两项，两个问题在 main 上本来就存在。本分支基于 `fix/console-xss-escaping`
+（PR #7），保留它的全部转义。
+
+### 修复
+
+- **DAG 面板**：只改控制台，`/dag` 不动。响应本来就给每个节点带了 `layer`，布局不需要新字段。
+  `loadDag` 改读 `summary.total_tasks/completed_count/on_track_count/at_risk_count/delayed_count`；
+  `renderDagSvg` 改用 `nodes[].task_id/layer/health_status/is_critical_path` 和
+  `edges[].from_task/to_task`；状态按小写枚举值比较（`delayed`、`done`）。原代码比较的
+  `'DELAYED'`、`'COMPLETED'` 一个大小写不对，一个在 `WorkflowStatus` 里根本不存在；
+- 节点配色：已完成紫、延期红、风险或被上游延期波及（`is_at_risk`）或 `blocked` 琥珀、正常绿，新增
+  "未上报"灰。新建任务的健康度是 `unknown`，原来默认画成绿色，看起来像"正常"。健康度卡片副标题
+  显示未上报的任务数；
+- 节点抽屉：状态显示中文标签，阻塞原因读 `blockers` 列表，截止时间后附预计完成时间；
+- **审批 403**：新增 `GET /api/v1/projects/{pid}/console-context`，返回控制台的操作人，即项目 PM
+  （role 为 `pm` 的成员按 id 排序取第一个）。选取逻辑从 `CoordinationService._find_pm_targets`
+  抽成 `pm_member_ids`，两处共用，保证操作人就是协调器给改期请求指定的审批人。控制台拿它作
+  `approver_id`，浏览器不再自己决定审批人；项目没有 PM、或请求的审批人不是当前操作人时按钮置灰；
+- 服务端校验不变：审批人必须等于请求指定的审批人，否则仍是 403。控制台原来忽略响应、静默刷新，
+  现在把失败原因显示在审批面板上。
+
+### 新增测试
+
+- `tests/test_console_api_contract.py`（5 个）：`/dag` 真实响应必须带齐控制台读取的字段，字段清单
+  同时反查 `index.html`，防止清单和控制台脱节；控制台比较的状态字符串必须是 `HealthStatus` /
+  `WorkflowStatus` 的合法值；`/console-context` 返回 PM，用它提交审批得到 200；没有 PM 时操作人
+  为空；
+- 其中的 Node 行为测试用真实 API 响应驱动真实控制台脚本：`loadDag`、`loadApprovals`、点击批准，
+  断言没有异常、统计卡片数字、SVG 节点和边的数量、发出的 `approver_id`，再把控制台实际发出的
+  请求体回放到真实接口，得到 200。对修复前的 `index.html` 运行，5 个里 3 个失败；
+- `test_console_escaping.py` 的 DAG 夹具改成真实 `/dag` 的形状。原夹具用的恰好是错误字段名，所以
+  XSS 测试没能暴露这个问题。
+
+### 手动验证
+
+mock 适配器、端口 8011、临时 SQLite：重置沙箱，经 API 让 Alice 报延期。真实浏览器里 DAG 画出 3 个
+节点、2 条边，支付 SDK 红色、下游两个琥珀色、被波及的边为红色；统计卡片为总数 3、延期 1、未上报 2；
+连接状态"已连接"，控制台没有 JS 报错。点击"批准改期"：`POST .../decision` 返回 200，待审批归零。
+在页面里以 `mallory` 调用审批，面板显示 403 原因。
+
+### 未做（如实标注）
+
+- 控制台没有登录，操作人就是项目 PM：能打开控制台的人就能以 PM 身份审批。唯一的边界是
+  `ORGPILOT_API_TOKEN`，但控制台的 `fetch` 不带 `Authorization` 头，一旦设置 token，控制台全部
+  401。这是原有问题，本次未改；
+- PR #7 合入 main 之前，本分支的 PR diff 会包含它的提交。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS
+pytest: 420 passed（新增 5 个）, coverage 91.96%（fail_under=90）
+ruff check: All checks passed
+```
+
+---
+
 ## 2026-10-20：飞书卡片 `lark_md` 转义（分支 `fix/feishu-lark-md-escaping`）
 
 修控制台存储型 XSS（PR #7）时顺带审计发现，`feishu/cards.py` 把用户可控的文本原样拼进 `lark_md`：
