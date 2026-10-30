@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        # Explicit bash turns on pipefail, so `cmd | tee` fails when cmd fails.
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Tests (coverage gate fail_under = 90 in pyproject.toml)
+        run: uv run pytest --cov=orgpilot --cov-report=term-missing
+
+      - name: Replay ground-truth scenarios
+        run: uv run orgpilot replay --all
+
+      - name: Intent eval offline replay (frozen prompt c9850dec6655)
+        env:
+          # Replay mode reads evals/intent/recordings/ and never sends a request;
+          # the provider settings only need to pass config validation. No secrets.
+          ORGPILOT_LLM_PROVIDER: deepseek
+          DEEPSEEK_API_KEY: dummy
+        run: |
+          # eval-intent --client llm --replay exits 0 whatever the scores are (only a
+          # missing recording fails it), so compare the printed numbers with the frozen
+          # results in evals/intent/BASELINE.md. Update both together.
+          expect() {  # expect <output file> <frozen result> <line regex>...
+            local file="$1" frozen="$2"; shift 2
+            local pattern
+            for pattern in "$@"; do
+              if ! grep -qE -- "$pattern" "$file"; then
+                echo "::error::intent eval no longer matches the frozen result ($frozen): no line matches '$pattern'"
+                exit 1
+              fi
+            done
+            echo "matches the frozen result: $frozen"
+          }
+          out="$RUNNER_TEMP/intent-eval"
+          mkdir -p "$out"
+
+          uv run orgpilot eval-intent --split dev --client llm --replay | tee "$out/dev.txt"
+          expect "$out/dev.txt" "dev 97/102" '^  - Samples: 102$' '^  - Failures: 5 '
+
+          uv run orgpilot eval-intent --split test --client llm --replay | tee "$out/test.txt"
+          expect "$out/test.txt" "test 53/58" '^  - Samples: 58$' '^  - Failures: 5 '
+
+          uv run orgpilot eval-intent --conversations --client llm --replay | tee "$out/conv.txt"
+          expect "$out/conv.txt" "conversations 10/10" '^  - Conversations: 10/10 passed$'
