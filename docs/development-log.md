@@ -42,6 +42,110 @@ ruff check: All checks passed
 
 ---
 
+## 2026-10-20：修复 Web 控制台存储型 XSS（分支 `fix/console-xss-escaping`）
+
+控制台用 `innerHTML` 模板拼 DOM，任务标题、成员名、消息原文都未转义直接插值。这些数据来自飞书用户
+和 `team.yaml`：成员私聊机器人发一句 `<img src=x onerror=...>`，脚本就会在 PM 打开的控制台里执行。
+
+### 修复
+
+- 新增唯一的 `escapeHtml`（转义 `& < > " '`），套在全部 20 处数据插值上：聊天气泡（发送人、消息
+  原文）、简报卡片（标题、三个计数、关键路径行、每条建议）、DAG 节点（标题、负责人、工作流状态）、
+  时间线（类别、标题、时间、描述）、审批面板（任务、审批人、新截止时间）；
+- DAG 标题先截断再转义，避免把 `&amp;` 这类实体截成半个；
+- 审批按钮原来是 `onclick="decideApproval('${id}', ...)"`。属性值里的实体会先被浏览器解码再当 JS
+  执行，`escapeHtml` 挡不住这个上下文，改为 `data-decision` 加 JS 绑定；
+- 页面内部算出的常量（颜色、Tailwind 类、静态 `<circle>`）不转义，列在测试的白名单里。正常数据下
+  渲染结果不变。
+
+### 新增测试
+
+- `tests/test_console_escaping.py`：解析 `index.html` 内联脚本，凡是赋给 `innerHTML`/`outerHTML`、
+  传给 `insertAdjacentHTML`、或本身含 HTML 标签的模板，每个 `${...}` 都必须是 `escapeHtml(...)`
+  或白名单常量；事件处理器和 URL 属性里禁止插值；sink 只能接字面量，不能再拼接。另有 17 个用例
+  检验检查器本身能抓出违规写法。对 main 上的旧文件运行，报出 24 处；
+- 行为测试：用 Node 跑真实渲染函数（桩 DOM），六个面板灌入恶意数据，断言没有 `img`/`script`
+  元素、没有 `on*` 属性，原文作为文本显示。本机没有 Node 时跳过。
+
+### 手动验证
+
+mock 适配器、端口 8010、临时 SQLite：经 API 写入标题含 `<img onerror>` 的任务、经沙箱输入框发送
+含 HTML 的消息。聊天、时间线、审批、简报卡片都按原文显示，`onerror` 计数器始终为 0；DAG 节点在
+真实浏览器的 SVG 里同样按文本显示。
+
+### 发现但未修（如实标注）
+
+- **DAG 面板在 main 上本来就渲染不出来**：控制台读 `health_distribution`、`completed_tasks`、
+  `nodes[].id/health/level`、`edges[].source/target`，`/dag` 实际返回 `summary`、
+  `nodes[].task_id/health_status`、`edges[].from_task/to_task`。`loadDag` 每 5 秒抛一次异常，
+  DAG 和三个统计卡片一直是空的。与本次修复无关，未改；
+- **控制台审批必然 403**：`decideApproval` 写死 `approver_id: 'pm_web_operator'`，不是任何审批人；
+- **飞书卡片 `lark_md` 注入**：`feishu/cards.py` 把任务标题、阻塞原因、成员名、建议原文直接拼进
+  `lark_md`。飞书客户端不执行脚本，所以不是 XSS，但可以伪造链接、加粗、`<at>` 提醒。转义规则需要
+  在真实租户上核对，本次未改。
+
+### 验证状态
+
+```text
+orgpilot replay --all: 9/9 PASS
+pytest: 415 passed（新增 19 个，含 Node 行为测试）, coverage 91.94%（fail_under=90）
+ruff check: All checks passed
+git diff --check: PASS
+```
+
+---
+
+## 2026-10-20：接入 GitHub Actions CI（分支 `claude/modest-dubinsky-3c1c14`）
+
+此前仓库没有 `.github/`，PR 上看不到任何检查，测试也只在 Windows 上跑过。新增
+`.github/workflows/ci.yml`：push 到 `main` 和每个 PR 触发，ubuntu-latest + Python 3.12，
+`astral-sh/setup-uv@v10.3.0`，`uv sync --locked`。
+
+### 检查步骤
+
+1. `uv run ruff check .`（不含 `ruff format --check`：main 上有已知格式欠账，如 `intent/router.py`，不在本次范围）；
+2. `uv run pytest --cov=orgpilot --cov-report=term-missing`，覆盖率门槛沿用 pyproject 的 `fail_under = 90`；
+3. `uv run orgpilot replay --all`；
+4. 意图评测离线回放（冻结提示词 `c9850dec6655`）：dev、test、多轮对话三条 `eval-intent --client llm --replay`。
+
+### 实施中的决策
+
+- **评测命令不会因分数变化而失败**：`--client llm --replay` 只在缺录制时返回 1，分数怎么变都返回 0
+  （单条样本评测本来就是 "no pass gate"，对话评测的门槛只作用于 oracle 和 heuristic）。工作流里加了
+  显式核对：从输出中匹配 `Samples` / `Failures` / `Conversations` 三行，与 `BASELINE.md` 的冻结结果
+  （dev 97/102、test 53/58、对话 10/10）逐项比较，不一致即失败；输出格式变了也会失败，不会静默通过。
+  只比较冻结的通过数，不另设阈值；以后改提示词或数据集时，`BASELINE.md` 与工作流里的数字要一起改；
+- **核对本身验证过会失败**：本地把一条录制的意图从 `request_sync` 改成 `chitchat`，dev 变成 96/102，
+  步骤报错退出；挪走一条录制，CLI 报"回放失败"返回 1，经 `pipefail` 让步骤失败；
+- **回放不联网（已验证）**：`_exchange` 在 replay 模式下读完录制就返回，不会走到 HTTP；单元测试
+  `test_replay_mode_reads_recordings_and_fails_on_miss` 用一个一调用就报错的 transport 覆盖了这一点。
+  另外在本地用 socket 守卫（拦截所有非回环地址的 connect 与 DNS 解析）跑完三条命令，记录到的外连
+  尝试为 0；对照组里同一个守卫能拦下一次 httpx 请求。CI 不用任何 secret，`DEEPSEEK_API_KEY=dummy`
+  只为通过配置校验。
+
+### Linux 上的结果
+
+测试第一次在 Linux 上跑，396 个全部通过，没有出现需要修的平台问题，
+所以本分支没有改任何源码或测试。CI 上覆盖率 92.33%，比 Windows 本地的 91.94% 略高；pytest 只剩
+2 条 warning，都是 `lark_oapi` 自身的 DeprecationWarning。
+
+### 验证状态
+
+```text
+本地（Windows，Python 3.14）：ruff 通过；replay 9/9 PASS；pytest 396 passed，coverage 91.94%；
+意图评测离线回放 dev 97/102、test 53/58、对话 10/10，与冻结结果一致
+CI（ubuntu-24.04，CPython 3.12.3）：ruff 通过；pytest 396 passed，coverage 92.33%；replay 9/9 PASS；
+意图评测离线回放 dev 97/102、test 53/58、对话 10/10，与冻结结果一致；job 耗时 1 分 13 秒
+```
+
+### 已知事项
+
+- GitHub 提示 `ubuntu-latest` 自 2026-10-19 起逐步迁到 Ubuntu 26，本次仍跑在 24.04 上；
+  工作流用的是 `ubuntu-latest`，迁移后第一次跑如果出问题，再考虑固定版本；
+- 只固定了 action 的版本（`actions/checkout@v7.0.1`、`astral-sh/setup-uv@v10.3.0`），uv 本身取最新版。
+
+---
+
 ## 2026-10-20：演示前收尾——修复审批改期链路、注入 Clock（分支 `feat/demo-readiness`）
 
 准备在真实飞书租户录演示前，逐段核对"报延期 → 审批卡片 → 批准改期"的代码路径。这条链路在飞书
