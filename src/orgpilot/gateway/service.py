@@ -4,7 +4,7 @@ import asyncio
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 from orgpilot.adapter.base import CollaborationAdapter
@@ -20,9 +20,13 @@ from orgpilot.events.models import OrgEvent, parse_event
 from orgpilot.extraction.extractor import ClaimExtractor
 from orgpilot.extraction.models import MessageContext
 from orgpilot.state.projector import OrgProjector
+from orgpilot.storage.conversation_store import SqlConversationStore
 from orgpilot.storage.database import Database
 from orgpilot.storage.event_store import SqlEventStore
 from orgpilot.storage.state_store import SqlStateStore
+
+if TYPE_CHECKING:
+    from orgpilot.intent.dialogue import DialogueStateStore
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +50,7 @@ class GatewayService:
         self.db = db
         self.event_store = SqlEventStore(db)
         self.state_store = SqlStateStore(db)
+        self.conversation_store = SqlConversationStore(db)
         self.extractor = extractor or ClaimExtractor()
         self.adapter_factory = adapter_factory or (
             lambda project_id: MockCollaborationAdapter(project_id=project_id)
@@ -57,6 +62,7 @@ class GatewayService:
         # clock so a pinned clock makes the whole request path deterministic.
         self.clock: Clock = clock or SystemClock()
         self._sync_coordinators: dict[str, ProgressSyncCoordinator] = {}
+        self._conversation_lock = asyncio.Lock()
 
     def to_business_timezone(self, moment: datetime) -> datetime:
         """Re-expresses an instant in the business timezone so relative phrases like
@@ -243,13 +249,32 @@ class GatewayService:
         """Retrieves or creates a ProgressSyncCoordinator bound to the current project agent."""
         if project_id not in self._sync_coordinators:
             agent = await self.get_or_replay_agent(project_id)
-            self._sync_coordinators[project_id] = ProgressSyncCoordinator(
+            coordinator = ProgressSyncCoordinator(
                 agent=agent,
                 adapter=agent.adapter,
                 session_timeout=self.sync_session_timeout,
                 clock=self.clock,
             )
+            # In-flight sync sessions survive a restart (ADR-0013).
+            coordinator.restore_sessions(
+                await self.conversation_store.load_sync_sessions(project_id)
+            )
+            self._sync_coordinators[project_id] = coordinator
         return self._sync_coordinators[project_id]
+
+    async def save_conversation_state(
+        self, project_id: str, dialogue: "DialogueStateStore | None" = None
+    ) -> None:
+        """Checkpoints the project's sync sessions and, when given, the router's
+        dialogue state in one transaction (ADR-0013). Exporting under the lock
+        keeps the last write the newest one when turns interleave."""
+        async with self._conversation_lock:
+            coordinator = self._sync_coordinators.get(project_id)
+            await self.conversation_store.save(
+                project_id,
+                dialogue=dialogue.export_project(project_id) if dialogue is not None else None,
+                sync_sessions=coordinator.sessions() if coordinator is not None else None,
+            )
 
     async def start_progress_sync(
         self,

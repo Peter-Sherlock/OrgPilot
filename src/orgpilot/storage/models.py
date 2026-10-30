@@ -1,4 +1,4 @@
-"""SQLAlchemy 2.0 ORM models for event log, state snapshot, cases, and approvals."""
+"""SQLAlchemy 2.0 ORM models for event log, snapshots, cases, approvals, and conversations."""
 
 from datetime import datetime
 
@@ -77,4 +77,27 @@ class StateSnapshotRecord(Base):
 
     project_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     state_json: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class DialogueSnapshotRecord(Base):
+    """Pending clarifications and sync confirmations of one project (ADR-0013)."""
+
+    __tablename__ = "dialogue_snapshots"
+
+    project_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    state_json: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class SyncSessionRecord(Base):
+    """One progress sync session (ADR-0013); ``id`` keeps the start order."""
+
+    __tablename__ = "sync_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    project_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    data_json: Mapped[str] = mapped_column(Text, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

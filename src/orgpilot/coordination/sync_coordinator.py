@@ -5,6 +5,10 @@ member replies flow through the intent pipeline (MessageRouter → guards →
 handlers), which persists claims and reports probe outcomes back through
 :meth:`ProgressSyncCoordinator.notify_probe_finished`. The coordinator owns
 session bookkeeping, timeout, convergence, and briefing synthesis only.
+
+Sessions live in memory while the process runs; the gateway persists them at
+the end of every turn and restores them when it first builds the coordinator
+for a project (ADR-0013), so a restart mid-sync still ends in a briefing.
 """
 
 import logging
@@ -56,6 +60,20 @@ class ProgressSyncCoordinator:
 
     def get_session(self, session_id: str) -> SyncSession | None:
         return self._sessions.get(session_id)
+
+    def sessions(self) -> list[SyncSession]:
+        """All sessions in start order, for persistence (ADR-0013)."""
+        return list(self._sessions.values())
+
+    def restore_sessions(self, sessions: list[SyncSession]) -> None:
+        """Loads persisted sessions (in start order) after a restart (ADR-0013).
+
+        A session already held in memory is newer and is kept. Timeouts need no
+        special handling: they are decided from the persisted ``updated_at`` and
+        the injected clock on the next :meth:`get_active_session` call.
+        """
+        restored = {s.session_id: s for s in sessions if s.session_id not in self._sessions}
+        self._sessions = {**restored, **self._sessions}
 
     def get_active_session(
         self, project_id: str, now: datetime | None = None

@@ -77,6 +77,15 @@ class ProjectStateResponse(StrictSchema):
     pending_approvals: list[dict[str, Any]]
 
 
+class ConsoleContextResponse(StrictSchema):
+    project_id: str
+    operator_id: str | None = Field(
+        default=None,
+        description="Member the web console decides approvals as: the project PM, or None",
+    )
+    operator_name: str | None = None
+
+
 class DagNode(StrictSchema):
     task_id: str
     title: str
