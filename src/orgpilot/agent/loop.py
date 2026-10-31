@@ -60,6 +60,7 @@ class CoordinationAgent:
         """Executes a single bounded turn in the agent loop."""
         self._turn_count += 1
         ingested_ids: list[str] = []
+        statuses_at_start = {c.case_id: c.status for c in self.case_ledger.get_all_cases()}
 
         for event in events:
             if self.event_log.append(event) is not AppendResult.DUPLICATE:
@@ -222,7 +223,9 @@ class CoordinationAgent:
             self.event_log.append(gen_evt)
             self.projector.apply(gen_evt)
 
-        termination_reason = self._determine_termination_reason()
+        termination_reason = self._determine_termination_reason(
+            self._escalated_since(statuses_at_start)
+        )
 
         trace = AgentTurnTrace(
             round_number=self._turn_count,
@@ -263,20 +266,36 @@ class CoordinationAgent:
             candidate_actions=(),
         )
 
-    def _determine_termination_reason(self) -> AgentTerminationReason:
-        all_cases = self.case_ledger.get_all_cases()
-        if not all_cases:
+    def _escalated_since(
+        self, statuses_at_start: dict[str, CoordinationCaseStatus]
+    ) -> frozenset[str]:
+        """Ids of cases that are escalated now but were not when the snapshot was taken.
+
+        Comparing snapshots covers every way into ESCALATED: the response timeout in
+        CaseLedger.reconcile(), a rejected approval and a failed approved update.
+        """
+        return frozenset(
+            c.case_id
+            for c in self.case_ledger.get_all_cases()
+            if c.status is CoordinationCaseStatus.ESCALATED
+            and statuses_at_start.get(c.case_id) is not CoordinationCaseStatus.ESCALATED
+        )
+
+    def _determine_termination_reason(
+        self, escalated_this_turn: frozenset[str] = frozenset()
+    ) -> AgentTerminationReason:
+        """Why this turn stopped. Escalation counts only if it happened in this turn.
+
+        A case escalated in an earlier turn is history: the agent no longer acts on
+        it. Reporting it again would make every later turn look escalated.
+        """
+        if not self.case_ledger.get_all_cases():
             return AgentTerminationReason.NO_ACTION
 
         active_cases = self.case_ledger.get_active_cases()
         if not active_cases:
-            if any(c.status is CoordinationCaseStatus.ESCALATED for c in all_cases):
+            if escalated_this_turn:
                 return AgentTerminationReason.ESCALATED
-            if all(
-                c.status in {CoordinationCaseStatus.RESOLVED, CoordinationCaseStatus.CANCELLED}
-                for c in all_cases
-            ):
-                return AgentTerminationReason.ALL_RESOLVED
             return AgentTerminationReason.ALL_RESOLVED
 
         for c in active_cases:
