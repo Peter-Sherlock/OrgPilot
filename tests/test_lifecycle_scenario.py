@@ -72,17 +72,14 @@ KNOWN_DEFECTS: dict[str, tuple[str, ...]] = {
     "D2 follow-up targets the reporter instead of the owner": (f"round_7:waiting_for:{C3}",),
     # Nothing is driven by time. The only time comparison in reconcile() is the
     # response timeout of a case that already waits (coordination/ledger.py:
-    # 176-188); _is_risky() (:221-226) ignores task.deadline and nothing reads
-    # commitment.due_at. Round 9: T3 is 16 hours past its deadline with an
-    # expired commitment, nobody speaks, and the agent reports all_resolved.
+    # 176-188); _is_risky() (:221-226) ignores task.deadline, and commitment.due_at
+    # is only compared with the time of an event that settles the commitment
+    # (state/projector.py, since D4), never with the passing clock. Round 9: T3 is
+    # 16 hours past its deadline with an expired commitment, nobody speaks, and
+    # the agent reports all_resolved.
     # The ground truth keeps T3's task-health case `resolved`, so an overdue
     # follow-up needs a case of its own (or must wait for D1b).
     "D3 missed deadlines trigger nothing": ("round_9:termination",),
-    # state/projector.py:219-230. _fulfill_matching_commitments() marks a
-    # commitment FULFILLED whenever the predicate becomes true, without comparing
-    # the event time with due_at. CommitmentStatus.BROKEN (domain/enums.py:34) is
-    # never written anywhere in src/.
-    "D4 late fulfilment is recorded as fulfilled": ("commitment:c_bob_t3_done",),
     # state/projector.py:103-119: _change_workflow() leaves health claims alone,
     # so a task that reaches done keeps the at_risk/delayed health resolved from
     # its claims (:167-169), and dependencies/analyzer.py:47-52 keeps propagating

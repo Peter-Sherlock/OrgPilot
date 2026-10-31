@@ -1,5 +1,58 @@
 # 开发记录
 
+## 2026-10-30：M1-2 修复 D4——迟到的兑现记为违约（分支 `fix/d4-late-fulfilment`）
+
+生命周期场景里，Bob 承诺 10/27 18:00 前做完 T3，10/28 10:20 才做完，承诺却记为 `fulfilled`。
+投影器结算承诺时从不比较 `due_at`，`CommitmentStatus.BROKEN` 在 `src/` 里从来没有被写入过。
+
+### 改动
+
+- `state/projector.py`：`_fulfill_matching_commitments` 改名 `_settle_matching_commitments`（它现在也会写
+  `broken`），多收一个事件的 `occurred_at`。匹配事件晚于 `due_at` 写 `broken`；不晚于（含恰好等于）
+  或承诺没有 `due_at` 写 `fulfilled`。`workflow_status`、`health_status` 两个入口都传事件时间；
+  结算时 `last_update_at` 记为事件时间，以前结算不更新它；
+- 用业务时间 `occurred_at`，不用墙钟，也不用 `received_at`：投影仍是事件日志的纯函数，同一份日志
+  回放结果相同；消息晚到不算人晚交；
+- **没有加新状态。** 「迟到但完成」就是 `broken`：ground truth 期望的正是 `broken`；`broken` 说的是承诺，
+  做没做完看任务自己的状态（T3 照常是 done）。语义写进 `docs/event-semantics.md` 新增的「承诺的结局」；
+- `KNOWN_DEFECTS` 删掉 D4 条目；D3 注释里「没有地方读 `due_at`」改成「只和结算事件的时间比较，
+  不和流逝的时间比较」。
+
+### 结果
+
+- 生命周期（起点 main cf9ef14）：**38/59 → 39/59**。逐项对比改动前后的 59 项检查：只有
+  `commitment:c_bob_t3_done` 由失败转为通过，检查集合不变，其余 58 项结果不变；
+- 与第九节 9.4 内存补丁实验的结论一致（D4 转绿 1 项，无回归）。
+
+### 新增测试
+
+- `tests/test_projector.py` 新增 7 个（含参数化）：早于或恰好等于 `due_at` → `fulfilled`，晚于 → `broken`，
+  两个入口各测一遍；迟到时任务仍记为完成，同一份日志重放出相同的承诺状态；同任务别的取值、别的任务
+  达到同一取值、同任务别的谓词，三种无关事件都不改动承诺。测试里的 `due_at` 早于今天，误用墙钟的话
+  按时用例也会变成 `broken`；
+- 新测试放到未修复的投影器上跑，两个迟到用例都报 `fulfilled` 而不是 `broken`，测试抓得住这个缺陷。
+
+### 未做（如实标注）
+
+- **到期却一直没有匹配事件的承诺仍停在 `active`。** 发现它需要时间推进，属于 M1-8（D3）和
+  M1-10（R3 承诺跟进），设计在待写的 ADR-0014；生命周期第 9 轮（T3 过期、没人说话）仍登记在 D3 名下；
+- `at_risk` 仍没有写入方，结算只看 `active` 承诺。M1-10 如果开始写 `at_risk`，要让它也能被结算；
+- 没有动 `agent/loop.py`、`coordination/ledger.py`（并行的 D5 PR 那条线）。两个 PR 删的是 `KNOWN_DEFECTS`
+  里相邻的条目，冲突时保留两边的删除；
+- `docs/full-lifecycle-scenario-design.md` 第三节、第九节是带日期的复核快照，没有改。
+
+### 验证状态
+
+```text
+lifecycle: 39/59（main cf9ef14: 38/59）
+orgpilot replay --all: 9/9 PASS
+pytest: 481 passed, coverage 92.47%（fail_under=90；main: 474 passed, 92.41%）
+ruff check: All checks passed
+eval-intent --replay: dev 97/102, test 53/58, conversations 10/10（与冻结结果一致）
+```
+
+---
+
 ## 2026-10-30：修复 D5「升级状态一直不消失」（M1-1，分支 `fix/d5-escalation-termination`）
 
 只要项目里有过一个升级的 Case，之后每一轮的终止原因都报 `escalated`。生命周期场景里 David 在第 14 轮失联升级，
