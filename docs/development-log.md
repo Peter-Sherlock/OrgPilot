@@ -1,5 +1,64 @@
 # 开发记录
 
+## 2026-10-31：M1-4 修复 D1a——追问拿到 ETA 后先和截止时间比较，再决定结案（分支 `fix/d1a-recovery-estimate-deadline`）
+
+生命周期第 4 轮：Alice 回复追问，给出 T1 的 ETA 10/22 18:00，比 deadline（10/20 18:00）晚两天。`reconcile()` 只要看到
+「等待回复的事项拿到了 ETA」，就以 `recovery estimate received` 结案，没有和 deadline 比较；改期提案没有发出，第 5 轮 PM
+的批准落空。同样的晚 ETA 如果在第一次上报里就带着（m1_02），会正常走改期审批；断的是「先模糊、追问出 ETA」这条更常见的路。
+
+### 改动
+
+- `coordination/ledger.py`：等待回复的事项拿到 ETA 后，先把 ETA 和任务 deadline 比较：
+  - 晚于 deadline：事项退回 `open`，清掉等待对象、等待期限和旧的候选动作（那条追问），不写终止原因。同一轮里规划器
+    （`plan_actions_for_case`）沿「首次上报就带晚 ETA」的老路径提出改期，事项转为 `waiting_for_approval`，等 PM 审批；
+  - 不晚于 deadline（含恰好等于），或任务没有 deadline：和以前一样以 `recovery estimate received` 结案；
+- **比较哪一条 ETA**：和规划器读同一条主声明（严重度最高，同级取最新）。新方法 `_estimate_misses_deadline` 用的是
+  ledger 里早就定义、一直没用上的 `_HEALTH_SEVERITY`。这样 ledger 留下的事项一定会得到改期提案，不会停在 `open`
+  却什么也不做（那样这一轮的终止原因会是 `no_action`）；
+- **边界**：恰好等于 deadline 算按时，和规划器的严格 `>` 一致，也和 D4「恰好在 `due_at` 达成算按时」一致；
+- 只比较状态里的两个时间（声明的 `expected_completion` 和任务的 `deadline`），不读时钟；`updated_at` 仍记本轮注入的
+  `current_time`；
+- 没有改 `coordination/service.py`（并行的 D2 PR 那条线）；
+- `KNOWN_DEFECTS` 删掉 D1a 条目（5 项），只有它用到的常量 `C1` 一并删掉。共享项 `case_terminal_reason:case:task-health:t1_gateway`
+  登记在 D1a 名下，按约定由先合入的 PR 删除：第 5 轮批准后，T1 的事项以 `reschedule approved and task updated` 结案。
+
+### 结果
+
+- 生命周期（起点 main 76039b1）：**47/59 → 52/59**。逐项对比改动前后的 59 项检查：恰好 D1a 登记的 5 项由失败转为通过
+  （第 4 轮的终止原因、T1 事项状态和等待对象，第 5 轮 PM 批准生效，T1 的终止原因），检查集合不变，其余 54 项结果不变；
+- 第 4 轮现在是 `waiting_approval`，等 `pm_carol`；第 5 轮批准后 `all_resolved`。与第九节 9.4 内存补丁实验的结论一致
+  （D1a 转绿 5 项，无回归）；
+- 第 17、18 轮（T1 回退后再次改期）仍失败，仍登记在 D1b 名下：那是终态事项占住槽位，不是这一处代码。
+
+### 新增测试（`tests/test_case_ledger.py`，6 个，含参数化）
+
+- ETA 早于 deadline → 结案（`recovery estimate received`），不再活跃；
+- ETA 晚于 deadline → 退回 `open`，清掉等待信息，不写终止原因；把事项交给规划器，得到一条发给 PM 的改期提案，
+  `new_deadline` 就是这条 ETA；
+- ETA 恰好等于 deadline → 结案，规划器也不提改期（边界写在测试的 docstring 里）；
+- 多条活跃声明时按主声明判定，参数化三种：更新的按时 ETA 盖过旧的晚 ETA → 结案；更严重的晚 ETA 盖过更新的按时 ETA
+  → 留下；主声明没有 ETA → 结案。每种都断言「ledger 留下事项」和「规划器提出改期」同真同假；
+- 新测试放到未修复的 ledger 上跑：两个晚 ETA 的用例失败；其余四个（早于、等于、两种结案）本来就通过，锁住的是原有行为。
+
+### 未做（如实标注）
+
+- **非主声明上的晚 ETA 被忽略。** 例如 Frank 报的晚 ETA 被 Alice 更新的按时 ETA 盖过，ledger 和规划器都只看主声明，
+  都不提改期。要改，得先改规划器的规则（`service.py`，线 C）；本 PR 只保证两边一致；
+- D1b（终态事项重开、审批 ID 冲突）是本线的下一项 M1-6，这里没碰；
+- `docs/full-lifecycle-scenario-design.md` 第九节是带日期的复核快照，没有改。
+
+### 验证状态
+
+```text
+lifecycle: 52/59（main 76039b1: 47/59）
+orgpilot replay --all: 9/9 PASS（m1_01、m1_04 照常 all_resolved）
+pytest: 491 passed, coverage 92.52%（fail_under=90；main: 485 passed, 92.50%）
+ruff check: All checks passed（改动的三个 Python 文件在 main 上本来格式干净，已跑 ruff format）
+eval-intent --replay: dev 97/102, test 53/58, conversations 10/10（与冻结结果一致）
+```
+
+---
+
 ## 2026-10-30：M1-2 修复 D4——迟到的兑现记为违约（分支 `fix/d4-late-fulfilment`）
 
 生命周期场景里，Bob 承诺 10/27 18:00 前做完 T3，10/28 10:20 才做完，承诺却记为 `fulfilled`。
