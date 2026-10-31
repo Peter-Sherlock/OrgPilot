@@ -16,6 +16,7 @@ from orgpilot.domain.models import (
     DependencyImpact,
     OrgState,
     TaskHealthClaim,
+    TaskState,
 )
 
 _HEALTH_SEVERITY = {
@@ -164,12 +165,17 @@ class CaseLedger:
             if has_estimate and "expected_completion" in case.missing_information:
                 case.missing_information = ()
                 if case.status is CoordinationCaseStatus.WAITING_FOR_RESPONSE:
-                    case.status = CoordinationCaseStatus.RESOLVED
-                    case.terminal_reason = "recovery estimate received"
                     case.waiting_for = None
                     case.waiting_until = None
                     case.candidate_actions = ()
                     case.updated_at = current_time
+                    if self._estimate_misses_deadline(task, active_claims):
+                        # The answer is in, but it misses the deadline: back to OPEN
+                        # so the planner proposes a reschedule for approval.
+                        case.status = CoordinationCaseStatus.OPEN
+                    else:
+                        case.status = CoordinationCaseStatus.RESOLVED
+                        case.terminal_reason = "recovery estimate received"
                     continue
 
             # Check for timeout when waiting for response or approval
@@ -217,6 +223,30 @@ class CaseLedger:
                 self._cases[case_id] = new_case
 
         return self.get_all_cases()
+
+    @staticmethod
+    def _estimate_misses_deadline(task: TaskState, active_claims: list[TaskHealthClaim]) -> bool:
+        """Whether the estimate the planner acts on is later than the task's deadline.
+
+        The estimate is taken from the same primary claim that
+        CoordinationService.plan_actions_for_case uses (most severe, then latest),
+        so a case kept open here always gets a reschedule proposal instead of
+        sitting open with nothing to do. An estimate equal to the deadline meets
+        it. Both times come from projected state; the clock is never read.
+        """
+        if task.deadline is None:
+            return False
+        primary = max(
+            active_claims,
+            key=lambda claim: (
+                _HEALTH_SEVERITY[claim.health_status],
+                claim.occurred_at,
+                claim.claim_id,
+            ),
+        )
+        return (
+            primary.expected_completion is not None and primary.expected_completion > task.deadline
+        )
 
     @staticmethod
     def _is_risky(workflow_status: WorkflowStatus, health_status: HealthStatus) -> bool:
