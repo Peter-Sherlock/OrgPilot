@@ -70,12 +70,11 @@ class CoordinationService:
                         claim.claim_id,
                     ),
                 )
-                target = primary_claim.stated_by or task.owner_id
                 actions = (
                     CoordinationAction(
                         action_id=f"action:{task.task_id}:ask_recovery_estimate",
                         action_type=ActionType.ASK_RECOVERY_ESTIMATE,
-                        targets=(target,),
+                        targets=(_recovery_estimate_target(task, primary_claim),),
                         reason_refs=(primary_claim.source_event_id,),
                         expected_effect="obtain a source-backed recovery estimate",
                     ),
@@ -145,12 +144,11 @@ class CoordinationService:
         )
 
         if case.missing_information and "expected_completion" in case.missing_information:
-            target = primary_claim.stated_by or task.owner_id
             return (
                 CoordinationAction(
                     action_id=f"action:{task.task_id}:ask_recovery_estimate",
                     action_type=ActionType.ASK_RECOVERY_ESTIMATE,
-                    targets=(target,),
+                    targets=(_recovery_estimate_target(task, primary_claim),),
                     reason_refs=(primary_claim.source_event_id,),
                     expected_effect="obtain a source-backed recovery estimate",
                     payload={"task_id": task.task_id, "question": "When can this task recover?"},
@@ -200,6 +198,26 @@ class CoordinationService:
             ),
             key=lambda claim: (claim.occurred_at, claim.claim_id),
         )
+
+
+def _recovery_estimate_target(task: TaskState, primary_claim: TaskHealthClaim) -> str:
+    """Who is asked for a recovery estimate: the task owner.
+
+    The owner does the work, so only the owner can say when it will recover. A
+    reporter who is not the owner (QA flagging a backend task, say) can tell that
+    the task slipped, not when it will be back.
+
+    A task with no owner (empty ``owner_id``) falls back to the reporter, the old
+    rule, rather than guessing who else might know. The projector rejects owners
+    who are not registered members, so only state built outside the event log
+    reaches this fallback. With neither an owner nor a reporter the target stays
+    empty, as before.
+
+    Both ``build_cases`` and ``plan_actions_for_case`` call this, so the case's
+    planned question and the question actually sent cannot disagree; the agent
+    loop records ``targets[0]`` as the case's ``waiting_for``.
+    """
+    return task.owner_id or primary_claim.stated_by or ""
 
 
 def _reschedule_payload(
