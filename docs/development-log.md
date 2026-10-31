@@ -1,5 +1,50 @@
 # 开发记录
 
+## 2026-10-30：修复 D5「升级状态一直不消失」（M1-1，分支 `fix/d5-escalation-termination`）
+
+只要项目里有过一个升级的 Case，之后每一轮的终止原因都报 `escalated`。生命周期场景里 David 在第 14 轮失联升级，
+第 15–22 轮全部报 `escalated`，「终止原因」在任何长场景里都失去了意义，后面每一步修复的度量都依赖它，所以排第一个修。
+
+### 改动
+
+- `agent/loop.py`：每轮开始时记下所有 Case 的状态，轮末对比，只有**本轮**变成 `ESCALATED` 的 Case 才让这一轮报
+  `escalated`。进入升级有三条路：`reconcile()` 里的回复超时、PM 驳回、PR #5 加的批准后写回失败。三条都走这一个比较，
+  不需要在每处分别打标记，以后新增的入口也自动覆盖；
+- 其他终止原因的语义不变：还有等待中的 Case 时照旧报 `waiting_response` / `waiting_approval`（和原来一样优先于升级）；
+  没有任何 Case 报 `no_action`；没有活跃 Case、本轮也没升级，报 `all_resolved`。原来「全部 resolved/cancelled」和
+  兜底两个分支都返回 `all_resolved`，合并成一个，行为不变；
+- `_determine_termination_reason()` 新参数带默认值，`scenarios/runner.py` 在零轮场景里的无参调用不受影响。
+
+### 取舍：没有改 `coordination/ledger.py`
+
+第九节 9.4 的最小修复实验改的是 ledger（任务完成时把它的 escalated Case 关掉），同样能让这 8 项转绿。没有采用：
+
+- 它覆盖不到 PR #5 那条路：写回失败后任务并没有完成，Case 一直是 escalated，终止原因照样粘住；
+- 终态 Case 要不要随任务变化而关闭或重开，是 Case 生命周期的设计问题，归 D1b（M1-6）。现在改 ledger 等于替它先做了决定。
+
+所以升级过的 Case 在台账里仍然是 `escalated`（升级本身是发生过的事实），只是不再影响之后各轮的终止原因。
+
+### 结果
+
+- 生命周期 **38/59 → 46/59**，恰好是 D5 登记的 8 项（第 15、16、18–22 轮的终止原因和 `final_termination_reason`），
+  其余 51 项的通过与否逐项不变；`KNOWN_DEFECTS` 删除 D5 条目；
+- 第 14 轮仍报 `escalated`。第 17 轮的实际值从 `escalated` 变成 `all_resolved`，仍然失败（期望 `waiting_approval`），
+  原因是 D1b 的槽位问题，登记不变。
+
+### 新增测试（`tests/test_agent_loop.py`）
+
+- `test_escalation_is_reported_only_in_the_turn_it_happens`：按三条入口参数化（回复超时、PM 驳回、批准后写回失败）。
+  升级那一轮报 `escalated`，下一个安静轮报 `all_resolved`，Case 本身仍是 `escalated`。三条在旧代码上都失败；
+- `test_a_new_escalation_is_reported_after_an_earlier_one`：防止矫枉过正。已经有一个旧的升级 Case 时，
+  另一个任务新发生的升级仍然要报 `escalated`；
+- PR #5 写回失败测试的准备步骤抽成共用函数，断言不变。
+
+### 验证状态
+
+- `uv run orgpilot replay --all`：9/9，m1_03、m1_05 仍在升级那一轮报 `escalated`；
+- `uv run pytest --cov=orgpilot`：478 个测试全过（main 上 474 个，新增 4 个），覆盖率 92.43%；
+- `uv run ruff check .` 通过；改动的三个代码文件在 main 上本来就格式干净，已跑 `ruff format`。
+
 ## 2026-10-29：M1 度量基线——移植六周全生命周期场景与缺陷棘轮（分支 `feat/lifecycle-baseline`）
 
 M1 的目标是让现有能力扛住一个完整项目周期。先把尺子立起来：从 `wip/clock-and-lifecycle`（已关闭的 PR #4）

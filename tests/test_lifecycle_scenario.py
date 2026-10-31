@@ -83,23 +83,6 @@ KNOWN_DEFECTS: dict[str, tuple[str, ...]] = {
     # the event time with due_at. CommitmentStatus.BROKEN (domain/enums.py:34) is
     # never written anywhere in src/.
     "D4 late fulfilment is recorded as fulfilled": ("commitment:c_bob_t3_done",),
-    # agent/loop.py:271-274: with no active case, any ESCALATED case in the
-    # project's history makes the turn report `escalated`. coordination/
-    # ledger.py:121-123 skips terminal cases, so an escalated case never notices
-    # its task completing. David's escalation in round 14 colours rounds 15-22.
-    # Since PR #5 a failed approved write-back also escalates (agent/loop.py:
-    # 249-257), a second way into the same sticky state; the mock adapter never
-    # fails, so this scenario does not exercise it.
-    "D5 escalation sticks for the rest of the project": (
-        "round_15:termination",
-        "round_16:termination",
-        "round_18:termination",
-        "round_19:termination",
-        "round_20:termination",
-        "round_21:termination",
-        "round_22:termination",
-        "final_termination_reason",
-    ),
     # state/projector.py:103-119: _change_workflow() leaves health claims alone,
     # so a task that reaches done keeps the at_risk/delayed health resolved from
     # its claims (:167-169), and dependencies/analyzer.py:47-52 keeps propagating
