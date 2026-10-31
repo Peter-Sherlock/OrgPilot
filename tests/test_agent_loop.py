@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from orgpilot.adapter.mock import MockCollaborationAdapter
 from orgpilot.agent.loop import CoordinationAgent
 from orgpilot.domain.enums import (
     ActionType,
@@ -97,6 +98,48 @@ def test_agent_run_turn_private_inquiry() -> None:
     assert trace.termination_reason is AgentTerminationReason.WAITING_RESPONSE
     assert len(trace.executed_command_ids) == 1
 
+    case = agent.case_ledger.get_case("case:task-health:t1")
+    assert case is not None
+    assert case.status is CoordinationCaseStatus.WAITING_FOR_RESPONSE
+    assert case.waiting_for == "alice"
+
+
+def test_agent_asks_owner_when_someone_else_reports_the_risk() -> None:
+    """D2: the member messaged and the case's waiting_for are both the owner, not QA."""
+    adapter = MockCollaborationAdapter(project_id="test-proj")
+    agent = CoordinationAgent(project_id="test-proj", adapter=adapter)
+    qa = MemberRegisteredEvent(
+        project_id="test-proj",
+        event_id="evt-mem-qa",
+        event_type="member.registered",
+        source=EventSource.HUMAN,
+        source_ref="setup",
+        occurred_at=NOW,
+        received_at=NOW,
+        payload=MemberRegisteredPayload(member_id="frank", display_name="Frank", role="qa"),
+    )
+    qa_report = TaskHealthReportedEvent(
+        project_id="test-proj",
+        event_id="evt-qa-risk",
+        event_type="task.health_reported",
+        source=EventSource.MESSAGE,
+        source_ref="ref",
+        actor_id="frank",
+        occurred_at=NOW,
+        received_at=NOW,
+        payload=TaskHealthReportedPayload(
+            task_id="t1",
+            health_status=HealthStatus.AT_RISK,
+            blocker="no test environment yet",
+            confidence=0.8,
+        ),
+    )
+
+    agent.run_turn([*_init_events(), qa, qa_report], NOW)
+
+    [(command, _)] = adapter.audit_log
+    assert command.action_type is ActionType.ASK_RECOVERY_ESTIMATE
+    assert command.targets == ("alice",)
     case = agent.case_ledger.get_case("case:task-health:t1")
     assert case is not None
     assert case.status is CoordinationCaseStatus.WAITING_FOR_RESPONSE
