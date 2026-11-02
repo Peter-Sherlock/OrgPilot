@@ -57,16 +57,6 @@ KNOWN_DEFECTS: dict[str, tuple[str, ...]] = {
     # The ground truth keeps T3's task-health case `resolved`, so an overdue
     # follow-up needs a case of its own (or must wait for D1b).
     "D3 missed deadlines trigger nothing": ("round_9:termination",),
-    # state/projector.py:103-119: _change_workflow() leaves health claims alone,
-    # so a task that reaches done keeps the at_risk/delayed health resolved from
-    # its claims (:167-169), and dependencies/analyzer.py:47-52 keeps propagating
-    # impacts from it. The dashboard paints it delayed (gateway/routes/dag.py:146
-    # derives is_delayed from health alone). A fix must retire risk claims only:
-    # the ground truth expects t2_channel to stay on_track after it is done.
-    "D6 completed tasks keep their risk": (
-        "invariant:done_tasks_report_no_risk",
-        "invariant:no_impacts_from_done_tasks",
-    ),
 }
 
 

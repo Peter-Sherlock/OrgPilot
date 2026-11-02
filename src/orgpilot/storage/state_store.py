@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 
 from orgpilot.domain.models import ApprovalRequest, CoordinationCase, OrgState
+from orgpilot.state.projector import PROJECTION_VERSION
 from orgpilot.storage.database import Database
 from orgpilot.storage.models import ApprovalRecord, CaseRecord, StateSnapshotRecord
 
@@ -19,7 +20,10 @@ class SqlStateStore:
     async def save_state(self, state: OrgState) -> None:
         """Persists a complete OrgState snapshot."""
         now = datetime.now(UTC)
-        state_dict = state.model_dump(mode="json")
+        state_dict = {
+            "projection_version": PROJECTION_VERSION,
+            "state": state.model_dump(mode="json"),
+        }
         async with self.db.session() as session:
             stmt = select(StateSnapshotRecord).where(
                 StateSnapshotRecord.project_id == state.project_id
@@ -38,14 +42,21 @@ class SqlStateStore:
                 rec.updated_at = now
 
     async def load_state(self, project_id: str) -> OrgState | None:
-        """Loads an OrgState snapshot if one exists."""
+        """Loads a compatible projection cache; obsolete caches require event replay."""
         async with self.db.session() as session:
             stmt = select(StateSnapshotRecord).where(StateSnapshotRecord.project_id == project_id)
             res = await session.execute(stmt)
             rec = res.scalar_one_or_none()
             if rec is None:
                 return None
-            return OrgState.model_validate_json(rec.state_json)
+            payload = json.loads(rec.state_json)
+            if (
+                not isinstance(payload, dict)
+                or payload.get("projection_version") != PROJECTION_VERSION
+                or not isinstance(payload.get("state"), dict)
+            ):
+                return None
+            return OrgState.model_validate(payload["state"])
 
     async def save_cases(self, project_id: str, cases: list[CoordinationCase]) -> None:
         """Saves a collection of CoordinationCase objects."""

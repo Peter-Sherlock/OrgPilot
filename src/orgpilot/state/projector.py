@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from datetime import datetime
 from typing import Any
 
-from orgpilot.domain.enums import ClaimStatus, CommitmentStatus, HealthStatus
+from orgpilot.domain.enums import ClaimStatus, CommitmentStatus, HealthStatus, WorkflowStatus
 from orgpilot.domain.errors import DomainInvariantError
 from orgpilot.domain.models import (
     Commitment,
@@ -30,6 +30,9 @@ _HEALTH_SEVERITY = {
     HealthStatus.AT_RISK: 2,
     HealthStatus.DELAYED: 3,
 }
+
+# Invalidate derived caches when event projection semantics change.
+PROJECTION_VERSION = 2
 
 
 class OrgProjector:
@@ -110,8 +113,19 @@ class OrgProjector:
                 f"found {task.workflow_status}"
             )
 
+        health_updates: dict[str, Any] = {}
+        if payload.to_status is WorkflowStatus.DONE:
+            self._retire_risk_claims(payload.task_id, event.event_id)
+            statuses = {claim.health_status for claim in self._active_claims(payload.task_id)}
+            health_updates = {
+                "health_status": max(
+                    statuses, key=_HEALTH_SEVERITY.get, default=HealthStatus.UNKNOWN
+                ),
+                "health_conflict": len(statuses) > 1,
+            }
         self.state.tasks[payload.task_id] = task.model_copy(
             update={
+                **health_updates,
                 "workflow_status": payload.to_status,
                 "source_event_ids": (*task.source_event_ids, event.event_id),
                 "last_update_at": event.occurred_at,
@@ -167,9 +181,11 @@ class OrgProjector:
 
         self.state.health_claims.update(superseded_claims)
         self.state.health_claims[claim_id] = claim
+        if task.workflow_status is WorkflowStatus.DONE:
+            self._retire_risk_claims(task.task_id, event.event_id)
         active_claims = self._active_claims(event.payload.task_id)
         statuses = {item.health_status for item in active_claims}
-        resolved_health = max(statuses, key=_HEALTH_SEVERITY.get)
+        resolved_health = max(statuses, key=_HEALTH_SEVERITY.get, default=HealthStatus.UNKNOWN)
         self.state.tasks[task.task_id] = task.model_copy(
             update={
                 "health_status": resolved_health,
@@ -182,6 +198,18 @@ class OrgProjector:
         self._settle_matching_commitments(
             task.task_id, "health_status", resolved_health, event.occurred_at
         )
+
+    def _retire_risk_claims(self, task_id: str, trigger_event_id: str) -> None:
+        """Keep risk history, but a completed task cannot carry active risk.
+
+        ``superseded_by`` references the event that retires the claim: completion,
+        or a later report received while the official workflow is still DONE.
+        """
+        for claim in self._active_claims(task_id):
+            if claim.health_status in {HealthStatus.AT_RISK, HealthStatus.DELAYED}:
+                self.state.health_claims[claim.claim_id] = claim.model_copy(
+                    update={"status": ClaimStatus.SUPERSEDED, "superseded_by": trigger_event_id}
+                )
 
     def _make_commitment(self, event: CommitmentMadeEvent) -> None:
         if event.actor_id is None:
