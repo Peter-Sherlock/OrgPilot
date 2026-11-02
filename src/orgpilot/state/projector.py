@@ -31,6 +31,9 @@ _HEALTH_SEVERITY = {
     HealthStatus.DELAYED: 3,
 }
 
+# Invalidate derived caches when event projection semantics change.
+PROJECTION_VERSION = 2
+
 
 class OrgProjector:
     """Applies validated events without erasing provenance or conflicting claims."""
