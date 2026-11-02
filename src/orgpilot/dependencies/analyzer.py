@@ -47,8 +47,11 @@ class DependencyAnalyzer:
         risky_tasks = sorted(
             task.task_id
             for task in tasks.values()
-            if task.workflow_status is WorkflowStatus.BLOCKED
-            or task.health_status in {HealthStatus.AT_RISK, HealthStatus.DELAYED}
+            if task.workflow_status is not WorkflowStatus.DONE
+            and (
+                task.workflow_status is WorkflowStatus.BLOCKED
+                or task.health_status in {HealthStatus.AT_RISK, HealthStatus.DELAYED}
+            )
         )
 
         results: list[DependencyImpact] = []
