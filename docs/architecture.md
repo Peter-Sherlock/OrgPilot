@@ -106,6 +106,7 @@ Case 账本对齐与消除 (`CaseLedger`)
 - 有意保留系统时间的：飞书 token 过期判断、存储层的元数据时间戳、评测报告与录制文件的生成时间。
 
 ### 4. 改期提议的载荷约定
+- 何时提出：任务主声明（严重度最高，同级取最新）的 `expected_completion` 严格晚于任务 `deadline`，恰好等于算按时。首次上报就带 ETA、追问后才拿到 ETA，走同一条判定：等待回复的协调事项拿到超期 ETA 时退回 `open`，由规划器提出改期；没超期才以 `recovery estimate received` 结案；
 - `PROPOSE_RESCHEDULE` / `UPDATE_TASK` 的 payload 以 `new_deadline` 为唯一的截止时间键，另带 `task_title` 和 `impacted_tasks`（下游任务标题）供卡片展示；
 - 适配器缺少 `new_deadline` 时返回失败，不会用当前时间代替。
 

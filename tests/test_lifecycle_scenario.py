@@ -28,27 +28,9 @@ from orgpilot.scenarios.runner import ScenarioRunner
 
 LIFECYCLE_PATH = Path("evals/lifecycle/e2e_01_payment_upgrade_lifecycle.yaml")
 
-C1 = "case:task-health:t1_gateway"
 C3 = "case:task-health:t3_order"
 
 KNOWN_DEFECTS: dict[str, tuple[str, ...]] = {
-    # coordination/ledger.py:163-173. When an estimate arrives while the case
-    # waits for a response, reconcile() resolves the case as "recovery estimate
-    # received" before anything compares the estimate with the deadline. Round 4:
-    # Alice's ETA is two days past T1's deadline, no reschedule is proposed, and
-    # the PM's approval in round 5 finds nothing to approve.
-    # The 2026-10-08 registry filed this under D1; it is a separate code site and
-    # can be fixed on its own.
-    "D1a recovery estimate closes the case without checking the deadline": (
-        "round_4:termination",
-        f"round_4:case_status:{C1}",
-        f"round_4:waiting_for:{C1}",
-        "round_5:approval_applied:pm_carol:approved",
-        # Either D1a or D1b alone turns this green (with D1b, the reopened case
-        # later resolves as "reschedule approved"). Whichever fix lands first
-        # removes it.
-        f"case_terminal_reason:{C1}",
-    ),
     # coordination/ledger.py:195-197. case_id is derived from the task id and
     # reconcile() opens a case only when that id is unused, so a task whose case
     # is terminal can never get a new one. Round 17: T1 regresses (done -> doing,
