@@ -208,7 +208,8 @@ class CaseLedger:
                 # not a new episode. Require unseen risk after the last closure.
                 if any(
                     claim.claim_id not in existing.evidence_claim_ids
-                    and (existing.updated_at is None or claim.occurred_at > existing.updated_at)
+                    and existing.updated_at is not None
+                    and claim.occurred_at > existing.updated_at
                     for claim in active_claims
                 ):
                     existing.status = CoordinationCaseStatus.OPEN

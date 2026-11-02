@@ -100,6 +100,14 @@ def test_completion_and_unrelated_task_edits_do_not_reopen_case():
     assert ledger.get_case(CASE_ID).status is CoordinationCaseStatus.RESOLVED
 
 
+def test_missing_closure_time_cannot_prove_newer_risk():
+    ledger = _closed_ledger(CoordinationCaseStatus.RESOLVED)
+    ledger.get_case(CASE_ID).updated_at = None
+    state = _state(_claim("new", None, occurred_at=CLOSED + timedelta(hours=1)))
+    ledger.reconcile(state, (), CLOSED + timedelta(hours=1))
+    assert ledger.get_case(CASE_ID).status is CoordinationCaseStatus.RESOLVED
+
+
 @pytest.mark.parametrize("first_decision", ["approve", "reject", "cancel"])
 async def test_second_approval_survives_restart_and_ignores_historical_decisions(
     tmp_path, first_decision
