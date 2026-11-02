@@ -21,7 +21,21 @@ class ApprovalManager:
         current_time: datetime,
         expires_at: datetime | None = None,
     ) -> ApprovalRequest:
-        approval_id = f"approval:{case_id}:{action.action_id}"
+        for existing in self.get_requests_for_case(case_id):
+            if (
+                existing.action_id == action.action_id
+                and existing.action_type is action.action_type
+                and existing.proposed_command == proposed_command
+                and existing.approver_id == approver_id
+            ):
+                # Retrying creation cannot reset a decision or consumption.
+                return existing
+        base_id = f"approval:{case_id}:{action.action_id}"
+        approval_id = base_id
+        sequence = 2
+        while approval_id in self._requests:
+            approval_id = f"{base_id}:{sequence}"
+            sequence += 1
         request = ApprovalRequest(
             approval_id=approval_id,
             case_id=case_id,

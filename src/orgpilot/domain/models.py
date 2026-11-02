@@ -153,6 +153,10 @@ class CoordinationCase(StrictModel):
     missing_information: tuple[str, ...] = ()
     candidate_actions: tuple[CoordinationAction, ...] = ()
     executed_commands: tuple[ActionCommand, ...] = ()
+    # Persist episode identity and its deduplication boundary without dropping history.
+    generation: int = Field(default=0, ge=0)
+    episode_command_start: int = Field(default=0, ge=0)
+    current_approval_id: str | None = None
     waiting_for: str | None = None
     waiting_until: datetime | None = None
     round_count: int = 0

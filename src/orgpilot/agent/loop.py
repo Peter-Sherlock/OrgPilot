@@ -78,6 +78,7 @@ class CoordinationAgent:
         executed_cmd_ids: list[str] = []
 
         for case in active_cases:
+            generation_suffix = f":g{case.generation}" if case.generation else ""
             if case.status is CoordinationCaseStatus.OPEN:
                 actions = self.coordination_service.plan_actions_for_case(
                     case, self.projector.state
@@ -102,14 +103,14 @@ class CoordinationAgent:
                         ActionType.ASK_CLARIFICATION,
                     }:
                         command = ActionCommand(
-                            command_id=f"cmd:{action.action_id}:r{self._turn_count}",
+                            command_id=f"cmd:{action.action_id}{generation_suffix}:r{self._turn_count}",
                             action_id=action.action_id,
                             action_type=action.action_type,
                             targets=action.targets,
                             payload=action.payload,
                             reason_refs=action.reason_refs,
                             created_at=current_time,
-                            idempotency_key=f"idem:{action.action_id}:r{self._turn_count}",
+                            idempotency_key=f"idem:{action.action_id}{generation_suffix}:r{self._turn_count}",
                         )
                         self.adapter.execute(command)
                         self.case_ledger.record_command(case.case_id, command, current_time)
@@ -134,14 +135,14 @@ class CoordinationAgent:
                         or decision.requires_approval
                     ):
                         proposed_command = ActionCommand(
-                            command_id=f"cmd:{action.action_id}:r{self._turn_count}",
+                            command_id=f"cmd:{action.action_id}{generation_suffix}:r{self._turn_count}",
                             action_id=action.action_id,
                             action_type=action.action_type,
                             targets=action.targets,
                             payload=action.payload,
                             reason_refs=action.reason_refs,
                             created_at=current_time,
-                            idempotency_key=f"idem:{action.action_id}:r{self._turn_count}",
+                            idempotency_key=f"idem:{action.action_id}{generation_suffix}:r{self._turn_count}",
                         )
                         approver = action.targets[0] if action.targets else "approver"
                         approval_request = self.approval_manager.create_request(
@@ -152,6 +153,7 @@ class CoordinationAgent:
                             current_time,
                             expires_at=current_time + timedelta(days=2),
                         )
+                        case.current_approval_id = approval_request.approval_id
                         outbound_command = proposed_command.model_copy(
                             update={
                                 "payload": {
@@ -174,19 +176,23 @@ class CoordinationAgent:
 
             elif case.status is CoordinationCaseStatus.WAITING_FOR_APPROVAL:
                 requests = self.approval_manager.get_requests_for_case(case.case_id)
+                if case.current_approval_id is not None:
+                    requests = tuple(
+                        req for req in requests if req.approval_id == case.current_approval_id
+                    )
                 for req in requests:
                     if req.status is ApprovalStatus.APPROVED and not req.consumed:
                         command = self.approval_manager.consume(req.approval_id, current_time)
                         if req.action_type is ActionType.PROPOSE_RESCHEDULE:
                             update_cmd = ActionCommand(
-                                command_id=f"cmd:{case.source_task_id}:update_task:r{self._turn_count}",
+                                command_id=f"cmd:{case.source_task_id}:update_task{generation_suffix}:r{self._turn_count}",
                                 action_id=f"action:{case.source_task_id}:update_task",
                                 action_type=ActionType.UPDATE_TASK,
                                 targets=(case.source_task_id,),
                                 payload=req.proposed_command.payload,
                                 approved_by=req.approver_id,
                                 created_at=current_time,
-                                idempotency_key=f"idem:update:{case.source_task_id}:r{self._turn_count}",
+                                idempotency_key=f"idem:update:{case.source_task_id}{generation_suffix}:r{self._turn_count}",
                             )
                             update_result = self.adapter.execute(update_cmd)
                             self.case_ledger.record_command(case.case_id, update_cmd, current_time)
