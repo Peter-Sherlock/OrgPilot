@@ -59,7 +59,7 @@ class CaseLedger:
         case = self._cases.get(case_id)
         if case is None:
             return False
-        for cmd in case.executed_commands:
+        for cmd in case.executed_commands[case.episode_command_start :]:
             if cmd.action_type == action.action_type and cmd.targets == action.targets:
                 return True
         return False
@@ -195,11 +195,40 @@ class CaseLedger:
 
         # Identify newly risky tasks
         for task in sorted(state.tasks.values(), key=lambda item: item.task_id):
-            if not self._is_risky(task.workflow_status, task.health_status):
+            if task.workflow_status is WorkflowStatus.DONE or not self._is_risky(
+                task.workflow_status, task.health_status
+            ):
                 continue
 
             case_id = f"case:task-health:{task.task_id}"
             existing = self._cases.get(case_id)
+            if existing is not None and existing.status not in _ACTIVE_STATUSES:
+                active_claims = self._active_risk_claims(state, task.task_id)
+                # A clock tick, title edit, replay or late historical report is
+                # not a new episode. Require unseen risk after the last closure.
+                if any(
+                    claim.claim_id not in existing.evidence_claim_ids
+                    and (existing.updated_at is None or claim.occurred_at > existing.updated_at)
+                    for claim in active_claims
+                ):
+                    existing.status = CoordinationCaseStatus.OPEN
+                    existing.generation += 1
+                    existing.episode_command_start = len(existing.executed_commands)
+                    existing.current_approval_id = None
+                    existing.evidence_claim_ids = tuple(c.claim_id for c in active_claims)
+                    existing.impacted_task_ids = tuple(sorted(impacted_by_source[task.task_id]))
+                    existing.missing_information = (
+                        ("expected_completion",)
+                        if active_claims
+                        and all(c.expected_completion is None for c in active_claims)
+                        else ()
+                    )
+                    existing.candidate_actions = ()
+                    existing.waiting_for = None
+                    existing.waiting_until = None
+                    existing.round_count = 0
+                    existing.terminal_reason = None
+                    existing.updated_at = current_time
             if existing is None:
                 active_claims = self._active_risk_claims(state, task.task_id)
                 evidence_ids = tuple(claim.claim_id for claim in active_claims)

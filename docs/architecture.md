@@ -110,6 +110,21 @@ Case 账本对齐与消除 (`CaseLedger`)
 - `PROPOSE_RESCHEDULE` / `UPDATE_TASK` 的 payload 以 `new_deadline` 为唯一的截止时间键，另带 `task_title` 和 `impacted_tasks`（下游任务标题）供卡片展示；
 - 适配器缺少 `new_deadline` 时返回失败，不会用当前时间代替。
 
+### 5. 协调事项重开与审批历史（D1b）
+
+- 任务未完成且仍有风险时，只有出现不在事项证据集合中、`occurred_at` 严格晚于上次结案
+  `updated_at` 的活跃风险声明，才重开终态事项。重复回放、旧消息、同一时间的声明、任务标题
+  修改和仅推进时间不触发重开。这里没有新增截止时间扫描。
+- 保持稳定 `case_id` 和原 `created_at`，保留全部 `executed_commands`；重开时增加 `generation`、
+  将 `episode_command_start` 设为历史命令数，重置等待、终止原因、重试次数及当前审批绑定。
+  去重只检查本轮命令，所以历史追问不会阻止新一轮追问。
+- 第一轮命令 ID 保持兼容，重开后的命令和幂等键增加 `:gN`。网关每次重建 Agent 时轮次计数会
+  重置，持久化的 generation 仍能避免两次改期共用任务更新事件 ID。
+- 相同命令重试创建审批返回原请求，不重置审批或消费状态；新的请求使用新的审批 ID，旧记录
+  完整保留。Agent 只执行 `current_approval_id` 对应的决定，旧卡片和旧拒绝不影响新一轮。
+- 三个新增字段均由现有 Case JSON 快照持久化；旧快照缺失字段时按第一轮的默认值加载，
+  不改事件契约，也不需要新增 SQL 列。多实例并发仍不在当前验证范围内。
+
 ### 5. 重启后恢复什么（ADR-0013）
 - **从事件库重放**：组织状态（以 `state_snapshots` 为重放缓存）、协调事项、审批；每个请求都重新构建 Agent；
 - **从快照恢复**：`DialogueStateStore` 的待回答追问与待确认卡片（`dialogue_snapshots`，每项目一行），`ProgressSyncCoordinator` 的同步会话（`sync_sessions`，每会话一行，按发起顺序加载）；已处理消息（`processed_messages`）本来就在库里；

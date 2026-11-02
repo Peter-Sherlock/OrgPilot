@@ -31,22 +31,6 @@ LIFECYCLE_PATH = Path("evals/lifecycle/e2e_01_payment_upgrade_lifecycle.yaml")
 C3 = "case:task-health:t3_order"
 
 KNOWN_DEFECTS: dict[str, tuple[str, ...]] = {
-    # coordination/ledger.py:195-197. case_id is derived from the task id and
-    # reconcile() opens a case only when that id is unused, so a task whose case
-    # is terminal can never get a new one. Round 17: T1 regresses (done -> doing,
-    # ETA past its deadline), _is_risky() is true, and nothing happens.
-    # A fix must reopen on new evidence only (e.g. a risk claim newer than the
-    # closed case). Reopening whenever the task is still risky makes cases flap
-    # (T3 stays at_risk after its in-deadline ETA; done tasks keep their risk
-    # until D6) and breaks m1_01 and m1_05.
-    # coordination/approval.py:24 derives approval_id from case_id + action_id,
-    # so a second reschedule on the same case overwrites the consumed first
-    # request. No check here observes that, but the fix should not rely on it.
-    "D1b terminal case occupies the task's case slot": (
-        "round_17:termination",
-        "round_18:approval_applied:pm_carol:approved",
-        "task:t1_gateway",
-    ),
     # Nothing is driven by time. The only time comparison in reconcile() is the
     # response timeout of a case that already waits (coordination/ledger.py:
     # 176-188); _is_risky() (:221-226) ignores task.deadline, and commitment.due_at
