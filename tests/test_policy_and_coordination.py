@@ -1,5 +1,6 @@
 """Planner candidates and policy decisions remain independent."""
 
+from collections.abc import Callable
 from datetime import datetime
 
 import pytest
@@ -108,6 +109,100 @@ def test_coordination_uses_owner_when_claim_has_no_actor() -> None:
 
     case = CoordinationService().build_cases(state, ())[0]
     assert case.candidate_actions[0].targets == ("alice",)
+
+
+def _member(member_id: str, role: str) -> MemberState:
+    return MemberState(
+        member_id=member_id,
+        display_name=member_id,
+        role=role,
+        source_event_id=f"evt-{member_id}",
+        last_update_at=NOW,
+    )
+
+
+def _vague_risk_state(owner_id: str, reporter: str | None) -> OrgState:
+    """Task "api" is at risk on one claim with no recovery estimate."""
+    return OrgState(
+        project_id="test-project",
+        members={
+            "alice": _member("alice", "backend"),
+            "frank": _member("frank", "qa"),
+        },
+        tasks={
+            "api": TaskState(
+                task_id="api",
+                title="API",
+                owner_id=owner_id,
+                workflow_status=WorkflowStatus.DOING,
+                health_status=HealthStatus.AT_RISK,
+                source_event_ids=("evt-task", "evt-risk"),
+                health_claim_ids=("claim-risk",),
+                last_update_at=NOW,
+            )
+        },
+        health_claims={
+            "claim-risk": TaskHealthClaim(
+                claim_id="claim-risk",
+                task_id="api",
+                stated_by=reporter,
+                health_status=HealthStatus.AT_RISK,
+                blocker="no test environment yet",
+                confidence=0.8,
+                source_event_id="evt-risk",
+                source_ref="message:1",
+                occurred_at=NOW,
+            )
+        },
+    )
+
+
+def _from_build_cases(state: OrgState) -> tuple[CoordinationAction, ...]:
+    return CoordinationService().build_cases(state, ())[0].candidate_actions
+
+
+def _from_plan_actions(state: OrgState) -> tuple[CoordinationAction, ...]:
+    service = CoordinationService()
+    case = service.build_cases(state, ())[0]
+    return service.plan_actions_for_case(case, state)
+
+
+# The rule lives in two places that must agree: build_cases plans the case's
+# candidate actions, and plan_actions_for_case is what the agent loop executes.
+_ENTRY_POINTS = pytest.mark.parametrize(
+    "plan", [_from_build_cases, _from_plan_actions], ids=["build_cases", "plan_actions"]
+)
+
+
+@_ENTRY_POINTS
+def test_recovery_question_goes_to_owner_not_reporter(
+    plan: Callable[[OrgState], tuple[CoordinationAction, ...]],
+) -> None:
+    """D2: QA flags Alice's task; Alice, who does the work, is asked when it recovers."""
+    [action] = plan(_vague_risk_state(owner_id="alice", reporter="frank"))
+
+    assert action.action_type is ActionType.ASK_RECOVERY_ESTIMATE
+    assert action.targets == ("alice",)
+    assert action.reason_refs == ("evt-risk",)
+
+
+@_ENTRY_POINTS
+def test_recovery_question_to_owner_who_reported(
+    plan: Callable[[OrgState], tuple[CoordinationAction, ...]],
+) -> None:
+    [action] = plan(_vague_risk_state(owner_id="alice", reporter="alice"))
+
+    assert action.targets == ("alice",)
+
+
+@_ENTRY_POINTS
+def test_recovery_question_falls_back_to_reporter_without_owner(
+    plan: Callable[[OrgState], tuple[CoordinationAction, ...]],
+) -> None:
+    """No owner: ask whoever reported the risk rather than guess someone else."""
+    [action] = plan(_vague_risk_state(owner_id="", reporter="frank"))
+
+    assert action.targets == ("frank",)
 
 
 def test_expected_completion_prevents_redundant_question() -> None:

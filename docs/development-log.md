@@ -1,5 +1,64 @@
 # 开发记录
 
+## 2026-10-31：M1-3 修复 D2——追问问错了人（分支 `fix/d2-followup-owner`）
+
+生命周期第 7 轮，Bob 说 T3 正常，QA Frank 说 Bob 的接口一直没给、T3 有风险。Agent 去问 Frank「T3 什么时候能恢复」，
+可是只有做 T3 的 Bob 答得上来。追问对象的规则是 `primary_claim.stated_by or task.owner_id`：谁报的风险就问谁，
+负责人只在声明没有发言人时兜底。这条规则在 `coordination/service.py` 里写了两遍（`build_cases` 和 `plan_actions_for_case`）。
+
+### 改动
+
+- `coordination/service.py`：新增私有函数 `_recovery_estimate_target(task, primary_claim)`，两处都调用它，不会再各改各的。
+  规则改为**问任务负责人**：活是负责人在做，只有负责人说得清什么时候能恢复；不是负责人的报告人（比如 QA 报后端任务）
+  知道它出了问题，不知道什么时候好；
+- **没有负责人时退回问报告人**，也就是原来的规则，不去猜别人。`owner_id` 为空才算没有负责人。投影器建任务和改负责人时
+  都要求负责人是已登记成员，也没有「成员离开」事件，所以从事件日志投影出来的状态走不到这条兜底，只有绕过投影器
+  直接构造的状态会走到；负责人和报告人都没有时目标仍是空字符串，和原来一样；
+- `waiting_for` 不用另改：agent loop 本来就把实际发出的追问的 `targets[0]` 记为 Case 的 `waiting_for`，追问对象对了，
+  `waiting_for` 跟着就对了；
+- `KNOWN_DEFECTS` 删掉 D2 条目。
+
+### 结果
+
+- 生命周期（起点 main 76039b1）：**47/59 → 48/59**。逐项对比改动前后的 59 项检查：只有
+  `round_7:waiting_for:case:task-health:t3_order` 由失败转为通过，检查集合不变，其余 58 项结果不变；
+- 与第九节 9.4 内存补丁实验的结论一致（D2 转绿 1 项，无回归）。那次补丁只改了 `plan_actions_for_case`，这次 `build_cases`
+  也一起改了。静态回放场景 01–03 的 `expected_actions` 会检查 `build_cases` 产出的 `targets`，三个场景里报告人都是
+  负责人本人，结果不变。
+
+### 新增测试
+
+- `tests/test_policy_and_coordination.py` 新增 3 个测试，每个都在 `build_cases` 和 `plan_actions_for_case` 两个入口上
+  参数化（共 6 个用例）：报告人不是负责人 → 问负责人；报告人就是负责人 → 不变；没有负责人 → 问报告人。
+  原有的 `test_coordination_uses_owner_when_claim_has_no_actor`（声明没有发言人 → 问负责人）照常通过；
+- `tests/test_agent_loop.py` 新增 1 个端到端测试：QA 报告 Alice 的任务有风险，Mock 适配器实际发出的追问对象和
+  Case 的 `waiting_for` 都是 Alice；
+- 新测试放到未修复的 `service.py` 上跑：「报告人不是负责人」的 3 个用例（两个入口加 agent loop）都报
+  `('frank',) == ('alice',)` 断言失败；另外两类本来就是原有行为，照常通过。
+
+### 未做（如实标注）
+
+- **报告人得不到任何回音。** Frank 报了风险，Agent 转去问 Bob，Frank 并不知道有人在跟进。可以考虑给不是负责人的报告人
+  发一条轻量确认，但那需要新的消息类型，不在本 PR 范围，记为后续；
+- 「主声明」的选取（按严重度、时间、id 取最大）在 `service.py` 里仍重复三遍，本 PR 只合并了追问对象这一条规则；
+- 测试文件里的 `C3` 常量现在没有引用了，没有删：并行的 D1a PR 也在动这几行，少一处相邻行冲突；
+- 没有动 `coordination/ledger.py`（并行的 D1a PR 那条线）。两个 PR 都删 `KNOWN_DEFECTS` 里的条目、都在开发记录顶部加一节，
+  冲突时保留两边；
+- `docs/team-simulator-design.md` 1.1 节拿 D2 举例说明剧本是开环的，属于动机叙述，没有改；
+  `docs/full-lifecycle-scenario-design.md` 第九节是带日期的复核快照，也没有改。
+
+### 验证状态
+
+```text
+lifecycle: 48/59（main 76039b1: 47/59）
+orgpilot replay --all: 9/9 PASS
+pytest: 492 passed, coverage 92.50%（fail_under=90；main: 485 passed, 92.50%）
+ruff check: All checks passed；改动的 4 个代码/测试文件在 main 上本来就格式干净，ruff format --check 通过
+eval-intent --replay: dev 97/102, test 53/58, conversations 10/10（与冻结结果一致）
+```
+
+---
+
 ## 2026-10-30：M1-2 修复 D4——迟到的兑现记为违约（分支 `fix/d4-late-fulfilment`）
 
 生命周期场景里，Bob 承诺 10/27 18:00 前做完 T3，10/28 10:20 才做完，承诺却记为 `fulfilled`。

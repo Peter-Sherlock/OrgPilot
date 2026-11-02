@@ -65,11 +65,6 @@ KNOWN_DEFECTS: dict[str, tuple[str, ...]] = {
         "round_18:approval_applied:pm_carol:approved",
         "task:t1_gateway",
     ),
-    # coordination/service.py:135 (plan_actions_for_case; the same rule is in
-    # build_cases at :60): the follow-up goes to `primary_claim.stated_by or
-    # task.owner_id`, i.e. whoever reported the risk. QA reports a risk on Bob's
-    # backend task and the agent asks QA when the backend work will recover.
-    "D2 follow-up targets the reporter instead of the owner": (f"round_7:waiting_for:{C3}",),
     # Nothing is driven by time. The only time comparison in reconcile() is the
     # response timeout of a case that already waits (coordination/ledger.py:
     # 176-188); _is_risky() (:221-226) ignores task.deadline, and commitment.due_at
