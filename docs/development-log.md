@@ -1,5 +1,33 @@
 # 开发记录
 
+## 2026-11-03：M2-0 C2——只读 GitHub 连接器与首次范围导入（ADR-0015）
+
+- 新增 `orgpilot.github` 只读连接层：`GitHubReadClient` 协议（9 个读取方法）、冻结 payload 模型
+  （Issue 含 `is_pull_request` 路由标志、Comment、PR 合并事实、Review）、`ENDPOINT_CATALOG`
+  端点↔权限目录（仅 Metadata/Contents/Issues/Pull requests 四项读权限，测试锁定目录恰好覆盖
+  全部客户端方法且无写动词）。认证换 token 由独立 `StaticTokenCredentialProvider` 承担，
+  与内容读取分离。
+- `MockGitHubClient` 完全离线：REST 风格快照 fixture（`tests/fixtures/github_snapshot.json`）、
+  按 page/per_page 切片分页、可注入 403/404/500 失败模拟；`HttpGitHubClient` 提供真实 REST
+  映射（base64 blob、Z→+00:00 时间、milestone/labels 展开、每请求最多 3 次有界重试、遵守
+  Retry-After），供 C6 可选真实验收，测试从不触网。
+- 新增 `knowledge/importer.SourceImporter`：按绑定范围首次导入——文档在固定 commit SHA 上读取
+  （tree+blob，路径白名单过滤、256 KiB 尺寸上限、50 篇上限），Issue/PR 经 issues 全量分页枚举后
+  按 milestone ∪ 显式清单过滤（PR 条目按对象类型路由，不重复归类），评论与 review 作为子对象
+  挂接父来源（每对象 100 条上限），PR 正文用平台闭合关键字解析出 `implements` 平台关联、
+  其余 `#N` 仅记 `mentions`，不猜测重命名。
+- 覆盖率诚实性：任一失败/截断使对应类别 coverage=partial（零成功则 failed），
+  `ImportReport` 汇总范围、固定版本、计数、失败、截断、冲突（显式 PR id 读不出 PR 对象即冲突）、
+  关系数与 `fully_complete` 判定；403/404 只降可用性，不推断删除；检查点写入 sync run。
+- 修复导入器两处实现错误（canonical payload 直接当哈希串、work-items 上限不真正截断），
+  并修正测试对范围含 #6 的预期错误。
+- 新增 32 项测试（`test_github_connector.py` 13 + `test_source_importer.py` 19）：多页完整性、
+  同标题不误合并、范围过滤、部分失败不标完整、404 不判删、上限可见、固定 commit、
+  幂等重导入（无关提交同内容不生新版本）、内容变更新修订、关系分类、合并事实保留、
+  业务零写入（events/cases/approvals 全程为空）、检查点覆盖、树枚举失败、冲突登记。
+- 全量 **580 passed**（C1 后 548 + 32），Ruff 通过；未触真实 GitHub。
+  真实只读接入验证列为 C6 可选项，需明确仓库范围、App 凭据与预算后执行。
+
 ## 2026-11-03：M2-0 C1——项目资料契约、独立持久化与版本身义（ADR-0015）
 
 - 新增 `orgpilot.knowledge` 契约包：绑定（含路径白名单、Issue 选择器、共享名单、access_epoch）、
