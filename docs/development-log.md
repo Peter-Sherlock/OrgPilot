@@ -1,5 +1,33 @@
 # 开发记录
 
+## 2026-11-03：M2-0 C4——资料代次、上下文与四类只读工具（ADR-0015）
+
+- 新增 `knowledge/derive.DerivationPipeline`：规则提取器（rule-v1）从 Markdown 段落切分中提取
+  项目目标 / 术语 / 交付条件，从平台字段提取 state / assignee / milestone 断言；每条断言绑定
+  确切 EvidenceRef（修订、段落定位、行号、≤200 字原文片段）。staging → 发布前重新校验绑定
+  版本 / access_epoch / 清单源最新修订 / 源可用性，任一变化即 fail 不发布并抛 DerivationAborted；
+  发布在同一事务翻转项目指针。发布后源更新由 `invalidate_stale_generations` 按独立 valid 标记
+  失效，不改写旧代次内容。未变化来源复用基代次断言（相同 assertion_id），无关提交不重复提取。
+- 新增 `knowledge/retrieval`：MaterialIndex 仅装载可用来源的段落数据；检索带 CJK 二字碎片
+  匹配，排序不分页（分页与 5 条/页上限由工具层执行）；`encode_cursor/decode_cursor` 以
+  session+generation+tool+filters 派生密钥签发 HMAC 游标，跨会话 / 跨代次 / 过滤条件不符即拒。
+- 新增 `knowledge/context.ProjectContextBuilder`：组装 round-0 ProjectContextPacket——固定代次
+  摘要（≤2000）、初始检索证据（上限 4 条、超出列入 excluded）、只读任务状态 refs、冲突边界
+  说明与不可用来源缺口；拒绝无效代次、跨绑定代次与未授权成员（PermissionError）。
+- 新增 `knowledge/read_tools`：search_project / read_source / get_related_items / read_task_state。
+  服务端注入会话身份；未知参数键拒绝（不可携带写参数）；URL / Shell / SQL 样内容 tool_denied；
+  越权 / 范围外 / 已撤 / 不存在统一 unavailable（不泄露存在性）；read_source 按 1000 字符窗口
+  行号定位分页；候选依赖带 is_candidate 标记不入 DAG；任务只读视图不含协调轮次。结果序列化
+  ≤4096 字符：先缩片段再丢尾部条目、保留身份与定位，单条仍超限返回 result_overflow 拒绝。
+  会话缓存命中计一次调用且先复检可用性，已撤来源的缓存立即失效；检索 / 读取同样先复检可用性。
+- 修复实现错误：撤权核对把修订 ID 集合误当来源 ID 集合（永远不命中），发布校验因此失效。
+- 新增 26 项测试（`test_knowledge_context.py`）：目标 / 交付条件原文定位、代次发布指针与摘要、
+  文档升级失效与重建更新、无关提交不重提取、构建中改绑定 / 撤源中止且指针不动、packet 组装
+  与三类拒绝、检索命中 / 注入拒绝 / 签名游标分页 / 伪造游标、读取窗口与跨代次不可用、关系
+  类型与确认态、任务只读 / 未登记不编造 / 注入拒绝、缓存复检、结果上限收缩与溢出拒绝、
+  会话版本隔离、派生与工具全程业务零写入。
+- 全量 **637 passed**，Ruff 通过。模型自主选工具与答案忠实度留待 C5/C6 分层验证。
+
 ## 2026-11-03：M2-0 C3——持久化通知、增量刷新、补查与恢复（ADR-0015）
 
 - 新增 `github/sync.GitHubSyncService`：验签（HMAC-SHA256 常数时间比较）→ 先写 `sync_inbox` 再响应；
