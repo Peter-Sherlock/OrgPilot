@@ -256,9 +256,14 @@ class SqlReadSessionStore:
         stop_reason: StopReason,
         answer_status: AnswerStatus,
         answer: dict[str, Any] | None = None,
+        final_budget: BudgetUsage | None = None,
         session: AsyncSession | None = None,
     ) -> None:
-        """Closes a running session exactly once, freezing its final budget."""
+        """Closes a running session exactly once, freezing its final budget.
+
+        ``final_budget`` is the loop accountant's authoritative snapshot — it
+        covers tool calls and evidence that never passed model reservations.
+        """
         async with coowned_session(self.db, session) as owned:
             record = (
                 await owned.execute(
@@ -275,6 +280,8 @@ class SqlReadSessionStore:
             record.stop_reason = stop_reason.value
             record.answer_status = answer_status.value
             record.answer_json = dump_json(answer) if answer is not None else None
+            if final_budget is not None:
+                record.used_budget_json = dump_json(final_budget.model_dump(mode="json"))
             record.updated_at = _to_utc(self.clock.now())
 
     async def mark_interrupted(self, session_id: str) -> None:
@@ -387,5 +394,6 @@ class SqlReadSessionStore:
             answer_status=(
                 AnswerStatus(record.answer_status) if record.answer_status else None
             ),
+            answer_json=record.answer_json,
             updated_at=_required(record.updated_at),
         )

@@ -742,6 +742,7 @@ class ProjectReadSession(KnowledgeFrozen):
     reserved_budget: tuple[BudgetReservation, ...] = ()
     stop_reason: StopReason | None = None
     answer_status: AnswerStatus | None = None
+    answer_json: str | None = None
     updated_at: datetime
 
     _tz_updated = field_validator("updated_at")(_require_timezone)

@@ -76,6 +76,10 @@ class OrgPilotSettings:
     # Periodic recheck stays off; when on, it refreshes material only (§5.4).
     github_recheck_enabled: bool = False
     github_recheck_interval_seconds: int = 1800
+    # /项目 Q&A entry (§7.2): off by default; online generation additionally
+    # requires project_qa_online plus provider credentials.
+    project_qa_enabled: bool = False
+    project_qa_online: bool = False
     timezone: str = DEFAULT_TIMEZONE
     intent_timeout_seconds: float = DEFAULT_INTENT_TIMEOUT_SECONDS
     intent_confidence_threshold: float = DEFAULT_INTENT_CONFIDENCE_THRESHOLD
@@ -138,6 +142,14 @@ class OrgPilotSettings:
             github_recheck_interval_seconds=int(
                 os.getenv("ORGPILOT_GITHUB_RECHECK_INTERVAL_SECONDS", "1800")
             ),
+            project_qa_enabled=os.getenv("ORGPILOT_PROJECT_QA_ENABLED", "false")
+            .strip()
+            .lower()
+            in {"1", "true", "yes", "on"},
+            project_qa_online=os.getenv("ORGPILOT_PROJECT_QA_ONLINE", "false")
+            .strip()
+            .lower()
+            in {"1", "true", "yes", "on"},
             timezone=os.getenv("ORGPILOT_TIMEZONE", DEFAULT_TIMEZONE).strip(),
             intent_timeout_seconds=float(
                 os.getenv(

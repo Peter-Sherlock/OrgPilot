@@ -439,7 +439,11 @@ class MessageRouter:
         stripped = text.strip()
         if stripped.startswith("/"):
             return await self._handle_command(
-                project_id=project_id, member=member, command=stripped, occurred_at=occurred_at
+                project_id=project_id,
+                member=member,
+                command=stripped,
+                message_id=message_id,
+                occurred_at=occurred_at,
             )
 
         # Probe replies now flow through the same intent pipeline as normal
@@ -492,9 +496,18 @@ class MessageRouter:
         project_id: str,
         member: Any,
         command: str,
+        message_id: str,
         occurred_at: datetime,
     ) -> RouterOutcome:
         head = command.split()[0] if command.split() else command
+        if head == "/项目":
+            return await self._handle_project_question(
+                project_id=project_id,
+                member=member,
+                command=command,
+                message_id=message_id,
+                occurred_at=occurred_at,
+            )
         if head == "/同步":
             if member.role != "pm":
                 return RouterOutcome(
@@ -536,6 +549,61 @@ class MessageRouter:
             reply_category=ReplyKind.HELP,
             reply_text=HELP_TEXT,
             data={"intent_summary": {"command": head}},
+        )
+
+    async def _handle_project_question(
+        self,
+        *,
+        project_id: str,
+        member: Any,
+        command: str,
+        message_id: str,
+        occurred_at: datetime,
+    ) -> RouterOutcome:
+        """ADR-0015 §7.2: the /项目 entry, after membership, before probes.
+
+        This is a pure read path: it never touches the dialogue store, so
+        pending probes/claims/sync confirmations are neither consumed,
+        renewed, nor overwritten by asking a project question. The answer
+        goes only to the asker.
+        """
+        question = command[len("/项目") :].strip()
+        if not question:
+            usage = (
+                "用法：/项目 <问题>\n例如：/项目 联调的前置条件是什么？\n"
+                "可询问项目目标、术语、交付约定与已接入的工作记录。"
+            )
+            return RouterOutcome(
+                reply_category=ReplyKind.HELP,
+                reply_text=usage,
+                data={"intent_summary": {"command": "/项目"}},
+            )
+        service = getattr(self.service, "project_knowledge", None)
+        if service is None or not self.settings.project_qa_enabled:
+            return RouterOutcome(
+                reply_category=ReplyKind.NOTED,
+                reply_text="项目资料问答入口尚未开启。",
+                data={"intent_summary": {"command": "/项目"}},
+            )
+        answer = await service.answer(
+            project_id=project_id,
+            requester_id=member.member_id,
+            message_key=message_id,
+            question=question,
+            occurred_at=occurred_at,
+        )
+        return RouterOutcome(
+            reply_category=ReplyKind.PROJECT_ANSWER,
+            reply_text=answer.rendered_text,
+            data={
+                "read_session_id": answer.read_session_id,
+                "stop_reason": (
+                    answer.stop_reason.value if answer.stop_reason else None
+                ),
+                "answer_status": answer.answer_status.value,
+                "budget_usage": answer.budget_usage.model_dump(mode="json"),
+                "intent_summary": {"command": "/项目"},
+            },
         )
 
     async def _build_context(

@@ -1,5 +1,36 @@
 # 开发记录
 
+## 2026-11-03：M2-0 C5——`/项目` 入口、有界主动查阅循环与问答（ADR-0015）
+
+- 新增 `knowledge/read_loop.ProjectReadOrchestrator`：确定性控制器执行 §7.3 循环——round-0 组包
+  （初始检索计入额度）、每轮先预留最坏模型调用再决策、lookup 经四类工具白名单执行、证据按
+  「修订+位置」识别新进度；关系线索计进度但不产生可引用片段（命中标题不证明未读正文）。
+  预算全由控制器记账：4 探索轮 / 8 工具（缓存、分页、失败均计）/ 6 模型请求（含最终归纳与
+  至多一次结构化修复）/ 累计 32,768 tokens（chars/4 估算器，版本入账）/ 12 片段 12,000 字符 /
+  60 秒总时限（预留 15 秒收尾）/ 探索 45 秒上限，单调计时器注入，墙钟回拨不返还。未知模型
+  结果整笔预留转 unknown 消耗；两轮无新证据 no_progress；finish 答案逐条校验「引用已收集且
+  片段可定位」，修复一次仍不合约即 model_failed 落确定性缺口模板。发送前复检授权与来源可用性，
+  撤权即弃用已生成内容转 access_denied。同消息重投复用会话与结果；崩溃保留账本转 interrupted。
+- 新增 `knowledge/answerer`：`ProjectAnswerDecision` 四类决策（lookup/finish/ask_clarification/
+  report_gap）；`ScriptedAnswerGenerator`（scripted-v1）为离线默认——关键词检索→沿工作记录
+  关系→以引用收尾或报缺口，从不虚构证据；`LLMProjectAnswerer`（llm-answerer-v1）结构化输出
+  契约 + 一次修复，SDK 级重试关闭，仅显式 `ORGPILOT_PROJECT_QA_ONLINE` + 供应商凭据时启用，
+  在线效果验证留待 C6。
+- 新增 `knowledge/service.ProjectKnowledgeService`：只读取 OrgState（`get_or_replay_agent` 的
+  投影快照，绝不触碰 run_turn / commit_extracted_events / save_agent_state）。
+- 路由接线：`/项目 <问题>` 在成员检查后、探针/意图路径前识别；不读写对话状态——待答 probe、
+  claim、同步确认既不被消费也不被续期；答复只回发起者。空问题返回用法；入口默认关闭
+  （`ORGPILOT_PROJECT_QA_ENABLED`）。新增 `ReplyKind.PROJECT_ANSWER` 与帮助文本条目。
+- 修复实现过程中的五处缺陷：冻结 BudgetUsage 被原地累加（改可变 _Ledger 快照落库）、发送前
+  复检误用空请求者导致恒判撤权、重放读取模型上不存在的 answer_json、finish_session 双重
+  JSON 编码、最终账本未落库（finish_session 增加 final_budget 快照）。
+- 新增 25 项测试（`test_project_read_loop.py`）：目标/交付/沿 Issue→PR 链式补读、缺资料报缺口
+  不虚构、未绑定/未授权、同消息幂等与跨消息新会话、工具/模型/token/片段/时间各预算边界、
+  假计时器探索上限与墙钟回拨、两轮无进展、未知结果保留预留、修复恰好一次、不可修复落模板、
+  会话中撤权弃内容、换代不混用、探针/claim 不受影响、路由三分支、脚本轨迹重放一致、业务零写入。
+- 全量 **662 passed**，Ruff 通过；冻结意图回归不受影响（新增回复类别不改分类器提示词）。
+  真实在线模型问答效果为 C6 可选验收项，当前不声称在线生成质量。
+
 ## 2026-11-03：M2-0 C4——资料代次、上下文与四类只读工具（ADR-0015）
 
 - 新增 `knowledge/derive.DerivationPipeline`：规则提取器（rule-v1）从 Markdown 段落切分中提取

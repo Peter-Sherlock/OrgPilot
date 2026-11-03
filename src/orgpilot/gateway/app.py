@@ -99,6 +99,14 @@ def build_gateway_service(
     intent_router = MessageRouter(service=gateway_service, settings=settings)
     gateway_service.intent_router = intent_router  # type: ignore[attr-defined]
 
+    # ADR-0015 C5: /项目 read-only Q&A, off unless explicitly enabled.
+    if settings.project_qa_enabled:
+        from orgpilot.knowledge.service import ProjectKnowledgeService
+
+        gateway_service.project_knowledge = ProjectKnowledgeService(  # type: ignore[attr-defined]
+            gateway_service, settings, clock=runtime_clock
+        )
+
     # ADR-0015 C3: single-process GitHub sync writer. Both the HTTP app and the
     # standalone Feishu listener build through this function, so they share one
     # sync service instead of starting a second writer.
