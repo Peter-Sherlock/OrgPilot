@@ -1,5 +1,28 @@
 # 开发记录
 
+## 2026-11-03：M2-0 C1——项目资料契约、独立持久化与版本身义（ADR-0015）
+
+- 新增 `orgpilot.knowledge` 契约包：绑定（含路径白名单、Issue 选择器、共享名单、access_epoch）、
+  来源对象（`src-` 命名空间、评论子对象、规范化仓库路径）、不可变修订（`rev-` 命名空间、
+  change_sequence、内容哈希）、同步收件箱 / 运行检查点、断言 / 关系 / 资料代次（staging→ready 指针切换）、
+  查阅会话与预算预留 / 结算账本、`GroundedProjectAnswer` / `ProjectContextPacket` 输出契约。
+  资料命名空间与 OrgEvent 事件 ID 保持互斥，并有专项测试锁定。
+- 新增独立表 13 张（`project_source_bindings`、`source_objects`、`source_revisions`、`sync_inbox`、
+  `sync_runs`、`knowledge_*`、`project_read_sessions`、`project_read_steps`、`project_context_packets`），
+  只增不改既有表；所有 store 写入均支持调用方共享 session，跨表发布可在单事务内原子完成。
+- 修订去重契约：仅与**最新**修订内容哈希比较——重复读取幂等不生新版本（无关提交、轮询时间均不触发）、
+  A→B→A 保留三次修订、序列号倒退直接拒绝；通知收件箱同投递 ID 不同载荷拒绝且不覆盖原记录。
+- 预算账本契约：预留先于执行持久化并按累计维度拦截超额；结算未知结果时整笔预留记为 unknown 消耗
+  （不记零）；会话同消息幂等、完成只能一次、中断保留已用与预留，不重置为新预算。
+- 修复资料时间往返：aiosqlite 丢失时区偏移，所有写入统一 `astimezone(UTC)`（与 SqlEventStore 相同做法），
+  读回补 UTC 标签，注入 Clock 的时区语义往返无损。
+- 新增 `tests/test_project_source_store.py` 24 项：绑定幂等 / 冲突 / 停用、白名单与共享校验、
+  修订三态、A→B→A、跨项目隔离、收件箱冲突与到期、运行检查点、代次发布指针 / 失效不改写、
+  预算预留 / 结算 / 未知消耗 / 超额拦截 / 中断保留、步骤与包往返、共享 session 失败完整回滚、
+  文件库重启保持、命名空间互斥、注入时钟。
+- 全量 **548 passed**（基线 524 + 新增 24），覆盖率与 Ruff 通过；未接 GitHub、无网络访问。
+  回滚：关闭资料同步 / 问答入口（C3/C5 引入）即可停用；本阶段仅新增独立表，无既有 schema 变更。
+
 ## 2026-11-02：D1b 合并前复核——结案时间缺失时不自动重开
 
 原判断在 `updated_at=None` 时放行所有未见声明，与“证据必须晚于结案”的约定不符。

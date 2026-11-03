@@ -48,3 +48,20 @@ class Database:
             except Exception:
                 await session.rollback()
                 raise
+
+
+@asynccontextmanager
+async def coowned_session(
+    db: Database, session: AsyncSession | None
+) -> AsyncIterator[AsyncSession]:
+    """Yields the caller's session, or opens (and commits) a fresh one.
+
+    Store methods take an optional ``session`` so a caller can make several
+    stores write atomically in one transaction (ADR-0015 C1); when none is
+    given, the store owns a short self-committing transaction instead.
+    """
+    if session is not None:
+        yield session
+    else:
+        async with db.session() as owned:
+            yield owned
