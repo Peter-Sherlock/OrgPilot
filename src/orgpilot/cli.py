@@ -511,7 +511,7 @@ def _start_feishu_ws(project_id: str | None = None) -> int:
 
     # Same wiring as the HTTP gateway. Before this, the listener ran the mock
     # adapter and a default router, so approval cards and probes never reached Feishu.
-    service, llm_client = build_gateway_service(settings, db)
+    service, llm_client, _sync_service = build_gateway_service(settings, db)
     listener = FeishuWebSocketListener(
         app_id=app_id,
         app_secret=app_secret,

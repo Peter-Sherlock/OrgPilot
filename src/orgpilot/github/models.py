@@ -86,6 +86,7 @@ class PullRequestPayload(GitHubPayload):
     title: str
     body: str | None = None
     state: str
+    milestone: str | None = None
     merged: bool = False
     merge_commit_sha: str | None = None
     head_sha: str | None = None

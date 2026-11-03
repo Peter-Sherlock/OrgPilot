@@ -66,6 +66,16 @@ class OrgPilotSettings:
     feishu_task_writeback: bool = False
     # Demo-only first-contact bootstrap (ADR-0009 §8); real teams import team.yaml.
     demo_mode: bool = False
+    # ADR-0015 GitHub project-context sync. Off by default everywhere; enabling
+    # the webhook ingest requires an HMAC secret. Without a token + repo name the
+    # gateway still persists deliveries (ingest-only mode) but cannot refresh.
+    github_sync_enabled: bool = False
+    github_webhook_secret: str | None = field(default=None, repr=False)
+    github_token: str | None = field(default=None, repr=False)
+    github_repo_full_name: str | None = None
+    # Periodic recheck stays off; when on, it refreshes material only (§5.4).
+    github_recheck_enabled: bool = False
+    github_recheck_interval_seconds: int = 1800
     timezone: str = DEFAULT_TIMEZONE
     intent_timeout_seconds: float = DEFAULT_INTENT_TIMEOUT_SECONDS
     intent_confidence_threshold: float = DEFAULT_INTENT_CONFIDENCE_THRESHOLD
@@ -114,6 +124,20 @@ class OrgPilotSettings:
             in {"1", "true", "yes", "on"},
             demo_mode=os.getenv("ORGPILOT_DEMO_MODE", "false").strip().lower()
             in {"1", "true", "yes", "on"},
+            github_sync_enabled=os.getenv("ORGPILOT_GITHUB_SYNC_ENABLED", "false")
+            .strip()
+            .lower()
+            in {"1", "true", "yes", "on"},
+            github_webhook_secret=_optional_env("ORGPILOT_GITHUB_WEBHOOK_SECRET"),
+            github_token=_optional_env("ORGPILOT_GITHUB_TOKEN"),
+            github_repo_full_name=_optional_env("ORGPILOT_GITHUB_REPO"),
+            github_recheck_enabled=os.getenv("ORGPILOT_GITHUB_RECHECK_ENABLED", "false")
+            .strip()
+            .lower()
+            in {"1", "true", "yes", "on"},
+            github_recheck_interval_seconds=int(
+                os.getenv("ORGPILOT_GITHUB_RECHECK_INTERVAL_SECONDS", "1800")
+            ),
             timezone=os.getenv("ORGPILOT_TIMEZONE", DEFAULT_TIMEZONE).strip(),
             intent_timeout_seconds=float(
                 os.getenv(
@@ -168,6 +192,19 @@ class OrgPilotSettings:
                 "ORGPILOT_LLM_THINKING must be one of: " + ", ".join(LLM_THINKING_MODES)
             )
 
+        if self.github_sync_enabled and not self.github_webhook_secret:
+            raise ValueError(
+                "ORGPILOT_GITHUB_WEBHOOK_SECRET is required when "
+                "ORGPILOT_GITHUB_SYNC_ENABLED is on (ADR-0015 §5.3: verify before persist)"
+            )
+        if self.github_sync_enabled and self.github_recheck_interval_seconds <= 0:
+            raise ValueError("ORGPILOT_GITHUB_RECHECK_INTERVAL_SECONDS must be positive")
+        if (
+            self.github_sync_enabled
+            and self.github_repo_full_name
+            and "/" not in self.github_repo_full_name
+        ):
+            raise ValueError("ORGPILOT_GITHUB_REPO must be 'owner/name'")
         if self.collaboration_adapter not in {"mock", "feishu"}:
             raise ValueError("ORGPILOT_COLLABORATION_ADAPTER must be 'mock' or 'feishu'")
         if self.collaboration_adapter == "feishu":

@@ -182,14 +182,15 @@ class MockGitHubClient:
 
     def __init__(self, snapshot: dict[str, Any]) -> None:
         self._snapshot = snapshot
-        self._failures: list[dict[str, Any]] = list(snapshot.get("failures", []))
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
     # -- failure simulation ------------------------------------------------------
 
     def _check_failure(self, method: str, **kwargs: Any) -> None:
         self.calls.append((method, kwargs))
-        for spec in self._failures:
+        # Failures are read live from the snapshot so tests may inject them
+        # after construction (mutating the snapshot dict they hold).
+        for spec in self._snapshot.get("failures", []):
             if spec.get("method") != method:
                 continue
             match = spec.get("match", {})
@@ -470,6 +471,7 @@ class HttpGitHubClient:
             title=data["title"],
             body=data.get("body"),
             state=data["state"],
+            milestone=(data.get("milestone") or {}).get("title"),
             merged=bool(data.get("merged", False)),
             merge_commit_sha=data.get("merge_commit_sha"),
             head_sha=data.get("head", {}).get("sha"),

@@ -1,5 +1,30 @@
 # 开发记录
 
+## 2026-11-03：M2-0 C3——持久化通知、增量刷新、补查与恢复（ADR-0015）
+
+- 新增 `github/sync.GitHubSyncService`：验签（HMAC-SHA256 常数时间比较）→ 先写 `sync_inbox` 再响应；
+  单项目 asyncio 锁串行 drain；每批 webhook 处理建独立 sync run。网络读取全部在事务外完成，
+  修订写入、run 检查点与 inbox 完成状态在同一事务提交——中途崩溃只留下 processing 声明，
+  无半写修订；`startup_recovery` 将 processing 重置为 pending、死 run 标记 abandoned。
+- 事件路由：push 仅处理绑定分支（旧分支通知直接忽略）；issues / issue_comment / pull_request /
+  pull_request_review 刷新对应对象；作用域由平台数据 + 存储绑定共同判定，通知载荷不能重定义范围。
+  乱序保护：载荷 updated_at 早于最新修订即 stale_skipped；评论、review 作为子对象独立于父对象
+  updated_at 刷新；内容去重吸收无变化刷新。
+- 403/404 仅降可用性；删除只在完整枚举后由补查核对执行（recheck 注入 `seen_external_ids`，
+  枚举不完整时绝不下架）。瞬态失败按指数退避落 retry_wait，超过 5 次转 failed 不再循环。
+- 手动补查复用 C2 导入器（幂等）；定期补查默认关闭、启用后按间隔（默认 1800s）仅刷新资料。
+- 网关接线：`/api/v1/github/webhook` 路由（未绑定仓库 200 应答不落盘、冲突投递应答 conflict 不覆盖原记录、
+  验签失败 401）；`build_gateway_service` 改为返回 (service, llm_client, sync_service) 三元组，
+  HTTP app 与独立飞书监听器共享同一同步写者；lifespan 启动先恢复、关闭先停同步再关数据库。
+- 配置：`ORGPILOT_GITHUB_SYNC_ENABLED`（默认关，开启必须配 webhook secret）、
+  `ORGPILOT_GITHUB_TOKEN/REPO`（缺省为仅接收模式：只落盘不刷新，绝不伪造刷新）、
+  `ORGPILOT_GITHUB_RECHECK_ENABLED/INTERVAL_SECONDS`。
+- 新增 31 项测试（`test_github_sync.py` 24 + `test_github_webhook_route.py` 7）：验签、100 次重投、
+  乱序不回滚、子评论独立刷新、403/500/404 分类、崩溃回滚 + 恢复重放、退避到 failed、
+  完整/不完整枚举的下架差异、定期补查到期、业务表前后不变、仅接收模式、路由门禁与端到端刷新。
+  同步更新三个既有测试对 build_gateway_service 三元组的解包。
+- 全量 **611 passed**，Ruff 通过；真实 GitHub / Webhook 验收仍列为 C6 可选待完成项。
+
 ## 2026-11-03：M2-0 C2——只读 GitHub 连接器与首次范围导入（ADR-0015）
 
 - 新增 `orgpilot.github` 只读连接层：`GitHubReadClient` 协议（9 个读取方法）、冻结 payload 模型

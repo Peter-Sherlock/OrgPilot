@@ -185,6 +185,23 @@ class SqlProjectSourceStore:
                 raise BindingConflict(f"binding {project_id}@v{binding_version} not found")
             record.enabled = enabled
 
+    async def find_active_binding_for_repository(
+        self, repository_id: str, session: AsyncSession | None = None
+    ) -> ProjectSourceBinding | None:
+        """Resolves a webhook's repository to the newest enabled binding."""
+        async with coowned_session(self.db, session) as owned:
+            stmt = (
+                select(ProjectSourceBindingRecord)
+                .where(
+                    ProjectSourceBindingRecord.repository_id == str(repository_id),
+                    ProjectSourceBindingRecord.enabled.is_(True),
+                )
+                .order_by(ProjectSourceBindingRecord.binding_version.desc())
+                .limit(1)
+            )
+            record = (await owned.execute(stmt)).scalar_one_or_none()
+        return self._binding_from(record) if record is not None else None
+
     @staticmethod
     def _binding_from(record: ProjectSourceBindingRecord) -> ProjectSourceBinding:
         return ProjectSourceBinding(

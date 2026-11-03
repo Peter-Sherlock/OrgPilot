@@ -503,7 +503,9 @@ async def _feishu_gateway(db_url: str, now: datetime) -> tuple[Any, MockFeishuCl
     db = Database(db_url)
     await db.init_db()
     client = MockFeishuClient()
-    service, _ = build_gateway_service(settings, db, FrozenClock(now), feishu_client=client)
+    service, _llm, _sync = build_gateway_service(
+        settings, db, FrozenClock(now), feishu_client=client
+    )
     service.intent_router.intent_client = ScriptedIntentClient(responses=RESPONSES)
     return service, client, FeishuWebhookHandler(service=service, project_id=PROJECT)
 

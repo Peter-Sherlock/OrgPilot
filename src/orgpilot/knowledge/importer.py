@@ -116,6 +116,7 @@ class ImportReport:
     truncations: list[ImportTruncation] = field(default_factory=list)
     conflicts: list[ImportConflict] = field(default_factory=list)
     relations_recorded: int = 0
+    seen_external_ids: dict[str, set[str]] = field(default_factory=dict)
     started_at: datetime | None = None
     finished_at: datetime | None = None
 
@@ -155,6 +156,7 @@ class SourceImporter:
     ) -> ImportReport:
         """Runs one full first-import over the binding scope."""
         self._binding = binding
+        self._seen: dict[str, set[str]] = {}
         if not binding.enabled:
             raise BindingConflict(
                 f"binding {binding.project_id}@v{binding.binding_version} is disabled"
@@ -191,6 +193,7 @@ class SourceImporter:
         await self._import_pull_requests(binding, report, pr_scope)
         await self._import_sub_items(binding, report, issue_scope, pr_scope)
         self._finalize_coverage(report)
+        report.seen_external_ids = {kind: set(ids) for kind, ids in self._seen.items()}
         await self.runs.save_checkpoint(
             run_id,
             per_source_cursor={"pinned_commit": report.pinned_commit_sha},
@@ -409,6 +412,7 @@ class SourceImporter:
                 content=canonical_payload_hash(payload),
                 metadata={
                     "state": pr.state,
+                    "milestone": pr.milestone,
                     "merged": pr.merged,
                     "merge_commit_sha": pr.merge_commit_sha,
                     "head_sha": pr.head_sha,
@@ -683,6 +687,7 @@ class SourceImporter:
             parent_source_id=parent_source_id,
         )
         source_id = precomputed_source_id or identity.source_id()
+        self._seen.setdefault(kind.value, set()).add(external_id)
         now = self.clock.now()
         existing = await self.sources.get_source_object(source_id)
         obj = SourceObject(
