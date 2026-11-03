@@ -1,0 +1,486 @@
+{
+  "meta": {
+    "version": "m2-0-c6-v1",
+    "date": "2026-11-03",
+    "note": "冻结变化/失败序列。每条对应 ADR-0015 验收矩阵中的必测行为；op 语义见 runner.py 的 OPS 字典。",
+    "min_entries": 12
+  },
+  "sequences": [
+    {
+      "id": "S01",
+      "name": "重复读取不生新版本",
+      "ops": [
+        {
+          "op": "seed"
+        },
+        {
+          "op": "push"
+        },
+        {
+          "op": "push"
+        }
+      ],
+      "expect": {
+        "revision_count_of_doc": {
+          "path": "docs/delivery.md",
+          "count": 1
+        },
+        "last_outcome_ignored_or_refreshed": true
+      }
+    },
+    {
+      "id": "S02",
+      "name": "A→B→A 保留三次修订",
+      "ops": [
+        {
+          "op": "seed"
+        },
+        {
+          "op": "mutate_blob",
+          "blob": "b-delivery",
+          "append": "\nB 版本。\n"
+        },
+        {
+          "op": "repoint",
+          "sha": "sha-aba"
+        },
+        {
+          "op": "clone_tree",
+          "from": "c0ffee1",
+          "to": "sha-aba"
+        },
+        {
+          "op": "push"
+        },
+        {
+          "op": "mutate_blob",
+          "blob": "b-delivery",
+          "content": "A 回来的内容"
+        },
+        {
+          "op": "repoint",
+          "sha": "sha-aba2"
+        },
+        {
+          "op": "clone_tree",
+          "from": "c0ffee1",
+          "to": "sha-aba2"
+        },
+        {
+          "op": "push"
+        }
+      ],
+      "expect": {
+        "revision_count_of_doc": {
+          "path": "docs/delivery.md",
+          "count": 3
+        }
+      }
+    },
+    {
+      "id": "S03",
+      "name": "同投递 ID 不同载荷拒绝",
+      "ops": [
+        {
+          "op": "seed"
+        },
+        {
+          "op": "webhook",
+          "delivery": "dx",
+          "event": "push",
+          "payload": {
+            "ref": "refs/heads/main"
+          }
+        },
+        {
+          "op": "webhook_conflict",
+          "delivery": "dx",
+          "payload": {
+            "ref": "refs/heads/other"
+          }
+        }
+      ],
+      "expect": {
+        "webhook_conflict": true
+      }
+    },
+    {
+      "id": "S04",
+      "name": "乱序通知不回滚",
+      "ops": [
+        {
+          "op": "seed"
+        },
+        {
+          "op": "mutate_issue",
+          "index": 0,
+          "assignees": [
+            "carol"
+          ]
+        },
+        {
+          "op": "webhook",
+          "delivery": "s4a",
+          "event": "issues",
+          "payload": {
+            "issue": {
+              "number": 1
+            }
+          }
+        },
+        {
+          "op": "webhook",
+          "delivery": "s4b",
+          "event": "issues",
+          "payload": {
+            "issue": {
+              "number": 1
+            }
+          }
+        }
+      ],
+      "expect": {
+        "issue_assignees": {
+          "number": 1,
+          "value": [
+            "carol"
+          ]
+        }
+      }
+    },
+    {
+      "id": "S05",
+      "name": "父对象不变而子评论编辑",
+      "ops": [
+        {
+          "op": "seed"
+        },
+        {
+          "op": "seed_issue"
+        },
+        {
+          "op": "mutate_comment",
+          "id": "7001",
+          "body": "明天给（已更新）"
+        },
+        {
+          "op": "webhook",
+          "delivery": "s5a",
+          "event": "issue_comment",
+          "payload": {
+            "issue": {
+              "number": 1
+            }
+          }
+        }
+      ],
+      "expect": {
+        "comment_body_contains": {
+          "id": "7001",
+          "text": "已更新"
+        },
+        "parent_revision_delta_zero": {
+          "number": 1
+        }
+      }
+    },
+    {
+      "id": "S06",
+      "name": "非绑定分支 push 忽略",
+      "ops": [
+        {
+          "op": "seed"
+        },
+        {
+          "op": "webhook",
+          "delivery": "s6",
+          "event": "push",
+          "payload": {
+            "ref": "refs/heads/feature"
+          }
+        }
+      ],
+      "expect": {
+        "outcome_ignored": true
+      }
+    },
+    {
+      "id": "S07",
+      "name": "完整枚举确认删除",
+      "ops": [
+        {
+          "op": "seed"
+        },
+        {
+          "op": "seed_push"
+        },
+        {
+          "op": "remove_tree_path",
+          "sha_key": "c0ffee1",
+          "path": "docs/spec/api.md"
+        },
+        {
+          "op": "push"
+        }
+      ],
+      "expect": {
+        "doc_availability": {
+          "path": "docs/spec/api.md",
+          "availability": "deleted"
+        }
+      }
+    },
+    {
+      "id": "S08",
+      "name": "403 只降可用性",
+      "ops": [
+        {
+          "op": "seed"
+        },
+        {
+          "op": "seed_issue"
+        },
+        {
+          "op": "fail",
+          "method": "get_issue",
+          "match": {
+            "number": 1
+          },
+          "status": 403
+        },
+        {
+          "op": "webhook",
+          "delivery": "s8",
+          "event": "issues",
+          "payload": {
+            "issue": {
+              "number": 1
+            }
+          }
+        }
+      ],
+      "expect": {
+        "issue_availability": {
+          "number": 1,
+          "availability": "unavailable"
+        }
+      }
+    },
+    {
+      "id": "S09",
+      "name": "丢通知由补查收敛",
+      "ops": [
+        {
+          "op": "seed"
+        },
+        {
+          "op": "initial_import"
+        },
+        {
+          "op": "mutate_blob",
+          "blob": "b-delivery",
+          "append": "\n补查捕获的变化。\n"
+        },
+        {
+          "op": "repoint",
+          "sha": "sha-s9"
+        },
+        {
+          "op": "clone_tree",
+          "from": "c0ffee1",
+          "to": "sha-s9"
+        },
+        {
+          "op": "manual_recheck"
+        }
+      ],
+      "expect": {
+        "doc_contains": {
+          "path": "docs/delivery.md",
+          "text": "补查捕获的变化"
+        }
+      }
+    },
+    {
+      "id": "S10",
+      "name": "枚举不完整不下架",
+      "ops": [
+        {
+          "op": "seed"
+        },
+        {
+          "op": "initial_import"
+        },
+        {
+          "op": "remove_tree_path",
+          "sha_key": "c0ffee1",
+          "path": "docs/delivery.md"
+        },
+        {
+          "op": "mutate_blob",
+          "blob": "b-api",
+          "append": "x"
+        },
+        {
+          "op": "fail",
+          "method": "get_blob",
+          "match": {
+            "blob_sha": "b-api"
+          },
+          "status": 500
+        },
+        {
+          "op": "manual_recheck"
+        }
+      ],
+      "expect": {
+        "doc_availability": {
+          "path": "docs/spec/api.md",
+          "availability": "available"
+        },
+        "recheck_incomplete": true
+      }
+    },
+    {
+      "id": "S11",
+      "name": "重试耗尽转 failed 不再循环",
+      "ops": [
+        {
+          "op": "seed"
+        },
+        {
+          "op": "seed_issue"
+        },
+        {
+          "op": "fail",
+          "method": "get_issue",
+          "match": {
+            "number": 1
+          },
+          "status": 503
+        },
+        {
+          "op": "webhook",
+          "delivery": "s11",
+          "event": "issues",
+          "payload": {
+            "issue": {
+              "number": 1
+            }
+          }
+        },
+        {
+          "op": "drain_until_failed"
+        }
+      ],
+      "expect": {
+        "inbox_status": {
+          "delivery": "s11",
+          "status": "failed"
+        }
+      }
+    },
+    {
+      "id": "S12",
+      "name": "崩溃恢复后重放成功",
+      "ops": [
+        {
+          "op": "seed"
+        },
+        {
+          "op": "seed_issue"
+        },
+        {
+          "op": "crash_before_done",
+          "delivery": "s12",
+          "event": "issues",
+          "payload": {
+            "issue": {
+              "number": 1
+            }
+          }
+        },
+        {
+          "op": "startup_recovery"
+        },
+        {
+          "op": "drain"
+        }
+      ],
+      "expect": {
+        "inbox_status": {
+          "delivery": "s12",
+          "status": "done"
+        },
+        "issue_assignees_recorded": {
+          "number": 1
+        }
+      }
+    },
+    {
+      "id": "S13",
+      "name": "文档升级旧代次失效",
+      "ops": [
+        {
+          "op": "seed"
+        },
+        {
+          "op": "initial_import"
+        },
+        {
+          "op": "derive"
+        },
+        {
+          "op": "mutate_blob",
+          "blob": "b-delivery",
+          "append": "\n新交付条件。\n"
+        },
+        {
+          "op": "repoint",
+          "sha": "sha-s13"
+        },
+        {
+          "op": "clone_tree",
+          "from": "c0ffee1",
+          "to": "sha-s13"
+        },
+        {
+          "op": "push"
+        },
+        {
+          "op": "invalidate"
+        },
+        {
+          "op": "derive"
+        }
+      ],
+      "expect": {
+        "old_generation_invalid": true,
+        "new_generation_ready": true
+      }
+    },
+    {
+      "id": "S14",
+      "name": "100 次重复投递单行",
+      "ops": [
+        {
+          "op": "seed"
+        },
+        {
+          "op": "webhook_100",
+          "delivery": "s14",
+          "event": "push",
+          "payload": {
+            "ref": "refs/heads/main"
+          }
+        }
+      ],
+      "expect": {
+        "inbox_rows": {
+          "delivery": "s14",
+          "count": 1
+        }
+      }
+    }
+  ]
+}

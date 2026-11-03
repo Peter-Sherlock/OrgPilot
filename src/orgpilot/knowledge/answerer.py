@@ -222,10 +222,26 @@ class ScriptedAnswerGenerator:
 
     @staticmethod
     def _keywords(question: str) -> list[str]:
+        """Whitespace tokens plus CJK 2-char shingles (mirrors the index).
+
+        Chinese questions carry no spaces, so raw tokens degrade to one long
+        string that never substring-matches; shingles keep matching honest.
+        """
         cleaned = question.strip()
         for stopword in _STOPWORDS:
             cleaned = cleaned.replace(stopword, " ")
-        return [token for token in cleaned.split() if len(token) >= 2][:4]
+        keywords: list[str] = []
+        for token in cleaned.split():
+            if len(token) < 2:
+                continue
+            keywords.append(token)
+            if len(token) > 2:
+                keywords.extend(token[i : i + 2] for i in range(len(token) - 1))
+        seen: list[str] = []
+        for keyword in keywords:
+            if keyword not in seen:
+                seen.append(keyword)
+        return seen[:12]
 
     @staticmethod
     def _work_item_hits(view: ReadLoopView) -> list[str]:
@@ -237,10 +253,13 @@ class ScriptedAnswerGenerator:
 
     def _statements_for(self, view: ReadLoopView) -> tuple[GroundedStatement, ...]:
         keywords = self._keywords(view.question)
+        # Match against title + locator + snippet — the same haystack the
+        # index searched — so a heading match (e.g. 交付条件) cites the
+        # document even when its body text lacks the keyword.
         matched = [
             ref
             for ref in view.evidence
-            if any(keyword in ref.snippet for keyword in keywords) or not keywords
+            if _matches(ref, keywords)
         ]
         if not matched:
             matched = list(view.evidence[:2])
@@ -257,6 +276,11 @@ class ScriptedAnswerGenerator:
     @staticmethod
     def _uncertainties(view: ReadLoopView) -> tuple[str, ...]:
         return tuple(view.unresolved)
+
+
+def _matches(ref: EvidenceRef, keywords: list[str]) -> bool:
+    haystack = f"{ref.title or ''} {ref.paragraph or ''} {ref.snippet}"
+    return (not keywords) or any(keyword in haystack for keyword in keywords)
 
 
 class LLMProjectAnswerer:
@@ -404,11 +428,19 @@ def deterministic_gap_answer(
     return answer.model_copy(update={"rendered_text": render_answer(answer, question)})
 
 
+_URL_PATTERN = __import__("re").compile(r"https?://\S+|www\.\S+")
+
+
 def render_answer(answer: GroundedProjectAnswer, question_hint: str | None = None) -> str:
-    """Deterministic rendering with source lines and freshness notes."""
+    """Deterministic rendering with source lines and freshness notes.
+
+    External URLs from the user's own question are never echoed: the answer
+    cites system-generated material references only (ADR-0015 §7.2).
+    """
     lines: list[str] = []
     if question_hint:
-        lines.append(f"关于「{question_hint}」：")
+        hint = _URL_PATTERN.sub("[链接已略]", question_hint)
+        lines.append(f"关于「{hint}」：")
     for statement in answer.statements:
         lines.append(f"• {statement.text}")
         for ref in statement.evidence_refs:

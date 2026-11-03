@@ -197,6 +197,17 @@ class MaterialIndex:
             if lowered in haystack or (terms and any(term in haystack for term in terms)):
                 hits.append(entry)
         # No per-page cap here, ranking only: the tool layer slices pages of
-        # SEARCH_MAX_HITS and signs cursors for the rest (§7.4).
-        hits.sort(key=lambda e: (e.kind.value, e.source_id, e.line_start or 0))
+        # SEARCH_MAX_HITS and signs cursors for the rest (§7.4). Rank order is
+        # deterministic and kind-weighted: authoritative documents first, then
+        # work records, then conversation sub-objects (comments last).
+        weight = {
+            SourceKind.DOCUMENT: 0,
+            SourceKind.ISSUE: 1,
+            SourceKind.PULL_REQUEST: 2,
+            SourceKind.REVIEW: 3,
+            SourceKind.COMMENT: 4,
+        }
+        hits.sort(
+            key=lambda e: (weight[e.kind], e.source_id, e.external_id, e.line_start or 0)
+        )
         return hits

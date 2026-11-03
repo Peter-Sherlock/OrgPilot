@@ -1,0 +1,298 @@
+{
+  "meta": {
+    "version": "m2-0-c6-v1",
+    "date": "2026-11-03",
+    "note": "冻结主动查阅循环边界样例，覆盖 ADR-0015 §7.7。materials 标注该问题需要结合的资料种类；至少 6 个需多类资料。",
+    "min_entries": 12,
+    "min_multi_material": 6
+  },
+  "cases": [
+    {
+      "id": "L01",
+      "name": "规范→Issue→PR 链式补读",
+      "materials": [
+        "document",
+        "issue",
+        "pull_request"
+      ],
+      "multi_material": true,
+      "question": "支付接口联调的前置条件和实现进展？",
+      "generator": "scripted",
+      "expect": {
+        "stop_reason": "answered",
+        "min_statements": 1,
+        "evidence_locatable": true
+      }
+    },
+    {
+      "id": "L02",
+      "name": "初始证据足够即提前结束",
+      "materials": [
+        "document"
+      ],
+      "multi_material": false,
+      "question": "项目目标是什么？",
+      "generator": "scripted",
+      "expect": {
+        "stop_reason": "answered",
+        "max_tool_calls": 8
+      }
+    },
+    {
+      "id": "L03",
+      "name": "连续相同检索两轮无进展",
+      "materials": [
+        "document"
+      ],
+      "multi_material": false,
+      "question": "项目目标是什么？",
+      "generator": "repeat_lookup",
+      "expect": {
+        "stop_reason": "no_progress"
+      }
+    },
+    {
+      "id": "L04",
+      "name": "工具调用上限 2",
+      "materials": [
+        "document"
+      ],
+      "multi_material": false,
+      "question": "联调需要什么条件？",
+      "generator": "scripted",
+      "limits": {
+        "max_tool_calls": 2
+      },
+      "expect": {
+        "max_used_tool_calls": 2
+      }
+    },
+    {
+      "id": "L05",
+      "name": "模型请求上限 2",
+      "materials": [
+        "document"
+      ],
+      "multi_material": false,
+      "question": "项目目标是什么？",
+      "generator": "scripted",
+      "limits": {
+        "max_model_requests": 2
+      },
+      "expect": {
+        "max_used_model_requests": 2
+      }
+    },
+    {
+      "id": "L06",
+      "name": "token 上限 400",
+      "materials": [
+        "document"
+      ],
+      "multi_material": false,
+      "question": "联调需要什么条件？",
+      "generator": "scripted",
+      "limits": {
+        "max_total_tokens": 400
+      },
+      "expect": {
+        "max_total_tokens": 400
+      }
+    },
+    {
+      "id": "L07",
+      "name": "假计时器探索时限",
+      "materials": [
+        "document"
+      ],
+      "multi_material": false,
+      "question": "联调需要什么条件？",
+      "generator": "scripted",
+      "limits": {
+        "exploration_time_seconds": 20.0,
+        "total_time_seconds": 60.0
+      },
+      "timer_advance_per_decide": 10.0,
+      "expect": {
+        "max_used_rounds": 2
+      }
+    },
+    {
+      "id": "L08",
+      "name": "墙钟回拨不返还时间",
+      "materials": [
+        "document"
+      ],
+      "multi_material": false,
+      "question": "项目目标是什么？",
+      "generator": "scripted",
+      "clock_setback_minutes": 60,
+      "expect": {
+        "stop_reason_in": [
+          "answered",
+          "budget_exhausted",
+          "no_progress",
+          "insufficient_evidence",
+          "model_failed"
+        ]
+      }
+    },
+    {
+      "id": "L09",
+      "name": "伪造证据一次修复成功",
+      "materials": [
+        "document"
+      ],
+      "multi_material": false,
+      "question": "项目目标是什么？",
+      "generator": "fabricate_then_repair",
+      "expect": {
+        "stop_reason": "answered",
+        "repairs_used": 1,
+        "evidence_locatable": true
+      }
+    },
+    {
+      "id": "L10",
+      "name": "修复仍失败落缺口模板",
+      "materials": [
+        "document"
+      ],
+      "multi_material": false,
+      "question": "项目目标是什么？",
+      "generator": "fabricate_always",
+      "expect": {
+        "stop_reason_in": [
+          "model_failed",
+          "answered"
+        ],
+        "no_fabricated_refs": true
+      }
+    },
+    {
+      "id": "L11",
+      "name": "未知模型结果保留预留",
+      "materials": [
+        "document"
+      ],
+      "multi_material": false,
+      "question": "项目目标是什么？",
+      "generator": "dying",
+      "expect": {
+        "stop_reason": "model_failed",
+        "unknown_token_usage": true
+      }
+    },
+    {
+      "id": "L12",
+      "name": "同消息重投复用会话",
+      "materials": [
+        "document"
+      ],
+      "multi_material": false,
+      "question": "项目目标是什么？",
+      "generator": "scripted",
+      "redeliver": true,
+      "expect": {
+        "same_session": true
+      }
+    },
+    {
+      "id": "L13",
+      "name": "会话中撤权弃内容",
+      "materials": [
+        "document"
+      ],
+      "multi_material": false,
+      "question": "项目目标是什么？",
+      "generator": "revoke_on_finish",
+      "expect": {
+        "stop_reason": "access_denied",
+        "no_statements": true
+      }
+    },
+    {
+      "id": "L14",
+      "name": "范围外工具参数被拒",
+      "materials": [
+        "document",
+        "issue"
+      ],
+      "multi_material": true,
+      "question": "鉴权信息登记情况如何？",
+      "generator": "probe_out_of_scope",
+      "expect": {
+        "stop_reason_in": [
+          "no_progress",
+          "insufficient_evidence",
+          "budget_exhausted",
+          "answered"
+        ],
+        "no_out_of_scope_leak": true
+      }
+    },
+    {
+      "id": "L15",
+      "name": "目标+交付+工作记录混合问答",
+      "materials": [
+        "document",
+        "issue",
+        "pull_request",
+        "review"
+      ],
+      "multi_material": true,
+      "question": "支付接口的目标、交付条件和评审状态？",
+      "generator": "scripted",
+      "expect": {
+        "stop_reason": "answered",
+        "evidence_locatable": true
+      }
+    },
+    {
+      "id": "L16",
+      "name": "规范术语+评论陈述交叉",
+      "materials": [
+        "document",
+        "comment"
+      ],
+      "multi_material": true,
+      "question": "联调的术语定义和 bob 的最新说法？",
+      "generator": "scripted",
+      "expect": {
+        "stop_reason": "answered",
+        "evidence_locatable": true
+      }
+    },
+    {
+      "id": "L17",
+      "name": "Issue 状态+评论+关联 PR 交叉",
+      "materials": [
+        "issue",
+        "comment",
+        "pull_request"
+      ],
+      "multi_material": true,
+      "question": "鉴权信息登记的进展和相关实现？",
+      "generator": "scripted",
+      "expect": {
+        "stop_reason": "answered",
+        "evidence_locatable": true
+      }
+    },
+    {
+      "id": "L18",
+      "name": "交付规范与登记情况对照",
+      "materials": [
+        "document",
+        "issue"
+      ],
+      "multi_material": true,
+      "question": "交付规范对鉴权的要求和登记情况？",
+      "generator": "scripted",
+      "expect": {
+        "stop_reason": "answered",
+        "evidence_locatable": true
+      }
+    }
+  ]
+}

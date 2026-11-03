@@ -63,6 +63,7 @@ from orgpilot.knowledge.models import (
     ReadStepRecord,
     ReservationKind,
     SourceAvailability,
+    SourceKind,
     StopReason,
     new_session_id,
     question_hash,
@@ -332,7 +333,11 @@ class ProjectReadOrchestrator:
         index = MaterialIndex.from_generation_material(objects, revisions)
         org_state: OrgState | None = None
         if self.org_state_provider is not None:
-            org_state = await self.org_state_provider(spec.project_id)
+            provided = self.org_state_provider(spec.project_id)
+            if asyncio.iscoroutine(provided):
+                org_state = await provided
+            else:
+                org_state = provided
         try:
             packet = builder.build_packet(
                 read_session_id=spec.session_id,
@@ -724,7 +729,7 @@ class ProjectReadOrchestrator:
         """
         problems = _validate_statements(decision.statements, evidence, self.sources)
         if not problems:
-            return self._assemble_valid_finish(spec, decision, evidence), False
+            return await self._assemble_valid_finish(spec, decision, evidence), False
         if repairs_used >= self.limits.max_structured_repairs:
             return None, False
         view = ReadLoopView(
@@ -746,9 +751,9 @@ class ProjectReadOrchestrator:
         problems_after = _validate_statements(repaired_decision.statements, evidence, self.sources)
         if problems_after:
             return None, True
-        return self._assemble_valid_finish(spec, repaired_decision, evidence), True
+        return await self._assemble_valid_finish(spec, repaired_decision, evidence), True
 
-    def _assemble_valid_finish(
+    async def _assemble_valid_finish(
         self, spec, decision: ProjectAnswerDecision, evidence: dict[str, EvidenceRef]
     ):
         if decision.answer_status is AnswerStatus.CLARIFICATION:
@@ -764,7 +769,7 @@ class ProjectReadOrchestrator:
             return answer.model_copy(
                 update={"rendered_text": render_answer(answer, spec.question)}
             )
-        return _assemble_answer(spec, decision, evidence)
+        return await _assemble_answer(spec, decision, evidence, self.sources)
 
     async def _template_answer(
         self, spec, stop, unresolved, evidence, generation, usage, clarification, packet
@@ -852,12 +857,26 @@ def _validate_statements(
     return problems
 
 
-def _assemble_answer(
-    spec, decision: ProjectAnswerDecision, evidence: dict[str, EvidenceRef]
+async def _assemble_answer(
+    spec,
+    decision: ProjectAnswerDecision,
+    evidence: dict[str, EvidenceRef],
+    sources: SqlProjectSourceStore,
 ) -> GroundedProjectAnswer:
+    """Assembles the answer; work-item statements gain their cited revision's
+    deterministic metadata facts (state / merged / review author), so platform
+    fields are quotable without any model invention."""
+    statements = list(decision.statements)
+    for index, statement in enumerate(statements):
+        for ref in statement.evidence_refs:
+            note = await _work_item_note(sources, ref)
+            if note and note not in statements[index].text:
+                statements[index] = statement.model_copy(
+                    update={"text": f"{statement.text}（{note}）"}
+                )
     answer = GroundedProjectAnswer(
         read_session_id=spec.session_id,
-        statements=decision.statements,
+        statements=tuple(statements),
         uncertainties=decision.uncertainties,
         conflicts=decision.conflicts,
         missing_info=decision.missing_info,
@@ -868,6 +887,33 @@ def _assemble_answer(
         ),
     )
     return answer.model_copy(update={"rendered_text": render_answer(answer, spec.question)})
+
+
+async def _work_item_note(sources: SqlProjectSourceStore, ref: EvidenceRef) -> str | None:
+    """Deterministic facts from the cited revision's stored metadata."""
+    revision = await sources.get_revision(ref.revision_id)
+    if revision is None:
+        return None
+    metadata = revision.metadata or {}
+    if ref.kind is SourceKind.DOCUMENT:
+        obj = await sources.get_source_object(ref.source_id)
+        if obj is not None and obj.external_id:
+            return f"来源文档：{obj.external_id}"
+        return None
+    if ref.kind is SourceKind.ISSUE:
+        parts = [f"工作记录 issue：状态={metadata.get('state', 'unknown')}"]
+        if metadata.get("assignees"):
+            parts.append(f"负责人={','.join(metadata['assignees'])}")
+        return "、".join(parts)
+    if ref.kind is SourceKind.PULL_REQUEST:
+        merged = "已合并" if metadata.get("merged") else "未合并"
+        return f"工作记录 PR：状态={metadata.get('state', 'unknown')}、{merged}"
+    if ref.kind is SourceKind.REVIEW:
+        return (
+            f"工作记录 review：{metadata.get('author', 'unknown')} 提交 "
+            f"{metadata.get('state', '')}"
+        )
+    return None
 
 
 def _kind_from_tool(item: dict):
