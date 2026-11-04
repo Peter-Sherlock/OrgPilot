@@ -299,17 +299,14 @@ class TestContextBuilder:
         assert packet.brief and len(packet.brief) <= 2000
         assert packet.relevant_evidence, "initial retrieval should pin evidence"
         assert all(
-            e.revision_id in env["generation"].revision_manifest
-            for e in packet.relevant_evidence
+            e.revision_id in env["generation"].revision_manifest for e in packet.relevant_evidence
         )
         assert any(ref.startswith("task:task-payment@") for ref in packet.org_state_refs)
         assert packet.conflicts  # two-source boundary made visible
 
     async def test_packet_surfaces_unavailable_sources(self, env) -> None:
         sources = env["sources"]
-        api = await sources.find_source_object(
-            "proj-a", 1, SourceKind.DOCUMENT, "docs/spec/api.md"
-        )
+        api = await sources.find_source_object("proj-a", 1, SourceKind.DOCUMENT, "docs/spec/api.md")
         await sources.set_source_availability(api.source_id, SourceAvailability.UNAVAILABLE, "403")
         builder = ProjectContextBuilder(env["clock"])
         packet = builder.build_packet(
@@ -393,6 +390,11 @@ class TestSearchTool:
         snapshot["branches"]["main"]["sha"] = "sha-page"
         snapshot["trees"]["sha-page"] = snapshot["trees"]["c0ffee1"]
         await _reimport(env)
+        env["generation"] = await DerivationPipeline(
+            env["sources"],
+            env["knowledge"],
+            clock=env["clock"],
+        ).build_and_publish(env["binding"], base_generation=env["generation"])
         await _reindex(env)
         tools = make_tools(env)
         page1 = await tools.call("search_project", {"query": "联调条件"})
@@ -543,9 +545,7 @@ class TestToolContract:
         )
         third = await tools.call("search_project", args)
         assert third.cached is False
-        assert third.ok is False or hit_source not in {
-            item["source_id"] for item in third.items
-        }
+        assert third.ok is False or hit_source not in {item["source_id"] for item in third.items}
 
     async def test_result_size_cap_never_exceeds_4096(self, env) -> None:
         tools = make_tools(env)
@@ -581,9 +581,7 @@ class TestToolContract:
             "rds-a", env["generation"].generation_id, "search_project", {"kinds": None}, 0
         )
         if first.next_cursor:
-            cross = await tools_b.call(
-                "search_project", {**args, "cursor": first.next_cursor}
-            )
+            cross = await tools_b.call("search_project", {**args, "cursor": first.next_cursor})
             assert cross.ok is True  # its own session; cursor A still foreign
         _ = forged
 

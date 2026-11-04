@@ -37,7 +37,11 @@ class ProjectKnowledgeService:
         self.sources = SqlProjectSourceStore(db, self.clock)
         self.knowledge = SqlKnowledgeStore(db, self.clock)
         self.read_sessions = SqlReadSessionStore(db, self.clock)
-        self.limits = limits or BudgetLimits()
+        self.limits = limits or BudgetLimits(
+            max_spend_usd=self.settings.project_qa_max_spend_usd,
+            input_usd_per_million=self.settings.project_qa_input_usd_per_million,
+            output_usd_per_million=self.settings.project_qa_output_usd_per_million,
+        )
         self.generator = generator or self._default_generator()
         self.orchestrator = ProjectReadOrchestrator(
             sources=self.sources,
@@ -54,6 +58,7 @@ class ProjectKnowledgeService:
         """Scripted policy unless an online answerer is explicitly opted in."""
         if not self.settings.project_qa_online:
             return ScriptedAnswerGenerator()
+        self.settings.validate()
         provider = self.settings.llm_provider
         if provider == "aihubmix" and self.settings.aihubmix_api_key:
             from orgpilot.knowledge.llm import ProjectLLMClient

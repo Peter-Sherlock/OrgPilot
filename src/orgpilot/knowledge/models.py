@@ -14,6 +14,7 @@ All names here are contracts only; persistence lives in
 import hashlib
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
 
@@ -611,15 +612,15 @@ class KnowledgeGeneration(KnowledgeFrozen):
 class BudgetLimits(KnowledgeFrozen):
     """First-version hard budgets (ADR-0015 §7.5); binding config may tighten."""
 
-    max_exploration_rounds: int = 4
-    max_tool_calls: int = 8
-    max_model_requests: int = 6
-    max_structured_repairs: int = 1
-    max_input_tokens_per_call: int = 8192
-    max_output_tokens_per_call: int = 1024
-    max_total_tokens: int = 32768
-    max_evidence_fragments: int = 12
-    max_evidence_chars: int = 12000
+    max_exploration_rounds: int = Field(default=4, ge=0, le=4)
+    max_tool_calls: int = Field(default=8, ge=0, le=8)
+    max_model_requests: int = Field(default=6, ge=0, le=6)
+    max_structured_repairs: int = Field(default=1, ge=0, le=1)
+    max_input_tokens_per_call: int = Field(default=8192, ge=0, le=8192)
+    max_output_tokens_per_call: int = Field(default=1024, ge=0, le=1024)
+    max_total_tokens: int = Field(default=32768, ge=0, le=32768)
+    max_evidence_fragments: int = Field(default=12, ge=0, le=12)
+    max_evidence_chars: int = Field(default=12000, ge=0, le=12000)
     summary_max_chars: int = PROJECT_BRIEF_MAX_CHARS
     total_time_seconds: float = 60.0
     exploration_time_seconds: float = 45.0
@@ -627,6 +628,9 @@ class BudgetLimits(KnowledgeFrozen):
     max_model_seconds: float = 10.0
     max_tool_seconds: float = 2.0
     max_no_progress_rounds: int = 2
+    max_spend_usd: Decimal | None = Field(default=None, gt=0)
+    input_usd_per_million: Decimal | None = Field(default=None, ge=0)
+    output_usd_per_million: Decimal | None = Field(default=None, ge=0)
 
 
 class BudgetUsage(KnowledgeFrozen):
@@ -646,6 +650,7 @@ class BudgetUsage(KnowledgeFrozen):
     evidence_fragments: int = 0
     evidence_chars: int = 0
     elapsed_seconds: float = 0.0
+    cost_usd: Decimal = Field(default=Decimal("0"), ge=0)
 
     def total_tokens(self) -> int:
         return self.input_tokens + self.output_tokens
@@ -662,6 +667,7 @@ class BudgetUsage(KnowledgeFrozen):
             evidence_fragments=self.evidence_fragments + other.evidence_fragments,
             evidence_chars=self.evidence_chars + other.evidence_chars,
             elapsed_seconds=self.elapsed_seconds + other.elapsed_seconds,
+            cost_usd=self.cost_usd + other.cost_usd,
         )
 
 
@@ -677,6 +683,7 @@ class BudgetReservation(KnowledgeFrozen):
     evidence_fragments: int = 0
     evidence_chars: int = 0
     seconds: float = 0.0
+    cost_usd: Decimal = Field(default=Decimal("0"), ge=0)
     created_at: datetime
 
     _tz_created = field_validator("created_at")(_require_timezone)
@@ -691,6 +698,7 @@ class BudgetReservation(KnowledgeFrozen):
             evidence_fragments=self.evidence_fragments,
             evidence_chars=self.evidence_chars,
             elapsed_seconds=self.seconds,
+            cost_usd=self.cost_usd,
         )
 
 

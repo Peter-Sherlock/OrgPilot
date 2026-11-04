@@ -2,6 +2,7 @@
 
 import os
 from dataclasses import dataclass, field
+from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -36,6 +37,11 @@ def _load_dotenv_if_exists(dotenv_path: str = ".env") -> None:
 def _optional_env(name: str) -> str | None:
     value = os.getenv(name)
     return value.strip() if value and value.strip() else None
+
+
+def _decimal_env(name: str) -> Decimal | None:
+    value = _optional_env(name)
+    return Decimal(value) if value else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +86,9 @@ class OrgPilotSettings:
     # requires project_qa_online plus provider credentials.
     project_qa_enabled: bool = False
     project_qa_online: bool = False
+    project_qa_max_spend_usd: Decimal | None = None
+    project_qa_input_usd_per_million: Decimal | None = None
+    project_qa_output_usd_per_million: Decimal | None = None
     timezone: str = DEFAULT_TIMEZONE
     intent_timeout_seconds: float = DEFAULT_INTENT_TIMEOUT_SECONDS
     intent_confidence_threshold: float = DEFAULT_INTENT_CONFIDENCE_THRESHOLD
@@ -112,8 +121,7 @@ class OrgPilotSettings:
             deepseek_api_key=_optional_env("DEEPSEEK_API_KEY"),
             deepseek_base_url=os.getenv("DEEPSEEK_BASE_URL", DEFAULT_DEEPSEEK_BASE_URL).rstrip("/"),
             deepseek_model=os.getenv("DEEPSEEK_MODEL", DEFAULT_DEEPSEEK_MODEL),
-            llm_thinking=thinking_env
-            or ("disabled" if llm_provider == "deepseek" else "omit"),
+            llm_thinking=thinking_env or ("disabled" if llm_provider == "deepseek" else "omit"),
             collaboration_adapter=os.getenv("ORGPILOT_COLLABORATION_ADAPTER", "mock")
             .strip()
             .lower(),
@@ -128,9 +136,7 @@ class OrgPilotSettings:
             in {"1", "true", "yes", "on"},
             demo_mode=os.getenv("ORGPILOT_DEMO_MODE", "false").strip().lower()
             in {"1", "true", "yes", "on"},
-            github_sync_enabled=os.getenv("ORGPILOT_GITHUB_SYNC_ENABLED", "false")
-            .strip()
-            .lower()
+            github_sync_enabled=os.getenv("ORGPILOT_GITHUB_SYNC_ENABLED", "false").strip().lower()
             in {"1", "true", "yes", "on"},
             github_webhook_secret=_optional_env("ORGPILOT_GITHUB_WEBHOOK_SECRET"),
             github_token=_optional_env("ORGPILOT_GITHUB_TOKEN"),
@@ -142,14 +148,17 @@ class OrgPilotSettings:
             github_recheck_interval_seconds=int(
                 os.getenv("ORGPILOT_GITHUB_RECHECK_INTERVAL_SECONDS", "1800")
             ),
-            project_qa_enabled=os.getenv("ORGPILOT_PROJECT_QA_ENABLED", "false")
-            .strip()
-            .lower()
+            project_qa_enabled=os.getenv("ORGPILOT_PROJECT_QA_ENABLED", "false").strip().lower()
             in {"1", "true", "yes", "on"},
-            project_qa_online=os.getenv("ORGPILOT_PROJECT_QA_ONLINE", "false")
-            .strip()
-            .lower()
+            project_qa_online=os.getenv("ORGPILOT_PROJECT_QA_ONLINE", "false").strip().lower()
             in {"1", "true", "yes", "on"},
+            project_qa_max_spend_usd=_decimal_env("ORGPILOT_PROJECT_QA_MAX_SPEND_USD"),
+            project_qa_input_usd_per_million=_decimal_env(
+                "ORGPILOT_PROJECT_QA_INPUT_USD_PER_MILLION"
+            ),
+            project_qa_output_usd_per_million=_decimal_env(
+                "ORGPILOT_PROJECT_QA_OUTPUT_USD_PER_MILLION"
+            ),
             timezone=os.getenv("ORGPILOT_TIMEZONE", DEFAULT_TIMEZONE).strip(),
             intent_timeout_seconds=float(
                 os.getenv(
@@ -173,6 +182,17 @@ class OrgPilotSettings:
         return settings
 
     def validate(self) -> None:
+        if self.project_qa_enabled and self.project_qa_online:
+            if self.project_qa_max_spend_usd is None or self.project_qa_max_spend_usd <= 0:
+                raise ValueError("online project Q&A requires a positive per-question spend cap")
+            if any(
+                value is None or value < 0
+                for value in (
+                    self.project_qa_input_usd_per_million,
+                    self.project_qa_output_usd_per_million,
+                )
+            ):
+                raise ValueError("online project Q&A requires configured input/output prices")
         try:
             ZoneInfo(self.timezone)
         except Exception as exc:

@@ -44,7 +44,7 @@ _STOPWORDS = ("的", "吗", "呢", "？", "?", "。", "，", "！", "什么", "�
 
 
 def estimate_tokens(text: str) -> int:
-    """Documented upper-bound estimator: one token ≈ four characters."""
+    """Offline accounting heuristic; never authorizes an online request."""
     return max(1, (len(text) + 3) // 4)
 
 
@@ -284,13 +284,15 @@ def _matches(ref: EvidenceRef, keywords: list[str]) -> bool:
 class LLMProjectAnswerer:
     """Online answerer over the shared Anthropic-compatible client.
 
-    Not exercised by tests and not enabled by any default configuration; live
-    use is a C6 acceptance with explicit scope, credentials, and budget. The
+    Transport wiring is exercised by offline HTTP tests; live quality remains
+    a C6 acceptance with explicit scope, credentials, and budget. The
     prompt pins the four-decision contract; malformed JSON gets exactly one
     repair round, enforced by the loop (the client itself does not retry).
     """
 
     generator_version = LLM_GENERATOR_VERSION
+    online = True
+    max_output_tokens = 1024
 
     def __init__(self, client: Any, model: str) -> None:
         self._client = client
@@ -308,18 +310,42 @@ class LLMProjectAnswerer:
     )
 
     async def decide(self, view: ReadLoopView) -> ProjectAnswerDecision:
-        prompt = view.to_prompt()
+        prompt = self.prompt_for(view)
         raw = await self._call(prompt)
-        return self._parse(raw, view)
+        return self._decision_with_usage(raw, view)
 
     async def repair(
         self, view: ReadLoopView, rejected: ProjectAnswerDecision, reason: str
     ) -> ProjectAnswerDecision:
-        prompt = (
-            f"上一次输出不符合契约（{reason}）。请重新输出符合契约的 JSON。\n\n{view.to_prompt()}"
-        )
+        prompt = self.prompt_for(view, reason)
         raw = await self._call(prompt)
-        return self._parse(raw, view)
+        return self._decision_with_usage(raw, view)
+
+    @staticmethod
+    def prompt_for(view, repair_reason=None):
+        data = json.loads(view.to_prompt())
+        if repair_reason is not None:
+            data["repair_reason"] = repair_reason[:400]
+        return json.dumps(data, ensure_ascii=False)
+
+    def request_bound(self, view, repair_reason=None):
+        # Count the full byte-backed request, plus conservative framing.
+        payload = self._client.payload(
+            model=self._model,
+            system=self.SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": self.prompt_for(view, repair_reason)}],
+            max_tokens=self.max_output_tokens,
+        )
+        return len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) + 512
+
+    def _decision_with_usage(self, raw, view):
+        try:
+            decision = self._parse(raw, view)
+        except DecisionValidationError as exc:
+            exc.usage = self.last_usage
+            raise
+        decision.usage = self.last_usage
+        return decision
 
     async def _call(self, prompt: str) -> str:
         self.last_usage = None
@@ -327,7 +353,7 @@ class LLMProjectAnswerer:
             model=self._model,
             system=self.SYSTEM_PROMPT,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=1024,
+            max_tokens=self.max_output_tokens,
         )
         if inspect.isawaitable(result):
             result = await result
@@ -340,7 +366,9 @@ class LLMProjectAnswerer:
             input_tokens=result.input_tokens
             if result.input_tokens is not None
             else (len(prompt.encode("utf-8")) + 512),
-            output_tokens=result.output_tokens if result.output_tokens is not None else 1024,
+            output_tokens=result.output_tokens
+            if result.output_tokens is not None
+            else (self.max_output_tokens),
             unknown_token_usage=result.input_tokens is None or result.output_tokens is None,
         )
         return result.text

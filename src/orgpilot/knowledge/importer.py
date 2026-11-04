@@ -20,7 +20,7 @@ from datetime import datetime
 from typing import Any
 
 from orgpilot.domain.clock import Clock, SystemClock
-from orgpilot.github.client import GitHubReadClient, GitHubReadError, is_access_failure
+from orgpilot.github.client import GitHubReadClient, GitHubReadError, is_access_failure, read_github
 from orgpilot.github.models import CommentPayload, IssuePayload, PullRequestPayload
 from orgpilot.knowledge.errors import BindingConflict, KnowledgeContractError
 from orgpilot.knowledge.models import (
@@ -163,7 +163,10 @@ class SourceImporter:
             )
         started_at = self.clock.now()
         run_id = run_id or f"run-{uuid.uuid4().hex[:16]}"
-        repo = self.client.get_repository()
+        repo = await read_github(
+            self.client,
+            "get_repository",
+        )
         if repo.repository_id != binding.repository_id:
             raise KnowledgeContractError(
                 f"binding repository {binding.repository_id} != client repository "
@@ -183,7 +186,9 @@ class SourceImporter:
             access_epoch=binding.access_epoch,
             repository_id=repo.repository_id,
             repository_full_name=repo.full_name,
-            pinned_commit_sha=self.client.get_branch_head(binding.branch).sha,
+            pinned_commit_sha=(
+                await read_github(self.client, "get_branch_head", binding.branch)
+            ).sha,
             run_id=run_id,
             started_at=started_at,
         )
@@ -215,13 +220,11 @@ class SourceImporter:
 
     # -- documents ----------------------------------------------------------------
 
-    async def _import_documents(
-        self, binding: ProjectSourceBinding, report: ImportReport
-    ) -> None:
+    async def _import_documents(self, binding: ProjectSourceBinding, report: ImportReport) -> None:
         if not binding.path_allowlist:
             return
         try:
-            tree = self.client.get_tree(report.pinned_commit_sha)
+            tree = await read_github(self.client, "get_tree", report.pinned_commit_sha)
         except GitHubReadError as exc:
             report.failures.append(
                 ImportFailure(
@@ -246,7 +249,7 @@ class SourceImporter:
         imported = 0
         for entry in allowed:
             try:
-                content = self.client.get_blob(entry.blob_sha)
+                content = await read_github(self.client, "get_blob", entry.blob_sha)
             except GitHubReadError as exc:
                 report.failures.append(
                     ImportFailure(
@@ -308,14 +311,17 @@ class SourceImporter:
         matched = len(pr_scope)
         beyond_cap = 0
         while True:
-            batch = self.client.list_issues(state="all", page=page, per_page=50)
+            batch = await read_github(
+                self.client, "list_issues", state="all", page=page, per_page=50
+            )
             if not batch:
                 break
             for item in batch:
                 seen_total += 1
-                selected = binding.issue_selector.covers(
-                    item.number, item.milestone
-                ) or item.number in binding.explicit_pr_ids
+                selected = (
+                    binding.issue_selector.covers(item.number, item.milestone)
+                    or item.number in binding.explicit_pr_ids
+                )
                 if not selected:
                     continue
                 if matched >= self.limits.max_work_items:
@@ -381,7 +387,7 @@ class SourceImporter:
         imported = 0
         for number in sorted(pr_scope):
             try:
-                pr = self.client.get_pull_request(number)
+                pr = await read_github(self.client, "get_pull_request", number)
             except GitHubReadError as exc:
                 if number in binding.explicit_pr_ids:
                     # An admin-registered PR id that cannot be read as a PR is
@@ -458,9 +464,7 @@ class SourceImporter:
             issue_obj = await self.sources.get_source_object(issue_identity.source_id())
             if issue_obj is None:
                 continue  # out-of-scope targets are mentions of nothing trackable
-            relation_type = (
-                RelationType.IMPLEMENTS if number in closing else RelationType.MENTIONS
-            )
+            relation_type = RelationType.IMPLEMENTS if number in closing else RelationType.MENTIONS
             confirmation = (
                 ConfirmationStatus.CONFIRMED
                 if relation_type is RelationType.IMPLEMENTS
@@ -525,7 +529,9 @@ class SourceImporter:
         page = 1
         while True:
             try:
-                batch = self.client.list_issue_comments(number, page=page, per_page=50)
+                batch = await read_github(
+                    self.client, "list_issue_comments", number, page=page, per_page=50
+                )
             except GitHubReadError as exc:
                 report.failures.append(
                     ImportFailure(
@@ -569,7 +575,9 @@ class SourceImporter:
         page = 1
         while True:
             try:
-                batch = self.client.list_pull_request_reviews(pr_number, page=page, per_page=50)
+                batch = await read_github(
+                    self.client, "list_pull_request_reviews", pr_number, page=page, per_page=50
+                )
             except GitHubReadError as exc:
                 report.failures.append(
                     ImportFailure(
@@ -795,9 +803,8 @@ class SourceImporter:
         if kind == SourceKind.DOCUMENT.value:
             return bool(binding.path_allowlist)
         if kind == SourceKind.ISSUE.value:
-            return (
-                binding.issue_selector.milestone is not None
-                or bool(binding.issue_selector.issue_ids)
+            return binding.issue_selector.milestone is not None or bool(
+                binding.issue_selector.issue_ids
             )
         if kind == SourceKind.PULL_REQUEST.value:
             return bool(binding.explicit_pr_ids)

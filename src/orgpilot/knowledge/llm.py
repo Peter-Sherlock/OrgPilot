@@ -33,8 +33,13 @@ class ProjectLLMClient:
         )
 
     def payload(self, *, model, system, messages, max_tokens) -> dict[str, Any]:
-        payload = {"model": model, "system": system, "messages": messages,
-                   "max_tokens": max_tokens, "stream": False}
+        payload = {
+            "model": model,
+            "system": system,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "stream": False,
+        }
         if self._thinking != "omit":
             payload["thinking"] = {"type": self._thinking}
         return payload
@@ -58,13 +63,17 @@ class ProjectLLMClient:
         input_tokens = usage.get("input_tokens")
         output_tokens = usage.get("output_tokens")
         if type(input_tokens) is int and input_tokens >= 0:
-            input_tokens += sum(
+            cache_tokens = [
                 usage.get(key, 0)
                 for key in (
                     "cache_creation_input_tokens",
                     "cache_read_input_tokens",
                 )
-            )
+            ]
+            if all(type(value) is int and value >= 0 for value in cache_tokens):
+                input_tokens += sum(cache_tokens)
+            else:
+                input_tokens = None
         else:
             input_tokens = None
         if type(output_tokens) is not int or output_tokens < 0:

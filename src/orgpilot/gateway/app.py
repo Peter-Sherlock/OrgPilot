@@ -166,7 +166,7 @@ def create_app(
         # then optionally run the (default-off) periodic material recheck.
         recheck_handle = None
         if sync_service is not None:
-            await sync_service.startup_recovery()
+            await sync_service.start()
             if runtime_settings.github_recheck_enabled:
                 import asyncio
 
@@ -187,6 +187,8 @@ def create_app(
                 recheck_handle.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await recheck_handle
+            if sync_service is not None:
+                await sync_service.stop()
             if isinstance(llm_client, AnthropicCompatibleLLMClient):
                 llm_client.close()
             knowledge_service = getattr(gateway_service, "project_knowledge", None)

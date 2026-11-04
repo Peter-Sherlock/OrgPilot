@@ -178,6 +178,20 @@ class SqlProjectSourceStore:
             record = (await owned.execute(stmt)).scalar_one_or_none()
         return self._binding_from(record) if record is not None else None
 
+    async def list_active_bindings(self) -> list[ProjectSourceBinding]:
+        async with self.db.session() as session:
+            records = (
+                await session.execute(
+                    select(ProjectSourceBindingRecord)
+                    .where(
+                        ProjectSourceBindingRecord.enabled.is_(True),
+                    )
+                    .order_by(ProjectSourceBindingRecord.binding_version)
+                )
+            ).scalars()
+            active = {record.project_id: self._binding_from(record) for record in records}
+        return list(active.values())
+
     async def set_binding_enabled(
         self,
         project_id: str,

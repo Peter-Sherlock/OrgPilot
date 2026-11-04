@@ -29,7 +29,7 @@ from typing import Any
 
 from orgpilot.domain.clock import Clock
 from orgpilot.domain.models import OrgState
-from orgpilot.knowledge.access import check_binding
+from orgpilot.knowledge.access import check_binding, check_generation
 from orgpilot.knowledge.models import (
     READ_SOURCE_MAX_CHARS,
     READ_TASK_STATE_MAX,
@@ -45,6 +45,7 @@ from orgpilot.knowledge.models import (
     SourceKind,
 )
 from orgpilot.knowledge.retrieval import MaterialIndex, decode_cursor, encode_cursor
+from orgpilot.storage.knowledge_store import SqlKnowledgeStore
 from orgpilot.storage.project_source_store import SqlProjectSourceStore
 
 _TOOL_NAMES = ("search_project", "read_source", "get_related_items", "read_task_state")
@@ -114,6 +115,8 @@ class ReadToolSession:
     sources: SqlProjectSourceStore | None = None
     clock: Clock | None = None
     context_check: Callable[[], Awaitable[Any]] | None = None
+    max_evidence_chars: int = 12000
+    max_fragments: int = 12
     cache: dict[tuple[str, str], ToolCallResult] = field(default_factory=dict)
 
 
@@ -182,11 +185,25 @@ class ReadTools:
     def __init__(self, session: ReadToolSession) -> None:
         self.session = session
 
+    async def _context_problem(self):
+        if self.session.context_check:
+            return await self.session.context_check()
+        problem = await check_binding(
+            self.session.sources,
+            self.session.binding,
+            self.session.requester_id,
+        )
+        if problem or self.session.sources is None:
+            return problem
+        return await check_generation(
+            self.session.sources,
+            SqlKnowledgeStore(self.session.sources.db, self.session.clock),
+            self.session.generation,
+        )
+
     async def call(self, tool: str, args: dict[str, Any]) -> ToolCallResult:
         """Validates and executes one call; cache hits count as calls."""
-        if await check_binding(
-            self.session.sources, self.session.binding, self.session.requester_id
-        ) or (self.session.context_check and await self.session.context_check()):
+        if await self._context_problem():
             return await _unified_unavailable(tool)
         if tool not in _TOOL_NAMES:
             return _deny(tool, "tool_denied", f"unknown tool {tool!r}")
@@ -201,15 +218,27 @@ class ReadTools:
             return _deny(tool, "invalid_parameter", f"unknown arguments: {sorted(unknown)}")
         cache_key = (tool, _canonical_args(args))
         cached = self.session.cache.get(cache_key)
-        if cached is not None:
-            if await self._cache_still_valid(cached):
-                return ToolCallResult(**{**cached.__dict__, "cached": True})
-            del self.session.cache[cache_key]
-        result = await self._dispatch(tool, args)
-        if await check_binding(
-            self.session.sources, self.session.binding, self.session.requester_id
-        ) or (self.session.context_check and await self.session.context_check()):
+        if cached is not None and await self._cache_still_valid(cached):
+            result = ToolCallResult(**{**cached.__dict__, "cached": True})
+        else:
+            self.session.cache.pop(cache_key, None)
+            result = await self._dispatch(tool, args)
+        if await self._context_problem():
             return await _unified_unavailable(tool)
+        body_chars = sum(
+            len(
+                item.get("snippet")
+                or item.get("content")
+                or (json.dumps(item, ensure_ascii=False) if "task_id" in item else "")
+            )
+            for item in result.items
+        )
+        if body_chars > self.session.max_evidence_chars or len(result.items) > (
+            self.session.max_fragments
+        ):
+            return _deny(
+                tool, "budget_exhausted", "returned data exceeds remaining evidence budget"
+            )
         if result.ok:
             self.session.cache[cache_key] = result
         return result
@@ -264,7 +293,7 @@ class ReadTools:
             return _deny("search_project", "tool_denied", denial)
         kinds = args.get("kinds")
         kind_filter: tuple[SourceKind, ...] | None = None
-        filters: dict[str, Any] = {"kinds": None}
+        filters: dict[str, Any] = {"kinds": None, "query": query}
         if kinds is not None:
             if not isinstance(kinds, list) or not kinds:
                 return _deny("search_project", "invalid_parameter", "kinds must be a list")
@@ -272,7 +301,7 @@ class ReadTools:
                 kind_filter = tuple(SourceKind(kind) for kind in kinds)
             except ValueError:
                 return _deny("search_project", "invalid_parameter", "unknown kind value")
-            filters = {"kinds": sorted(k.value for k in kind_filter)}
+            filters = {"kinds": sorted(k.value for k in kind_filter), "query": query}
         cursor_token = args.get("cursor")
         offset = 0
         if cursor_token is not None:
@@ -290,11 +319,15 @@ class ReadTools:
         # Fresh calls re-check availability too: a source revoked since index
         # build must not surface its hits (§7.4: checks before AND after).
         live_hits = [entry for entry in all_hits if await self._source_available(entry.source_id)]
-        page = live_hits[offset : offset + SEARCH_MAX_HITS]
+        page = live_hits[offset : offset + min(SEARCH_MAX_HITS, self.session.max_fragments)]
         items = []
         evidence_keys = []
+        chars_left = self.session.max_evidence_chars
         for entry in page:
-            snippet = entry.text[:200]
+            if chars_left <= 0:
+                break
+            snippet = entry.text[: min(200, chars_left)]
+            chars_left -= len(snippet)
             items.append(
                 {
                     "source_id": entry.source_id,
@@ -308,7 +341,7 @@ class ReadTools:
             )
             locator = entry.paragraph or entry.external_id
             evidence_keys.append(_evidence_key(entry.revision_id, locator, snippet))
-        remaining = len(all_hits) - (offset + len(page))
+        remaining = len(live_hits) - (offset + len(items))
         next_cursor = None
         if remaining > 0:
             next_cursor = encode_cursor(
@@ -316,7 +349,7 @@ class ReadTools:
                 self.session.generation.generation_id,
                 "search_project",
                 filters,
-                offset + len(page),
+                offset + len(items),
             )
         result = ToolCallResult(
             ok=True,
@@ -325,7 +358,21 @@ class ReadTools:
             next_cursor=next_cursor,
             evidence_keys=tuple(evidence_keys),
         )
-        return _fit_payload(result)
+        fitted = _fit_payload(result)
+        if fitted.ok and len(fitted.items) < len(items):
+            fitted = ToolCallResult(
+                **{
+                    **fitted.__dict__,
+                    "next_cursor": encode_cursor(
+                        self.session.session_id,
+                        self.session.generation.generation_id,
+                        "search_project",
+                        filters,
+                        offset + len(fitted.items),
+                    ),
+                }
+            )
+        return fitted
 
     async def read_source(self, args: dict[str, Any]) -> ToolCallResult:
         source_id = args.get("source_id")
@@ -362,7 +409,7 @@ class ReadTools:
             except ValueError as exc:
                 return _deny("read_source", "invalid_parameter", str(exc))
         raw = self.session.index.raw_content(source_id) or ""
-        window = raw[offset : offset + READ_SOURCE_MAX_CHARS]
+        window = raw[offset : offset + min(READ_SOURCE_MAX_CHARS, self.session.max_evidence_chars)]
         start_line = raw[:offset].count("\n") + 1
         end_line = start_line + window.count("\n")
         truncated = offset + len(window) < len(raw)
@@ -436,7 +483,7 @@ class ReadTools:
         if type_filter is not None:
             relations = [r for r in relations if r.relation_type is type_filter]
         relations.sort(key=lambda r: r.relation_id)
-        page = relations[offset : offset + RELATED_ITEMS_MAX]
+        page = relations[offset : offset + min(RELATED_ITEMS_MAX, self.session.max_fragments)]
         items = [
             {
                 "relation_id": relation.relation_id,

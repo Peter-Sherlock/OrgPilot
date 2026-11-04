@@ -22,6 +22,7 @@ Flow guarantees frozen here:
 """
 
 import asyncio
+import contextlib
 import hashlib
 import hmac
 import logging
@@ -39,6 +40,7 @@ from orgpilot.github.client import (
     HttpGitHubClient,
     StaticTokenCredentialProvider,
     is_access_failure,
+    read_github,
 )
 from orgpilot.knowledge.importer import ImportLimits, ImportReport, SourceImporter
 from orgpilot.knowledge.models import (
@@ -122,6 +124,54 @@ class GitHubSyncService:
         self.recheck_interval_seconds = recheck_interval_seconds
         self.import_limits = import_limits or ImportLimits()
         self._drain_locks: dict[str, asyncio.Lock] = {}
+        self._wake = asyncio.Event()
+        self._stopping = False
+        self._accepting = True
+        self._worker: asyncio.Task | None = None
+        self._bootstrap_attempted: set[str] = set()
+
+    async def start(self, poll_seconds: float = 1.0) -> None:
+        if self._worker is not None and not self._worker.done():
+            return
+        await self.startup_recovery()
+        self._stopping, self._accepting = False, True
+        self._worker = asyncio.create_task(self._work_loop(poll_seconds))
+        self._wake.set()
+
+    async def stop(self) -> None:
+        self._accepting, self._stopping = False, True
+        self._wake.set()
+        if self._worker is not None:
+            try:
+                await asyncio.wait_for(asyncio.shield(self._worker), timeout=45.0)
+            except TimeoutError:
+                self._worker.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await self._worker
+            self._worker = None
+
+    async def _work_loop(self, poll_seconds: float) -> None:
+        while not self._stopping:
+            self._wake.clear()
+            for binding in await self.sources.list_active_bindings():
+                if self._stopping:
+                    break
+                if self.client_factory is None:
+                    continue
+                try:
+                    current_id = await self.knowledge.current_generation_id(binding.project_id)
+                    if current_id is None and binding.project_id not in self._bootstrap_attempted:
+                        self._bootstrap_attempted.add(binding.project_id)
+                        await self.manual_recheck(binding.project_id)
+                    if await self.inbox.list_due(binding.repository_id, limit=1):
+                        await self.drain_repository(binding.repository_id)
+                    else:
+                        async with self._lock_for(binding.repository_id):
+                            await self._publish_current(binding)
+                except Exception:
+                    logger.exception("GitHub material worker failed for %s", binding.project_id)
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._wake.wait(), timeout=poll_seconds)
 
     # ---------------------------------------------------------------- ingest
 
@@ -138,6 +188,8 @@ class GitHubSyncService:
         received_at: datetime | None = None,
     ) -> str:
         """Persists one verified delivery before any acknowledgement (§5.3)."""
+        if not self._accepting:
+            raise RuntimeError("GitHub sync is shutting down")
         received = received_at or self.clock.now()
         entry = SyncInboxEntry(
             repository_id=str(repository_id),
@@ -149,6 +201,7 @@ class GitHubSyncService:
             received_at=received,
         )
         stored = await self.inbox.ingest(entry)
+        self._wake.set()
         return "accepted" if stored else "duplicate"
 
     # ----------------------------------------------------------------- drain
@@ -203,15 +256,19 @@ class GitHubSyncService:
         await self._publish_current(binding)
         return counts
 
-    async def _publish_current(self, binding: ProjectSourceBinding) -> None:
+    async def _publish_current(self, binding: ProjectSourceBinding, coverage=None) -> None:
         from orgpilot.knowledge.derive import DerivationPipeline
 
         current_id = await self.knowledge.current_generation_id(binding.project_id)
         base = await self.knowledge.get_generation(current_id) if current_id else None
-        if base is not None and base.valid:
+        if base is not None and base.valid and (coverage is None or coverage == base.coverage):
+            return
+        if not await self.sources.list_source_objects(binding.project_id, binding.binding_version):
             return
         pipeline = DerivationPipeline(self.sources, self.knowledge, self.clock)
-        await pipeline.build_and_publish(binding, reason="sync", base_generation=base)
+        await pipeline.build_and_publish(
+            binding, reason="sync", base_generation=base, coverage_override=coverage
+        )
 
     async def _process_entry(
         self,
@@ -359,8 +416,8 @@ class GitHubSyncService:
         self, binding: ProjectSourceBinding, client: GitHubReadClient
     ) -> RefreshOutcome:
         outcome = RefreshOutcome(result="unchanged")
-        head = client.get_branch_head(binding.branch)
-        tree = client.get_tree(head.sha)
+        head = await read_github(client, "get_branch_head", binding.branch)
+        tree = await read_github(client, "get_tree", head.sha)
         allowed = sorted(
             (item for item in tree if binding.allows_path(item.path)),
             key=lambda item: item.path,
@@ -372,7 +429,7 @@ class GitHubSyncService:
             existing = await self.sources.find_source_object(
                 binding.project_id, binding.binding_version, SourceKind.DOCUMENT, normalized
             )
-            content = client.get_blob(item.blob_sha)
+            content = await read_github(client, "get_blob", item.blob_sha)
             now = self.clock.now()
             source_id = (
                 existing.source_id
@@ -445,7 +502,7 @@ class GitHubSyncService:
         self, binding: ProjectSourceBinding, client: GitHubReadClient, number: int
     ) -> RefreshOutcome:
         try:
-            issue = client.get_issue(number)
+            issue = await read_github(client, "get_issue", number)
         except GitHubReadError as exc:
             return await self._takedown_or_fail(binding, SourceKind.ISSUE, str(number), exc)
         if issue.is_pull_request:
@@ -485,7 +542,7 @@ class GitHubSyncService:
         self, binding: ProjectSourceBinding, client: GitHubReadClient, number: int
     ) -> RefreshOutcome:
         try:
-            pr = client.get_pull_request(number)
+            pr = await read_github(client, "get_pull_request", number)
         except GitHubReadError as exc:
             return await self._takedown_or_fail(binding, SourceKind.PULL_REQUEST, str(number), exc)
         selected = number in binding.explicit_pr_ids or binding.issue_selector.covers(
@@ -603,7 +660,7 @@ class GitHubSyncService:
         outcome = RefreshOutcome(result="unchanged")
         page = 1
         while True:
-            batch = client.list_issue_comments(number, page=page, per_page=50)
+            batch = await read_github(client, "list_issue_comments", number, page=page, per_page=50)
             for comment in batch:
                 from orgpilot.knowledge.models import SourceObjectIdentity
 
@@ -680,7 +737,9 @@ class GitHubSyncService:
         outcome = RefreshOutcome(result="unchanged")
         page = 1
         while True:
-            batch = client.list_pull_request_reviews(pr_number, page=page, per_page=50)
+            batch = await read_github(
+                client, "list_pull_request_reviews", pr_number, page=page, per_page=50
+            )
             for review in batch:
                 from orgpilot.knowledge.models import SourceObjectIdentity
 
@@ -802,7 +861,7 @@ class GitHubSyncService:
         report = await importer.import_binding_scope(binding)
         if report.fully_complete:
             await self._reconcile_deletions(binding, report)
-        await self._publish_current(binding)
+        await self._publish_current(binding, coverage=report.coverage)
         return report
 
     async def _reconcile_deletions(

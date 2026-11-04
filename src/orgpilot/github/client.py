@@ -20,7 +20,9 @@ Token exchange (App → installation token) lives in
 content reads: obtaining a token never grants a business write.
 """
 
+import asyncio
 import base64
+import inspect
 import time
 from collections.abc import Callable
 from datetime import datetime
@@ -40,6 +42,16 @@ from orgpilot.github.models import (
     ReviewPayload,
     TreeEntry,
 )
+
+
+async def read_github(client, method, *args, **kwargs):
+    """Keep synchronous transports/retry sleeps off the gateway event loop."""
+    operation = getattr(client, method)
+    if inspect.iscoroutinefunction(operation):
+        return await operation(*args, **kwargs)
+    result = await asyncio.to_thread(operation, *args, **kwargs)
+    return await result if inspect.isawaitable(result) else result
+
 
 # Bounded retry per request (ADR-0015 §5.4: at most 3 attempts, then wait for
 # the next round or a human). Content reads retry; the read loop never does.
@@ -100,9 +112,7 @@ class EndpointSpec:
 
 
 ENDPOINT_CATALOG: tuple[EndpointSpec, ...] = (
-    EndpointSpec(
-        "get_repository", "GET /repos/{owner}/{repo}", GitHubPermission.METADATA
-    ),
+    EndpointSpec("get_repository", "GET /repos/{owner}/{repo}", GitHubPermission.METADATA),
     EndpointSpec(
         "get_branch_head",
         "GET /repos/{owner}/{repo}/branches/{branch}",
@@ -121,9 +131,7 @@ ENDPOINT_CATALOG: tuple[EndpointSpec, ...] = (
         "GET /repos/{owner}/{repo}/issues?state=all&page=N",
         GitHubPermission.ISSUES,
     ),
-    EndpointSpec(
-        "get_issue", "GET /repos/{owner}/{repo}/issues/{number}", GitHubPermission.ISSUES
-    ),
+    EndpointSpec("get_issue", "GET /repos/{owner}/{repo}/issues/{number}", GitHubPermission.ISSUES),
     EndpointSpec(
         "list_issue_comments",
         "GET /repos/{owner}/{repo}/issues/{number}/comments?page=N",
@@ -361,7 +369,9 @@ class HttpGitHubClient:
         return headers
 
     def _request(
-        self, path: str, params: dict[str, Any] | None = None,
+        self,
+        path: str,
+        params: dict[str, Any] | None = None,
         **path_params: str | int,
     ) -> Any:
         values = {"owner": self._owner, "repo": self._repo, **path_params}
@@ -386,9 +396,11 @@ class HttpGitHubClient:
             if response.status_code < 400:
                 return response.json()
             retry_after = response.headers.get("retry-after")
-            if (response.status_code >= 500 or response.status_code == 429 or (
-                response.status_code == 403 and retry_after
-            )) and attempt < MAX_HTTP_ATTEMPTS:
+            if (
+                response.status_code >= 500
+                or response.status_code == 429
+                or (response.status_code == 403 and retry_after)
+            ) and attempt < MAX_HTTP_ATTEMPTS:
                 try:
                     delay = float(retry_after) if retry_after else self._retry_delay_seconds
                 except ValueError:
@@ -409,15 +421,14 @@ class HttpGitHubClient:
         )
 
     def get_branch_head(self, branch: str) -> CommitInfo:
-        data = self._request(
-            "/repos/{owner}/{repo}/branches/{branch}", branch=branch
-        )
+        data = self._request("/repos/{owner}/{repo}/branches/{branch}", branch=branch)
         return CommitInfo(sha=data["commit"]["sha"])
 
     def get_tree(self, commit_sha: str) -> list[TreeEntry]:
         data = self._request(
             "/repos/{owner}/{repo}/git/trees/{sha}",
-            {"recursive": "1"}, sha=commit_sha,
+            {"recursive": "1"},
+            sha=commit_sha,
         )
         if data.get("truncated"):
             raise GitHubReadError("get_tree", 503, "tree enumeration is truncated")
@@ -431,9 +442,7 @@ class HttpGitHubClient:
         return entries
 
     def get_blob(self, blob_sha: str) -> str:
-        data = self._request(
-            "/repos/{owner}/{repo}/git/blobs/{sha}", sha=blob_sha
-        )
+        data = self._request("/repos/{owner}/{repo}/git/blobs/{sha}", sha=blob_sha)
 
         if data.get("encoding") == "base64":
             return base64.b64decode(data["content"]).decode("utf-8")
@@ -449,9 +458,7 @@ class HttpGitHubClient:
         return [self._issue_from(item) for item in data]
 
     def get_issue(self, number: int) -> IssuePayload:
-        data = self._request(
-            "/repos/{owner}/{repo}/issues/{number}", number=number
-        )
+        data = self._request("/repos/{owner}/{repo}/issues/{number}", number=number)
         if "pull_request" in data:
             raise GitHubReadError("get_issue", 409, f"#{number} is a pull request")
         return self._issue_from(data)
@@ -461,7 +468,8 @@ class HttpGitHubClient:
     ) -> list[CommentPayload]:
         data = self._request(
             "/repos/{owner}/{repo}/issues/{number}/comments",
-            {"page": page, "per_page": per_page}, number=issue_number,
+            {"page": page, "per_page": per_page},
+            number=issue_number,
         )
         return [
             CommentPayload(
@@ -477,9 +485,7 @@ class HttpGitHubClient:
         ]
 
     def get_pull_request(self, number: int) -> PullRequestPayload:
-        data = self._request(
-            "/repos/{owner}/{repo}/pulls/{number}", number=number
-        )
+        data = self._request("/repos/{owner}/{repo}/pulls/{number}", number=number)
         return PullRequestPayload(
             number=data["number"],
             pr_id=str(data["id"]),
@@ -505,7 +511,8 @@ class HttpGitHubClient:
     ) -> list[ReviewPayload]:
         data = self._request(
             "/repos/{owner}/{repo}/pulls/{number}/reviews",
-            {"page": page, "per_page": per_page}, number=pr_number,
+            {"page": page, "per_page": per_page},
+            number=pr_number,
         )
         return [
             ReviewPayload(
@@ -528,9 +535,7 @@ class HttpGitHubClient:
             body=item.get("body"),
             state=item["state"],
             milestone=(item.get("milestone") or {}).get("title"),
-            assignees=tuple(
-                assignee.get("login", "") for assignee in item.get("assignees", [])
-            ),
+            assignees=tuple(assignee.get("login", "") for assignee in item.get("assignees", [])),
             labels=tuple(
                 label["name"] if isinstance(label, dict) else str(label)
                 for label in item.get("labels", [])

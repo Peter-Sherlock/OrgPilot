@@ -128,7 +128,11 @@ class SqlReadSessionStore:
             ).scalar_one_or_none()
             if record is None:
                 raise KnowledgeContractError(f"read session {session_id} not found")
+            if record.status != ReadSessionStatus.RUNNING.value:
+                raise ReadSessionConflict(f"session {session_id} is not running")
             reserved = self._reservations(record)
+            if any(r.reservation_id == reservation.reservation_id for r in reserved):
+                raise ReadSessionConflict("duplicate reservation identity")
             limits = BudgetLimits.model_validate(json.loads(record.budget_limits_json))
             used = BudgetUsage.model_validate(json.loads(record.used_budget_json))
             projected = used
@@ -166,9 +170,7 @@ class SqlReadSessionStore:
             if record is None:
                 raise KnowledgeContractError(f"read session {session_id} not found")
             reserved = self._reservations(record)
-            match = next(
-                (item for item in reserved if item.reservation_id == reservation_id), None
-            )
+            match = next((item for item in reserved if item.reservation_id == reservation_id), None)
             if match is None:
                 raise KnowledgeContractError(
                     f"reservation {reservation_id} not found on session {session_id}"
@@ -183,9 +185,40 @@ class SqlReadSessionStore:
             record.updated_at = _to_utc(self.clock.now())
         return settled
 
-    async def append_step(
-        self, step: ReadStepRecord, session: AsyncSession | None = None
-    ) -> None:
+    async def release(self, session_id: str, reservation_id: str) -> None:
+        """Release a hold that was never attempted; unknown attempts use settle(None)."""
+        async with self.db.session() as session:
+            record = (
+                await session.execute(
+                    select(ProjectReadSessionRecord).where(
+                        ProjectReadSessionRecord.session_id == session_id,
+                    )
+                )
+            ).scalar_one()
+            record.reserved_budget_json = dump_json(
+                [
+                    item.model_dump(mode="json")
+                    for item in self._reservations(record)
+                    if item.reservation_id != reservation_id
+                ]
+            )
+
+    async def add_usage(self, session_id: str, usage: BudgetUsage) -> BudgetUsage:
+        """Persist non-request counters, without overwriting settled model consumption."""
+        async with self.db.session() as session:
+            record = (
+                await session.execute(
+                    select(ProjectReadSessionRecord).where(
+                        ProjectReadSessionRecord.session_id == session_id,
+                    )
+                )
+            ).scalar_one()
+            used = BudgetUsage.model_validate(json.loads(record.used_budget_json)).plus(usage)
+            record.used_budget_json = dump_json(used.model_dump(mode="json"))
+            record.updated_at = _to_utc(self.clock.now())
+        return used
+
+    async def append_step(self, step: ReadStepRecord, session: AsyncSession | None = None) -> None:
         """Appends one auditable step row (no hidden model reasoning stored)."""
         async with coowned_session(self.db, session) as owned:
             owned.add(
@@ -281,7 +314,14 @@ class SqlReadSessionStore:
             record.answer_status = answer_status.value
             record.answer_json = dump_json(answer) if answer is not None else None
             if final_budget is not None:
-                record.used_budget_json = dump_json(final_budget.model_dump(mode="json"))
+                stored = BudgetUsage.model_validate(json.loads(record.used_budget_json))
+                # Finishing can add controller counters; it must never refund a
+                # settled request or an unknown worst-case reservation.
+                merged = {
+                    name: max(getattr(stored, name), getattr(final_budget, name))
+                    for name in BudgetUsage.model_fields
+                }
+                record.used_budget_json = dump_json(BudgetUsage(**merged).model_dump(mode="json"))
             record.updated_at = _to_utc(self.clock.now())
 
     async def mark_interrupted(self, session_id: str) -> None:
@@ -348,18 +388,17 @@ class SqlReadSessionStore:
         violations: list[str] = []
         if projected.tool_calls > limits.max_tool_calls:
             violations.append(f"tool_calls {projected.tool_calls}>{limits.max_tool_calls}")
+        if limits.max_spend_usd is not None and projected.cost_usd > limits.max_spend_usd:
+            violations.append(f"cost_usd {projected.cost_usd}>{limits.max_spend_usd}")
         if projected.model_requests > limits.max_model_requests:
             violations.append(
                 f"model_requests {projected.model_requests}>{limits.max_model_requests}"
             )
         if projected.total_tokens() > limits.max_total_tokens:
-            violations.append(
-                f"total_tokens {projected.total_tokens()}>{limits.max_total_tokens}"
-            )
+            violations.append(f"total_tokens {projected.total_tokens()}>{limits.max_total_tokens}")
         if projected.evidence_fragments > limits.max_evidence_fragments:
             violations.append(
-                f"evidence_fragments {projected.evidence_fragments}>"
-                f"{limits.max_evidence_fragments}"
+                f"evidence_fragments {projected.evidence_fragments}>{limits.max_evidence_fragments}"
             )
         if projected.evidence_chars > limits.max_evidence_chars:
             violations.append(
@@ -391,9 +430,7 @@ class SqlReadSessionStore:
             used_budget=BudgetUsage.model_validate(json.loads(record.used_budget_json)),
             reserved_budget=tuple(SqlReadSessionStore._reservations(record)),
             stop_reason=StopReason(record.stop_reason) if record.stop_reason else None,
-            answer_status=(
-                AnswerStatus(record.answer_status) if record.answer_status else None
-            ),
+            answer_status=(AnswerStatus(record.answer_status) if record.answer_status else None),
             answer_json=record.answer_json,
             updated_at=_required(record.updated_at),
         )

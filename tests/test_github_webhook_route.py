@@ -4,7 +4,7 @@ Same harness style as ``test_gateway_api.py``: the app runs over an
 ASGITransport inside the test's event loop, with the database initialized
 explicitly. The route exists only when sync is enabled; unsigned or
 mis-signed requests are rejected before any persistence; bound-repository
-deliveries are ingested and drained inline (no model work); the same
+deliveries are ingested before ACK and drained by the lifecycle worker; the same
 delivery id with a different payload answers ``conflict`` without touching
 the original row.
 """
@@ -44,9 +44,7 @@ def make_settings(**overrides) -> OrgPilotSettings:
     return OrgPilotSettings(**fields)
 
 
-async def make_harness(
-    settings: OrgPilotSettings | None = None, seed_binding: bool = True
-):
+async def make_harness(settings: OrgPilotSettings | None = None, seed_binding: bool = True):
     runtime_settings = settings or make_settings()
     db = Database("sqlite+aiosqlite:///:memory:")
     await db.init_db()
@@ -71,7 +69,11 @@ async def make_harness(
         )
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
-        yield ac, app
+        try:
+            yield ac, app
+        finally:
+            if app.state.github_sync is not None:
+                await app.state.github_sync.stop()
     await db.close()
 
 
@@ -151,18 +153,22 @@ async def test_end_to_end_refresh_via_webhook() -> None:
     """A valid push with changed content lands a new revision over HTTP."""
     snapshot = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
     from orgpilot.github.client import MockGitHubClient
+    from tests.test_project_sync_worker import wait_done
 
     async for client, app in make_harness():
         # Swap the sync service's client for the offline mock with our snapshot.
         mock = MockGitHubClient(snapshot)
         app.state.github_sync.client_factory = lambda binding, _mock=mock: _mock
+        await app.state.github_sync.start()
         body = json.dumps({"repository": {"id": 1001}, "ref": "refs/heads/main"}).encode()
         first = await webhook_request(client, body, "d-1", sign(body))
+        await wait_done(app.state.github_sync, "d-1")
         # Change document content, then deliver a new push with a new delivery id.
         snapshot["blobs"]["b-delivery"] += "\n联调前需登记环境（HTTP 验收）。\n"
         snapshot["branches"]["main"]["sha"] = "sha-http"
         snapshot["trees"]["sha-http"] = snapshot["trees"]["c0ffee1"]
         second = await webhook_request(client, body, "d-2", sign(body))
+        await wait_done(app.state.github_sync, "d-2")
         sources = app.state.github_sync.sources
         from orgpilot.knowledge.models import SourceKind
 

@@ -1,5 +1,6 @@
 """Database engine management and async session provider."""
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -18,6 +19,8 @@ class Database:
 
     def __init__(self, db_url: str = "sqlite+aiosqlite:///:memory:") -> None:
         self.db_url = db_url
+        # :memory: sessions share one physical SQLite connection.
+        self._memory_lock = asyncio.Lock() if ":memory:" in db_url else None
         self.engine: AsyncEngine = create_async_engine(
             self.db_url,
             echo=False,
@@ -41,6 +44,15 @@ class Database:
     @asynccontextmanager
     async def session(self) -> AsyncIterator[AsyncSession]:
         """Provides an async transactional database session context."""
+        if self._memory_lock is not None:
+            async with self._memory_lock, self._session() as session:
+                yield session
+        else:
+            async with self._session() as session:
+                yield session
+
+    @asynccontextmanager
+    async def _session(self) -> AsyncIterator[AsyncSession]:
         async with self.session_factory() as session:
             try:
                 yield session

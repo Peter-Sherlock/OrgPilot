@@ -62,6 +62,6 @@ async def handle_github_webhook(request: Request) -> dict[str, Any]:
         # Same delivery id with a different payload: the original row stays,
         # and the redelivery is acknowledged so the platform stops retrying.
         return {"code": 0, "msg": "conflict"}
-    # Serial per-project processing, no model calls in the webhook response.
-    await service.drain_repository(repository_id)
+    # The durable inbox owns the work. The lifecycle worker consumes it after
+    # acknowledgement, including retries without a subsequent notification.
     return {"code": 0, "msg": outcome}

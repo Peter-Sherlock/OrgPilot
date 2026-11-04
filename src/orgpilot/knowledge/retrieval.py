@@ -207,7 +207,5 @@ class MaterialIndex:
             SourceKind.REVIEW: 3,
             SourceKind.COMMENT: 4,
         }
-        hits.sort(
-            key=lambda e: (weight[e.kind], e.source_id, e.external_id, e.line_start or 0)
-        )
+        hits.sort(key=lambda e: (weight[e.kind], e.source_id, e.external_id, e.line_start or 0))
         return hits

@@ -23,6 +23,7 @@ import re
 from dataclasses import dataclass
 
 from orgpilot.domain.clock import Clock, SystemClock
+from orgpilot.knowledge.errors import KnowledgeContractError
 from orgpilot.knowledge.models import (
     AssertionKind,
     AssertionValidation,
@@ -311,6 +312,7 @@ class DerivationPipeline:
         binding: ProjectSourceBinding,
         reason: str = "rebuild",
         base_generation: KnowledgeGeneration | None = None,
+        coverage_override: dict[str, str] | None = None,
     ) -> KnowledgeGeneration:
         """Derives a staging generation, validates it, and publishes it.
 
@@ -375,11 +377,15 @@ class DerivationPipeline:
             relation_refs=relation_refs,
             summary=summary,
             derivation_version=EXTRACTOR_VERSION,
-            coverage=coverage,
+            coverage=coverage_override if coverage_override is not None else coverage,
             created_at=generation.created_at,
         )
         await self._replace_generation_row(ready)
-        await self.knowledge.publish_generation(generation.generation_id, validate_sources=True)
+        try:
+            await self.knowledge.publish_generation(generation.generation_id, validate_sources=True)
+        except KnowledgeContractError as exc:
+            await self.knowledge.fail_generation(generation.generation_id, str(exc))
+            raise DerivationAborted("material changed before publication") from exc
         published = await self.knowledge.get_generation(generation.generation_id)
         assert published is not None  # just published above
         return published
@@ -459,11 +465,16 @@ class DerivationPipeline:
         relations = await self.knowledge.list_relations(binding.project_id)
         relation_refs = tuple(r.relation_id for r in relations)
         summary = self._render_summary(binding, assertions, available)
-        coverage: dict[str, str] = {}
+        coverage: dict[str, str] = dict(base_generation.coverage) if base_generation else {}
         for kind in SourceKind:
             count = sum(1 for obj in available if obj.kind is kind)
             if count:
-                coverage[kind.value] = CoverageStatus.COMPLETE.value
+                coverage.setdefault(kind.value, CoverageStatus.COMPLETE.value)
+            if any(
+                obj.kind is kind and obj.availability is not SourceAvailability.AVAILABLE
+                for obj in objects
+            ):
+                coverage[kind.value] = CoverageStatus.PARTIAL.value
         return (
             tuple(manifest),
             tuple(a.assertion_id for a in assertions),

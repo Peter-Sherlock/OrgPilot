@@ -121,6 +121,8 @@ def test_r4_transport_and_server_failures_have_three_attempt_limit(monkeypatch):
 async def test_r5_r6_service_uses_real_async_adapter_and_only_serialized_model_context(
     env, monkeypatch
 ):
+    from decimal import Decimal
+
     from orgpilot.config import OrgPilotSettings
     from orgpilot.knowledge.llm import ProjectLLMClient
     from orgpilot.knowledge.service import ProjectKnowledgeService
@@ -188,6 +190,9 @@ async def test_r5_r6_service_uses_real_async_adapter_and_only_serialized_model_c
                 project_qa_online=True,
                 llm_provider="deepseek",
                 deepseek_api_key="dummy-offline",
+                project_qa_max_spend_usd=Decimal("1"),
+                project_qa_input_usd_per_million=Decimal("1"),
+                project_qa_output_usd_per_million=Decimal("2"),
             ),
             clock=env["clock"],
         )
@@ -213,3 +218,43 @@ async def test_r5_transport_usage_and_no_hidden_retries():
         with pytest.raises(httpx.HTTPStatusError):
             await client.generate(model="test", system="rules", messages=[], max_tokens=20)
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize(
+    "usage,expected",
+    [
+        (
+            {
+                "input_tokens": 20,
+                "cache_creation_input_tokens": 5,
+                "cache_read_input_tokens": 10,
+                "output_tokens": 3,
+            },
+            (35, 3),
+        ),
+        ({"input_tokens": 20, "cache_read_input_tokens": -1, "output_tokens": 3}, (None, 3)),
+        ({"input_tokens": -1, "output_tokens": -1}, (None, None)),
+        ({}, (None, None)),
+    ],
+)
+async def test_r8_model_usage_validates_cached_and_missing_tokens(usage, expected):
+    from orgpilot.knowledge.llm import ProjectLLMClient
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda r: httpx.Response(
+                200,
+                json={
+                    "content": [{"type": "text", "text": "{}"}],
+                    "usage": usage,
+                },
+            )
+        )
+    ) as transport:
+        result = await ProjectLLMClient("dummy", "https://offline", client=transport).generate(
+            model="test",
+            system="rules",
+            messages=[],
+            max_tokens=20,
+        )
+    assert (result.input_tokens, result.output_tokens) == expected

@@ -49,6 +49,8 @@ class ProjectContextBuilder:
         objects: list[SourceObject],
         question: str,
         org_state: OrgState | None = None,
+        max_evidence: int = INITIAL_EVIDENCE_MAX,
+        max_chars: int = 8000,
     ) -> ProjectContextPacket:
         """Builds round-0 packet; sharing checks happen before this is called.
 
@@ -69,10 +71,15 @@ class ProjectContextBuilder:
 
         evidence: list[EvidenceRef] = []
         excluded: list[str] = []
-        for entry in hits[:INITIAL_EVIDENCE_MAX]:
+        chars_left = max_chars
+        for entry in hits[:max_evidence]:
+            if chars_left <= 0:
+                break
             revision = getattr(entry, "revision_id", None)
             if revision is None:
                 continue
+            snippet = entry.text[: min(PROJECT_BRIEF_MAX_CHARS, chars_left)]
+            chars_left -= len(snippet)
             evidence.append(
                 EvidenceRef(
                     revision_id=revision,
@@ -82,13 +89,13 @@ class ProjectContextBuilder:
                     paragraph=entry.paragraph,
                     line_start=entry.line_start,
                     line_end=entry.line_end,
-                    snippet=entry.text[:PROJECT_BRIEF_MAX_CHARS],
+                    snippet=snippet,
                 )
             )
-        if len(hits) > INITIAL_EVIDENCE_MAX:
+        if len(hits) > len(evidence):
             excluded = [
                 f"{entry.source_id}:{entry.paragraph or entry.external_id}"
-                for entry in hits[INITIAL_EVIDENCE_MAX:]
+                for entry in hits[len(evidence) :]
             ]
 
         unavailable = [
@@ -101,10 +108,7 @@ class ProjectContextBuilder:
         org_state_refs: tuple[str, ...] = ()
         conflicts: list[str] = []
         if org_state is not None:
-            refs = [
-                f"task:{task.task_id}@{last_event(task)}"
-                for task in org_state.tasks.values()
-            ]
+            refs = [f"task:{task.task_id}@{last_event(task)}" for task in org_state.tasks.values()]
             org_state_refs = tuple(refs[:20])
             # Explicit issue→task mappings would be checked here; first version
             # surfaces the boundary instead of inventing agreement.
