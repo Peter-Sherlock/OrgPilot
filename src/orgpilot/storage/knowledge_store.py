@@ -26,7 +26,13 @@ from orgpilot.storage.models import (
     KnowledgeGenerationRecord,
     KnowledgeRelationRecord,
 )
-from orgpilot.storage.project_source_store import _aware, _required, _to_utc, dump_json
+from orgpilot.storage.project_source_store import (
+    SqlProjectSourceStore,
+    _aware,
+    _required,
+    _to_utc,
+    dump_json,
+)
 
 
 class SqlKnowledgeStore:
@@ -175,7 +181,11 @@ class SqlKnowledgeStore:
             )
 
     async def publish_generation(
-        self, generation_id: str, session: AsyncSession | None = None
+        self,
+        generation_id: str,
+        session: AsyncSession | None = None,
+        *,
+        validate_sources: bool = False,
     ) -> None:
         """Marks a staging generation ready and flips the project pointer in the
         same transaction; staging content is never visible before this."""
@@ -193,6 +203,39 @@ class SqlKnowledgeStore:
                 raise KnowledgeContractError(
                     f"generation {generation_id} is {record.status}, not staging"
                 )
+            if validate_sources:
+                from orgpilot.knowledge.models import SourceAvailability
+                from orgpilot.storage.models import ProjectSourceBindingRecord
+
+                # All material writers take this same lock on PostgreSQL.
+                await owned.execute(
+                    select(ProjectSourceBindingRecord)
+                    .where(
+                        ProjectSourceBindingRecord.project_id == record.project_id,
+                    )
+                    .with_for_update()
+                )
+                sources = SqlProjectSourceStore(self.db, self.clock)
+                binding = await sources.get_active_binding(record.project_id, owned)
+                objects = await sources.list_source_objects(
+                    record.project_id,
+                    record.binding_version,
+                    session=owned,
+                )
+                manifest = set(json.loads(record.revision_manifest_json))
+                latest = {
+                    obj.latest_revision_id
+                    for obj in objects
+                    if obj.availability is SourceAvailability.AVAILABLE
+                    and obj.latest_revision_id is not None
+                }
+                if (
+                    binding is None
+                    or binding.binding_version != record.binding_version
+                    or binding.access_epoch != record.access_epoch
+                    or latest != manifest
+                ):
+                    raise KnowledgeContractError("material changed before atomic publication")
             record.status = GenerationStatus.READY.value
             record.published_at = _to_utc(self.clock.now())
             pointer = (

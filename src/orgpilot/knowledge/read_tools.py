@@ -23,11 +23,13 @@ as a tool call and re-validates availability before returning.
 
 import hashlib
 import json
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
 from orgpilot.domain.clock import Clock
 from orgpilot.domain.models import OrgState
+from orgpilot.knowledge.access import check_binding
 from orgpilot.knowledge.models import (
     READ_SOURCE_MAX_CHARS,
     READ_TASK_STATE_MAX,
@@ -111,6 +113,7 @@ class ReadToolSession:
     relations: tuple[KnowledgeRelation, ...] = ()
     sources: SqlProjectSourceStore | None = None
     clock: Clock | None = None
+    context_check: Callable[[], Awaitable[Any]] | None = None
     cache: dict[tuple[str, str], ToolCallResult] = field(default_factory=dict)
 
 
@@ -181,6 +184,10 @@ class ReadTools:
 
     async def call(self, tool: str, args: dict[str, Any]) -> ToolCallResult:
         """Validates and executes one call; cache hits count as calls."""
+        if await check_binding(
+            self.session.sources, self.session.binding, self.session.requester_id
+        ) or (self.session.context_check and await self.session.context_check()):
+            return await _unified_unavailable(tool)
         if tool not in _TOOL_NAMES:
             return _deny(tool, "tool_denied", f"unknown tool {tool!r}")
         allowed_keys = {
@@ -196,11 +203,13 @@ class ReadTools:
         cached = self.session.cache.get(cache_key)
         if cached is not None:
             if await self._cache_still_valid(cached):
-                return ToolCallResult(
-                    **{**cached.__dict__, "cached": True}
-                )
+                return ToolCallResult(**{**cached.__dict__, "cached": True})
             del self.session.cache[cache_key]
         result = await self._dispatch(tool, args)
+        if await check_binding(
+            self.session.sources, self.session.binding, self.session.requester_id
+        ) or (self.session.context_check and await self.session.context_check()):
+            return await _unified_unavailable(tool)
         if result.ok:
             self.session.cache[cache_key] = result
         return result
@@ -212,7 +221,7 @@ class ReadTools:
             return True
         obj = await sources.get_source_object(source_id)
         if obj is None:
-            return True  # index-tracked sources are in scope by construction
+            return False
         return obj.availability is SourceAvailability.AVAILABLE
 
     async def _cache_still_valid(self, cached: ToolCallResult) -> bool:
@@ -225,7 +234,7 @@ class ReadTools:
             if source_id is None:
                 continue
             obj = await sources.get_source_object(str(source_id))
-            if obj is not None and obj.availability is not SourceAvailability.AVAILABLE:
+            if obj is None or obj.availability is not SourceAvailability.AVAILABLE:
                 return False
         return True
 
@@ -280,11 +289,7 @@ class ReadTools:
         all_hits = self.session.index.search(query, kind_filter)
         # Fresh calls re-check availability too: a source revoked since index
         # build must not surface its hits (§7.4: checks before AND after).
-        live_hits = [
-            entry
-            for entry in all_hits
-            if await self._source_available(entry.source_id)
-        ]
+        live_hits = [entry for entry in all_hits if await self._source_available(entry.source_id)]
         page = live_hits[offset : offset + SEARCH_MAX_HITS]
         items = []
         evidence_keys = []
@@ -388,9 +393,7 @@ class ReadTools:
             items=(item,),
             next_cursor=next_cursor,
             truncated=truncated,
-            evidence_keys=(
-                _evidence_key(revision_id, f"offset:{offset}", window[:200]),
-            ),
+            evidence_keys=(_evidence_key(revision_id, f"offset:{offset}", window[:200]),),
         )
         return _fit_payload(result)
 
@@ -522,9 +525,7 @@ class ReadTools:
             ok=True,
             tool="read_task_state",
             items=tuple(items),
-            detail=(
-                f"not registered in formal state: {', '.join(missing)}" if missing else None
-            ),
+            detail=(f"not registered in formal state: {', '.join(missing)}" if missing else None),
             evidence_keys=tuple(
                 f"task|{item['task_id']}|{item['event_refs'][-1] if item['event_refs'] else 'none'}"
                 for item in items

@@ -189,6 +189,9 @@ def create_app(
                     await recheck_handle
             if isinstance(llm_client, AnthropicCompatibleLLMClient):
                 llm_client.close()
+            knowledge_service = getattr(gateway_service, "project_knowledge", None)
+            if knowledge_service is not None:
+                await knowledge_service.aclose()
             await database.close()
 
     app = FastAPI(

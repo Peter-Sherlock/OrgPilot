@@ -191,7 +191,9 @@ class TestDerivation:
         await _reimport(env)
         # The old generation is now stale and must be invalidated by flag.
         invalidated = await pipeline.invalidate_stale_generations("proj-a")
-        assert invalidated == [old_generation.generation_id]
+        # Source changes now invalidate the old generation in the write transaction.
+        assert invalidated == []
+        assert not (await env["knowledge"].get_generation(old_generation.generation_id)).valid
         stale = await knowledge.get_generation(old_generation.generation_id)
         assert stale is not None and stale.valid is False
         assert stale.summary is not None  # content stays auditable

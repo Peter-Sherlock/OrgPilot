@@ -49,6 +49,7 @@ from orgpilot.knowledge.models import (
 )
 from orgpilot.storage.database import Database, coowned_session
 from orgpilot.storage.models import (
+    KnowledgeGenerationRecord,
     ProjectSourceBindingRecord,
     SourceObjectRecord,
     SourceRevisionRecord,
@@ -100,6 +101,15 @@ class SqlProjectSourceStore:
     def __init__(self, db: Database, clock: Clock | None = None) -> None:
         self.db = db
         self.clock: Clock = clock or SystemClock()
+
+    async def _lock_project(self, project_id: str, session: AsyncSession) -> None:
+        await session.execute(
+            select(ProjectSourceBindingRecord)
+            .where(
+                ProjectSourceBindingRecord.project_id == project_id,
+            )
+            .with_for_update()
+        )
 
     # -- bindings ---------------------------------------------------------------
 
@@ -176,6 +186,7 @@ class SqlProjectSourceStore:
         session: AsyncSession | None = None,
     ) -> None:
         async with coowned_session(self.db, session) as owned:
+            await self._lock_project(project_id, owned)
             stmt = select(ProjectSourceBindingRecord).where(
                 ProjectSourceBindingRecord.project_id == project_id,
                 ProjectSourceBindingRecord.binding_version == binding_version,
@@ -211,9 +222,7 @@ class SqlProjectSourceStore:
             installation_id=record.installation_id,
             branch=record.branch,
             path_allowlist=tuple(load_json(record.path_allowlist_json, [])),
-            issue_selector=IssueSelector.model_validate(
-                load_json(record.issue_selector_json, {})
-            ),
+            issue_selector=IssueSelector.model_validate(load_json(record.issue_selector_json, {})),
             explicit_pr_ids=tuple(load_json(record.explicit_pr_ids_json, [])),
             maintainers=tuple(load_json(record.maintainers_json, [])),
             sharing_grants=tuple(load_json(record.sharing_grants_json, [])),
@@ -236,9 +245,7 @@ class SqlProjectSourceStore:
         async with coowned_session(self.db, session) as owned:
             record = (
                 await owned.execute(
-                    select(SourceObjectRecord).where(
-                        SourceObjectRecord.source_id == obj.source_id
-                    )
+                    select(SourceObjectRecord).where(SourceObjectRecord.source_id == obj.source_id)
                 )
             ).scalar_one_or_none()
             created = record is None
@@ -281,9 +288,7 @@ class SqlProjectSourceStore:
         async with coowned_session(self.db, session) as owned:
             record = (
                 await owned.execute(
-                    select(SourceObjectRecord).where(
-                        SourceObjectRecord.source_id == source_id
-                    )
+                    select(SourceObjectRecord).where(SourceObjectRecord.source_id == source_id)
                 )
             ).scalar_one_or_none()
         return self._object_from(record) if record is not None else None
@@ -338,16 +343,30 @@ class SqlProjectSourceStore:
         async with coowned_session(self.db, session) as owned:
             record = (
                 await owned.execute(
-                    select(SourceObjectRecord).where(
-                        SourceObjectRecord.source_id == source_id
-                    )
+                    select(SourceObjectRecord).where(SourceObjectRecord.source_id == source_id)
                 )
             ).scalar_one_or_none()
             if record is None:
                 raise KnowledgeContractError(f"source object {source_id} not found")
+            await self._lock_project(record.project_id, owned)
             record.availability = availability.value
             record.unavailable_reason = reason
             record.updated_at = _to_utc(self.clock.now())
+            await self._invalidate_generations(record.project_id, owned)
+
+    async def _invalidate_generations(self, project_id: str, session: AsyncSession) -> None:
+        generations = (
+            await session.execute(
+                select(KnowledgeGenerationRecord).where(
+                    KnowledgeGenerationRecord.project_id == project_id,
+                    KnowledgeGenerationRecord.status == "ready",
+                    KnowledgeGenerationRecord.valid.is_(True),
+                )
+            )
+        ).scalars()
+        for generation in generations:
+            generation.valid = False
+            generation.invalidated_reason = "source material changed; rebuild required"
 
     @staticmethod
     def _object_from(record: SourceObjectRecord) -> SourceObject:
@@ -382,6 +401,7 @@ class SqlProjectSourceStore:
         re-extracts, and A→B→A records three revisions.
         """
         async with coowned_session(self.db, session) as owned:
+            await self._lock_project(revision.project_id, owned)
             latest = (
                 await owned.execute(
                     select(SourceRevisionRecord)
@@ -440,6 +460,7 @@ class SqlProjectSourceStore:
                 obj.last_observed_at = _to_utc(revision.observed_at)
                 obj.source_updated_at = _to_utc(revision.source_updated_at) or obj.source_updated_at
                 obj.updated_at = _to_utc(self.clock.now())
+            await self._invalidate_generations(revision.project_id, owned)
             return RevisionOutcome.APPENDED
 
     async def get_revision(
@@ -510,9 +531,7 @@ class SqlSyncInboxStore:
         self.db = db
         self.clock: Clock = clock or SystemClock()
 
-    async def ingest(
-        self, entry: SyncInboxEntry, session: AsyncSession | None = None
-    ) -> bool:
+    async def ingest(self, entry: SyncInboxEntry, session: AsyncSession | None = None) -> bool:
         """Persists one delivery before acknowledgement.
 
         Returns False for an identical redelivery; the same delivery id with a
@@ -584,9 +603,7 @@ class SqlSyncInboxStore:
                 )
             ).scalar_one_or_none()
             if record is None:
-                raise KnowledgeContractError(
-                    f"inbox entry {repository_id}/{delivery_id} not found"
-                )
+                raise KnowledgeContractError(f"inbox entry {repository_id}/{delivery_id} not found")
             record.status = status.value
             record.attempts += attempts_delta
             if last_error is not None:
@@ -676,9 +693,7 @@ class SqlSyncRunStore:
         """Persists the checkpoint together with run progress in one write."""
         async with coowned_session(self.db, session) as owned:
             record = (
-                await owned.execute(
-                    select(SyncRunRecord).where(SyncRunRecord.run_id == run_id)
-                )
+                await owned.execute(select(SyncRunRecord).where(SyncRunRecord.run_id == run_id))
             ).scalar_one_or_none()
             if record is None:
                 raise KnowledgeContractError(f"sync run {run_id} not found")
@@ -698,9 +713,7 @@ class SqlSyncRunStore:
     ) -> None:
         async with coowned_session(self.db, session) as owned:
             record = (
-                await owned.execute(
-                    select(SyncRunRecord).where(SyncRunRecord.run_id == run_id)
-                )
+                await owned.execute(select(SyncRunRecord).where(SyncRunRecord.run_id == run_id))
             ).scalar_one_or_none()
             if record is None:
                 raise KnowledgeContractError(f"sync run {run_id} not found")
@@ -709,14 +722,10 @@ class SqlSyncRunStore:
                 record.error = error
             record.updated_at = _to_utc(self.clock.now())
 
-    async def get_run(
-        self, run_id: str, session: AsyncSession | None = None
-    ) -> SyncRun | None:
+    async def get_run(self, run_id: str, session: AsyncSession | None = None) -> SyncRun | None:
         async with coowned_session(self.db, session) as owned:
             record = (
-                await owned.execute(
-                    select(SyncRunRecord).where(SyncRunRecord.run_id == run_id)
-                )
+                await owned.execute(select(SyncRunRecord).where(SyncRunRecord.run_id == run_id))
             ).scalar_one_or_none()
         return self._run_from(record) if record is not None else None
 

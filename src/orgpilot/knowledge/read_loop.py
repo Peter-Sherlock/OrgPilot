@@ -30,11 +30,13 @@ Frozen behaviors:
 
 import asyncio
 import contextlib
+import inspect
 import logging
 from dataclasses import dataclass
 
 from orgpilot.domain.clock import Clock, SystemClock
 from orgpilot.domain.models import OrgState
+from orgpilot.knowledge.access import check_binding, check_generation
 from orgpilot.knowledge.answerer import (
     TOKEN_ESTIMATOR_VERSION,
     DecisionValidationError,
@@ -47,7 +49,7 @@ from orgpilot.knowledge.answerer import (
     render_answer,
 )
 from orgpilot.knowledge.context import ProjectContextBuilder
-from orgpilot.knowledge.errors import KnowledgeContractError
+from orgpilot.knowledge.errors import KnowledgeContractError, ReadSessionConflict
 from orgpilot.knowledge.models import (
     AnswerStatus,
     BudgetLimits,
@@ -65,6 +67,7 @@ from orgpilot.knowledge.models import (
     SourceAvailability,
     SourceKind,
     StopReason,
+    canonical_payload_hash,
     new_session_id,
     question_hash,
 )
@@ -153,6 +156,29 @@ class ProjectReadOrchestrator:
         question = question.strip()[:QUESTION_MAX_CHARS]
         existing = await self.read_sessions.get_by_message(project_id, message_key)
         if existing is not None:
+            if (
+                existing.spec.requester_id != requester_id
+                or existing.spec.question_hash != question_hash(question)
+            ):
+                raise ReadSessionConflict("message identity belongs to another request")
+            binding = await self.sources.get_binding(project_id, existing.spec.binding_version)
+            if binding is None or await check_binding(self.sources, binding, requester_id):
+                return deterministic_gap_answer(
+                    existing.spec.session_id,
+                    StopReason.ACCESS_DENIED,
+                    question,
+                    (),
+                    "当前资料授权已失效。",
+                )
+            problem = await self._context_problem(existing.spec)
+            if problem:
+                return deterministic_gap_answer(
+                    existing.spec.session_id,
+                    problem,
+                    question,
+                    (),
+                    "项目上下文已变化，请重新提问。",
+                )
             return await self._replay(existing.spec.session_id, project_id, question)
         session_id = new_session_id()
         now = occurred_at or self.clock.now()
@@ -162,6 +188,11 @@ class ProjectReadOrchestrator:
         generation_id = None
         if binding is not None:
             generation_id = await self.knowledge.current_generation_id(project_id)
+        state = (
+            await self._org_state(project_id)
+            if binding and binding.member_can_read(requester_id)
+            else None
+        )
         spec = ProjectReadSessionSpec(
             session_id=session_id,
             project_id=project_id,
@@ -172,6 +203,7 @@ class ProjectReadOrchestrator:
             binding_version=binding_version,
             access_epoch=access_epoch,
             generation_id=generation_id,
+            org_state_refs=_state_refs(state),
             budget_limits=self.limits,
             created_at=now,
         )
@@ -179,9 +211,7 @@ class ProjectReadOrchestrator:
         start = self.timer.now()
         ledger = _Ledger()
         try:
-            return await self._run_inner(
-                spec, binding, generation_id, start, ledger
-            )
+            return await self._run_inner(spec, binding, generation_id, start, ledger, state)
         except Exception:
             # A crash mid-session keeps the ledger and never reruns itself.
             logger.exception("project read session %s crashed", session_id)
@@ -215,6 +245,13 @@ class ProjectReadOrchestrator:
             import json
 
             answer = GroundedProjectAnswer.model_validate(json.loads(session.answer_json))
+            binding = await self.sources.get_binding(project_id, session.spec.binding_version)
+            if binding is None or await self._revoked_since_start(
+                binding, session.spec.requester_id, answer
+            ):
+                return deterministic_gap_answer(
+                    session_id, StopReason.ACCESS_DENIED, question, (), "当前资料授权已失效。"
+                )
             if not answer.rendered_text:
                 answer = answer.model_copy(
                     update={"rendered_text": render_answer(answer, question)}
@@ -237,6 +274,7 @@ class ProjectReadOrchestrator:
         generation_id: str | None,
         start: float,
         ledger: _Ledger,
+        org_state: OrgState | None = None,
     ) -> GroundedProjectAnswer:
         question = spec.question
         seq = 0
@@ -264,21 +302,15 @@ class ProjectReadOrchestrator:
                     0, self.limits.max_exploration_rounds - ledger.exploration_rounds
                 ),
                 tool_calls=max(0, self.limits.max_tool_calls - ledger.tool_calls),
-                model_requests=max(
-                    0, self.limits.max_model_requests - ledger.model_requests
-                ),
+                model_requests=max(0, self.limits.max_model_requests - ledger.model_requests),
                 input_tokens=max(
                     0,
-                    self.limits.max_total_tokens
-                    - ledger.input_tokens
-                    - ledger.output_tokens,
+                    self.limits.max_total_tokens - ledger.input_tokens - ledger.output_tokens,
                 ),
                 evidence_fragments=max(
                     0, self.limits.max_evidence_fragments - ledger.evidence_fragments
                 ),
-                evidence_chars=max(
-                    0, self.limits.max_evidence_chars - ledger.evidence_chars
-                ),
+                evidence_chars=max(0, self.limits.max_evidence_chars - ledger.evidence_chars),
             )
 
         def limits_summary() -> str:
@@ -304,40 +336,44 @@ class ProjectReadOrchestrator:
         # -- material resolution ------------------------------------------------
         if binding is None:
             return await self._finish_simple(
-                spec, StopReason.CONTEXT_UNAVAILABLE, AnswerStatus.UNAVAILABLE,
-                "项目尚未绑定资料仓库。", ledger.snapshot(), step,
+                spec,
+                StopReason.CONTEXT_UNAVAILABLE,
+                AnswerStatus.UNAVAILABLE,
+                "项目尚未绑定资料仓库。",
+                ledger.snapshot(),
+                step,
             )
         if not binding.member_can_read(spec.requester_id):
             return await self._finish_simple(
-                spec, StopReason.ACCESS_DENIED, AnswerStatus.UNAVAILABLE,
-                "你没有该项目资料的访问授权。", ledger.snapshot(), step,
+                spec,
+                StopReason.ACCESS_DENIED,
+                AnswerStatus.UNAVAILABLE,
+                "你没有该项目资料的访问授权。",
+                ledger.snapshot(),
+                step,
             )
         generation = None
         if generation_id:
             generation = await self.knowledge.get_generation(generation_id)
         if generation is None or not generation.valid:
             return await self._finish_simple(
-                spec, StopReason.CONTEXT_UNAVAILABLE, AnswerStatus.UNAVAILABLE,
-                "项目资料还在生成或已失效，请稍后重试。", ledger.snapshot(), step,
+                spec,
+                StopReason.CONTEXT_UNAVAILABLE,
+                AnswerStatus.UNAVAILABLE,
+                "项目资料还在生成或已失效，请稍后重试。",
+                ledger.snapshot(),
+                step,
             )
 
         # -- round-0 packet: initial retrieval counts against the budget (§7.3)
         builder = ProjectContextBuilder(self.clock)
-        objects = await self.sources.list_source_objects(
-            spec.project_id, binding.binding_version
-        )
+        objects = await self.sources.list_source_objects(spec.project_id, binding.binding_version)
         revisions = {}
-        for obj in objects:
-            if obj.availability is SourceAvailability.AVAILABLE:
-                revisions[obj.source_id] = await self.sources.latest_revision(obj.source_id)
+        for revision_id in generation.revision_manifest:
+            revision = await self.sources.get_revision(revision_id)
+            if revision is not None:
+                revisions[revision.source_id] = revision
         index = MaterialIndex.from_generation_material(objects, revisions)
-        org_state: OrgState | None = None
-        if self.org_state_provider is not None:
-            provided = self.org_state_provider(spec.project_id)
-            if asyncio.iscoroutine(provided):
-                org_state = await provided
-            else:
-                org_state = provided
         try:
             packet = builder.build_packet(
                 read_session_id=spec.session_id,
@@ -351,8 +387,12 @@ class ProjectReadOrchestrator:
             )
         except PermissionError:
             return await self._finish_simple(
-                spec, StopReason.ACCESS_DENIED, AnswerStatus.UNAVAILABLE,
-                "你没有该项目资料的访问授权。", ledger.snapshot(), step,
+                spec,
+                StopReason.ACCESS_DENIED,
+                AnswerStatus.UNAVAILABLE,
+                "你没有该项目资料的访问授权。",
+                ledger.snapshot(),
+                step,
             )
         await self.read_sessions.save_packet(packet)
         ledger.tool_calls += 1  # initial retrieval counts (§7.3)
@@ -373,10 +413,12 @@ class ProjectReadOrchestrator:
             relations=await self.knowledge.list_relations(spec.project_id),
             sources=self.sources,
             clock=self.clock,
+            context_check=lambda: self._context_problem(spec),
         )
         tools = ReadTools(tool_session)
 
         unresolved: list[str] = list(packet.missing_info)
+        recent_results: list[dict] = []
         no_progress_rounds = 0
         repairs_used = 0
         decision_answer: GroundedProjectAnswer | None = None
@@ -390,6 +432,10 @@ class ProjectReadOrchestrator:
             ledger.exploration_rounds < self.limits.max_exploration_rounds
             and stop_holder[0] is None
         ):
+            problem = await self._context_problem(spec)
+            if problem:
+                stop_holder[0] = problem
+                break
             if self.timer.now() >= exploration_deadline:
                 stop_holder[0] = StopReason.BUDGET_EXHAUSTED
                 unresolved.append("探索时间已用尽，停止继续查阅。")
@@ -426,6 +472,7 @@ class ProjectReadOrchestrator:
                 unresolved=tuple(unresolved),
                 remaining=remaining_budget(),
                 limits_summary=limits_summary(),
+                tool_results=tuple(recent_results[-2:]),
             )
             prompt_chars = len(view.to_prompt())
             try:
@@ -434,7 +481,11 @@ class ProjectReadOrchestrator:
                 )
             except DecisionValidationError as exc:
                 decision = await self._repair_or_fail(
-                    spec, view, None, str(exc), repairs_used,
+                    spec,
+                    view,
+                    None,
+                    str(exc),
+                    repairs_used,
                 )
                 if decision is None:
                     await mark_unknown_result(f"模型输出不合约：{exc}")
@@ -470,7 +521,13 @@ class ProjectReadOrchestrator:
 
             if decision.kind == "finish":
                 result, repaired = await self._validate_finish(
-                    spec, decision, evidence, generation, repairs_used, step, ledger,
+                    spec,
+                    decision,
+                    evidence,
+                    generation,
+                    repairs_used,
+                    step,
+                    ledger,
                 )
                 if repaired:
                     repairs_used += 1
@@ -480,9 +537,7 @@ class ProjectReadOrchestrator:
                     break
                 decision_answer = result
                 if result.answer_status is AnswerStatus.CLARIFICATION:
-                    clarification = next(
-                        (u for u in result.uncertainties if u.strip()), None
-                    )
+                    clarification = next((u for u in result.uncertainties if u.strip()), None)
                     stop_holder[0] = StopReason.NEEDS_CLARIFICATION
                 else:
                     stop_holder[0] = StopReason.ANSWERED
@@ -507,6 +562,7 @@ class ProjectReadOrchestrator:
                 tools.call(decision.tool, decision.args),
                 timeout=self.limits.max_tool_seconds,
             )
+            recent_results.append(tool_result.to_payload())
             await step(
                 ReadStepKind.TOOL_CALL,
                 tool_name=decision.tool,
@@ -595,9 +651,7 @@ class ProjectReadOrchestrator:
                     self.limits.max_input_tokens_per_call,
                     max(
                         0,
-                        self.limits.max_total_tokens
-                        - ledger.input_tokens
-                        - ledger.output_tokens,
+                        self.limits.max_total_tokens - ledger.input_tokens - ledger.output_tokens,
                     ),
                 ),
                 output_tokens=self.limits.max_output_tokens_per_call,
@@ -618,6 +672,8 @@ class ProjectReadOrchestrator:
                     unresolved=tuple(unresolved),
                     remaining=remaining_budget(),
                     limits_summary=limits_summary(),
+                    tool_results=tuple(recent_results[-2:]),
+                    allow_tools=False,
                 )
                 try:
                     final_decision = await asyncio.wait_for(
@@ -644,7 +700,13 @@ class ProjectReadOrchestrator:
                 )
                 if final_decision is not None and final_decision.kind == "finish":
                     validated, _repaired = await self._validate_finish(
-                        spec, final_decision, evidence, generation, repairs_used, step, ledger,
+                        spec,
+                        final_decision,
+                        evidence,
+                        generation,
+                        repairs_used,
+                        step,
+                        ledger,
                     )
                     if validated is not None:
                         decision_answer = validated
@@ -657,15 +719,22 @@ class ProjectReadOrchestrator:
 
         if decision_answer is None:
             decision_answer = await self._template_answer(
-                spec, stop or StopReason.BUDGET_EXHAUSTED, unresolved, evidence, generation,
-                ledger.snapshot(), clarification, packet,
+                spec,
+                stop or StopReason.BUDGET_EXHAUSTED,
+                unresolved,
+                evidence,
+                generation,
+                ledger.snapshot(),
+                clarification,
+                packet,
             )
 
         # -- pre-send revalidation: authorization and availability (§7.2) ----
-        if await self._revoked_since_start(binding, spec.requester_id, decision_answer):
+        problem = await self._context_problem(spec)
+        if problem:
             revoked = deterministic_gap_answer(
                 spec.session_id,
-                StopReason.ACCESS_DENIED,
+                problem,
                 question,
                 (),
                 "资料访问授权在查询期间发生变化，已停止使用本次结果。",
@@ -701,6 +770,34 @@ class ProjectReadOrchestrator:
 
     # ------------------------------------------------------------------ helpers
 
+    async def _org_state(self, project_id):
+        if self.org_state_provider is None:
+            return None
+        state = self.org_state_provider(project_id)
+        state = await state if inspect.isawaitable(state) else state
+        return state.model_copy(deep=True) if state is not None else None
+
+    async def _context_problem(self, spec):
+        binding = await self.sources.get_binding(spec.project_id, spec.binding_version)
+        if binding is None:
+            return StopReason.ACCESS_DENIED
+        problem = await check_binding(self.sources, binding, spec.requester_id)
+        if problem:
+            return problem
+        generation = (
+            await self.knowledge.get_generation(spec.generation_id)
+            if (spec.generation_id)
+            else None
+        )
+        if generation is None:
+            return StopReason.CONTEXT_UNAVAILABLE
+        problem = await check_generation(self.sources, self.knowledge, generation)
+        if problem:
+            return problem
+        if _state_refs(await self._org_state(spec.project_id)) != spec.org_state_refs:
+            return StopReason.CONTEXT_CHANGED
+        return None
+
     async def _settle_unknown(self, session_id: str, reservation_id: str | None) -> None:
         if reservation_id is None:
             return
@@ -727,7 +824,7 @@ class ProjectReadOrchestrator:
         generator failed its contract and the gap template takes over. The
         repair is one extra model request, counted here against the ledger.
         """
-        problems = _validate_statements(decision.statements, evidence, self.sources)
+        problems = _validate_statements(decision.statements, evidence, generation)
         if not problems:
             return await self._assemble_valid_finish(spec, decision, evidence), False
         if repairs_used >= self.limits.max_structured_repairs:
@@ -748,7 +845,7 @@ class ProjectReadOrchestrator:
         ledger.model_requests += 1
         ledger.input_tokens += estimate_tokens(view.to_prompt())
         ledger.output_tokens += estimate_tokens(repaired_decision.action_summary)
-        problems_after = _validate_statements(repaired_decision.statements, evidence, self.sources)
+        problems_after = _validate_statements(repaired_decision.statements, evidence, generation)
         if problems_after:
             return None, True
         return await self._assemble_valid_finish(spec, repaired_decision, evidence), True
@@ -766,9 +863,7 @@ class ProjectReadOrchestrator:
                 uncertainties=(question,),
                 answer_status=AnswerStatus.CLARIFICATION,
             )
-            return answer.model_copy(
-                update={"rendered_text": render_answer(answer, spec.question)}
-            )
+            return answer.model_copy(update={"rendered_text": render_answer(answer, spec.question)})
         return await _assemble_answer(spec, decision, evidence, self.sources)
 
     async def _template_answer(
@@ -782,9 +877,7 @@ class ProjectReadOrchestrator:
                 stop_reason=stop,
                 budget_usage=usage,
             )
-            return answer.model_copy(
-                update={"rendered_text": render_answer(answer, spec.question)}
-            )
+            return answer.model_copy(update={"rendered_text": render_answer(answer, spec.question)})
         note = "; ".join(unresolved[-3:]) or "未获得足够依据。"
         answer = deterministic_gap_answer(
             spec.session_id, stop, spec.question, tuple(evidence.values()), note
@@ -820,12 +913,12 @@ class ProjectReadOrchestrator:
         self, binding, requester_id: str, answer: GroundedProjectAnswer
     ) -> bool:
         """True when authorization or a cited source became unavailable."""
-        if not binding.member_can_read(requester_id):
+        if await check_binding(self.sources, binding, requester_id):
             return True
         for statement in answer.statements:
             for ref in statement.evidence_refs:
                 obj = await self.sources.get_source_object(ref.source_id)
-                if obj is not None and obj.availability is not SourceAvailability.AVAILABLE:
+                if obj is None or obj.availability is not SourceAvailability.AVAILABLE:
                     return True
         return False
 
@@ -833,9 +926,9 @@ class ProjectReadOrchestrator:
 def _validate_statements(
     statements: tuple[GroundedStatement, ...],
     evidence: dict[str, EvidenceRef],
-    sources: SqlProjectSourceStore,
+    generation,
 ) -> list[str]:
-    """Every statement needs a cited revision whose snippet is locatable."""
+    """Accept only identities, locations and quote text actually returned."""
     problems: list[str] = []
     for index, statement in enumerate(statements, start=1):
         if not statement.text.strip():
@@ -845,16 +938,41 @@ def _validate_statements(
             problems.append(f"第 {index} 条陈述缺少证据引用")
             continue
         for ref in statement.evidence_refs:
-            known = any(
-                known_ref.revision_id == ref.revision_id for known_ref in evidence.values()
-            )
-            if not known:
-                problems.append(
-                    f"第 {index} 条陈述引用了未收集的证据 {ref.revision_id[:20]}"
-                )
+            if (
+                ref.revision_id not in generation.revision_manifest
+                or _returned_reference(ref, evidence) is None
+            ):
+                problems.append(f"第 {index} 条陈述的来源、位置或原文不属于已返回证据")
             if not ref.snippet.strip():
                 problems.append(f"第 {index} 条陈述的证据缺少原文片段")
     return problems
+
+
+def _state_refs(state):
+    if state is None:
+        return ()
+    data = state.model_dump(mode="json")
+    data["processed_event_ids"] = sorted(data["processed_event_ids"])
+    return (f"org:{canonical_payload_hash(data)}",)
+
+
+def _returned_reference(ref: EvidenceRef, evidence: dict[str, EvidenceRef]) -> EvidenceRef | None:
+    for known in evidence.values():
+        if (known.revision_id, known.source_id, known.kind) != (
+            ref.revision_id,
+            ref.source_id,
+            ref.kind,
+        ):
+            continue
+        if any(
+            getattr(ref, field) is not None and getattr(ref, field) != getattr(known, field)
+            for field in ("paragraph", "line_start", "line_end")
+        ):
+            continue
+        quote = " ".join(ref.snippet.split())
+        if quote and quote in " ".join(known.snippet.split()):
+            return known.model_copy(update={"snippet": ref.snippet})
+    return None
 
 
 async def _assemble_answer(
@@ -866,7 +984,16 @@ async def _assemble_answer(
     """Assembles the answer; work-item statements gain their cited revision's
     deterministic metadata facts (state / merged / review author), so platform
     fields are quotable without any model invention."""
-    statements = list(decision.statements)
+    statements = [
+        statement.model_copy(
+            update={
+                "evidence_refs": tuple(
+                    _returned_reference(ref, evidence) for ref in statement.evidence_refs
+                ),
+            }
+        )
+        for statement in decision.statements
+    ]
     for index, statement in enumerate(statements):
         for ref in statement.evidence_refs:
             note = await _work_item_note(sources, ref)
@@ -910,8 +1037,7 @@ async def _work_item_note(sources: SqlProjectSourceStore, ref: EvidenceRef) -> s
         return f"工作记录 PR：状态={metadata.get('state', 'unknown')}、{merged}"
     if ref.kind is SourceKind.REVIEW:
         return (
-            f"工作记录 review：{metadata.get('author', 'unknown')} 提交 "
-            f"{metadata.get('state', '')}"
+            f"工作记录 review：{metadata.get('author', 'unknown')} 提交 {metadata.get('state', '')}"
         )
     return None
 

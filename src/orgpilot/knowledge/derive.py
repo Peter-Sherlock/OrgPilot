@@ -379,7 +379,7 @@ class DerivationPipeline:
             created_at=generation.created_at,
         )
         await self._replace_generation_row(ready)
-        await self.knowledge.publish_generation(generation.generation_id)
+        await self.knowledge.publish_generation(generation.generation_id, validate_sources=True)
         published = await self.knowledge.get_generation(generation.generation_id)
         assert published is not None  # just published above
         return published
@@ -419,15 +419,10 @@ class DerivationPipeline:
         objects = await self.sources.list_source_objects(
             binding.project_id, binding.binding_version
         )
-        available = [
-            obj
-            for obj in objects
-            if obj.availability is SourceAvailability.AVAILABLE
-        ]
+        available = [obj for obj in objects if obj.availability is SourceAvailability.AVAILABLE]
         base_manifest = set(base_generation.revision_manifest) if base_generation else set()
         base_assertions = {
-            a.assertion_id: a
-            for a in await self.knowledge.list_assertions(binding.project_id)
+            a.assertion_id: a for a in await self.knowledge.list_assertions(binding.project_id)
         }
         manifest: list[str] = []
         assertions: list[KnowledgeAssertion] = []
@@ -453,8 +448,7 @@ class DerivationPipeline:
                 assertions.extend(extract_platform_assertions(obj, latest))
         # Fresh assertion rows for this generation (idempotent per generation).
         stored_ids = {
-            a.assertion_id
-            for a in await self.knowledge.list_assertions(binding.project_id)
+            a.assertion_id for a in await self.knowledge.list_assertions(binding.project_id)
         }
         new_rows = [a for a in assertions if a.assertion_id not in stored_ids]
         from sqlalchemy.ext.asyncio import AsyncSession  # noqa: F401

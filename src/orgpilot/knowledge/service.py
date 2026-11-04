@@ -56,26 +56,29 @@ class ProjectKnowledgeService:
             return ScriptedAnswerGenerator()
         provider = self.settings.llm_provider
         if provider == "aihubmix" and self.settings.aihubmix_api_key:
-            from orgpilot.extraction.client import AnthropicCompatibleLLMClient
+            from orgpilot.knowledge.llm import ProjectLLMClient
 
-            client = AnthropicCompatibleLLMClient(
+            client = ProjectLLMClient(
                 api_key=self.settings.aihubmix_api_key,
                 base_url=self.settings.aihubmix_base_url,
-                model=self.settings.aihubmix_model,
                 thinking=self.settings.llm_thinking,
             )
             return LLMProjectAnswerer(client, self.settings.aihubmix_model)
         if provider == "deepseek" and self.settings.deepseek_api_key:
-            from orgpilot.extraction.client import AnthropicCompatibleLLMClient
+            from orgpilot.knowledge.llm import ProjectLLMClient
 
-            client = AnthropicCompatibleLLMClient(
+            client = ProjectLLMClient(
                 api_key=self.settings.deepseek_api_key,
                 base_url=self.settings.deepseek_base_url,
-                model=self.settings.deepseek_model,
                 thinking=self.settings.llm_thinking,
             )
             return LLMProjectAnswerer(client, self.settings.deepseek_model)
-        return ScriptedAnswerGenerator()
+        raise ValueError("online project Q&A requires configured provider credentials")
+
+    async def aclose(self):
+        close = getattr(self.generator, "aclose", None)
+        if close is not None:
+            await close()
 
     async def _read_only_org_state(self, project_id: str):
         """Read-only OrgState snapshot; never advances any coordination turn."""

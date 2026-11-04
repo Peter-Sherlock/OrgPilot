@@ -19,6 +19,7 @@ Two implementations:
   until real usage arrives from the provider (C6 records actuals).
 """
 
+import inspect
 import json
 import re
 from typing import Any, Protocol, runtime_checkable
@@ -148,6 +149,8 @@ class ReadLoopView:
         unresolved: tuple[str, ...],
         remaining: BudgetUsage,
         limits_summary: str,
+        tool_results: tuple[dict[str, Any], ...] = (),
+        allow_tools: bool = True,
     ) -> None:
         self.round_number = round_number
         self.question = question
@@ -156,24 +159,23 @@ class ReadLoopView:
         self.unresolved = unresolved
         self.remaining = remaining
         self.limits_summary = limits_summary
+        self.tool_results = tool_results
+        self.allow_tools = allow_tools
 
     def to_prompt(self) -> str:
         """Deterministic prompt rendering; the LLM answerer adds its contract."""
-        evidence_lines = []
-        for index, ref in enumerate(self.evidence, start=1):
-            locator = ref.paragraph or ref.title or ref.source_id
-            evidence_lines.append(
-                f"{index}. [{ref.revision_id[:16]}] {locator}: {ref.snippet[:120]}"
-            )
-        return "\n".join(
-            [
-                f"问题：{self.question}",
-                f"项目摘要：{self.brief[:600]}",
-                "已收集证据：",
-                *(evidence_lines or ["（尚无）"]),
-                f"未解决问题：{'；'.join(self.unresolved) or '无'}",
-                f"第 {self.round_number} 轮；剩余额度：{self.limits_summary}",
-            ]
+        return json.dumps(
+            {
+                "question": self.question,
+                "brief": self.brief,
+                "evidence": [ref.model_dump(mode="json") for ref in self.evidence],
+                "tool_results": self.tool_results,
+                "unresolved": self.unresolved,
+                "round": self.round_number,
+                "remaining": self.limits_summary,
+                "allowed_decisions": DECISION_KINDS if self.allow_tools else DECISION_KINDS[1:],
+            },
+            ensure_ascii=False,
         )
 
 
@@ -256,11 +258,7 @@ class ScriptedAnswerGenerator:
         # Match against title + locator + snippet — the same haystack the
         # index searched — so a heading match (e.g. 交付条件) cites the
         # document even when its body text lacks the keyword.
-        matched = [
-            ref
-            for ref in view.evidence
-            if _matches(ref, keywords)
-        ]
+        matched = [ref for ref in view.evidence if _matches(ref, keywords)]
         if not matched:
             matched = list(view.evidence[:2])
         if not matched:
@@ -310,56 +308,72 @@ class LLMProjectAnswerer:
     )
 
     async def decide(self, view: ReadLoopView) -> ProjectAnswerDecision:
-        prompt = f"{self.SYSTEM_PROMPT}\n\n{view.to_prompt()}"
+        prompt = view.to_prompt()
         raw = await self._call(prompt)
-        self.last_usage = BudgetUsage(
-            model_requests=1,
-            input_tokens=estimate_tokens(prompt),
-            output_tokens=estimate_tokens(raw or ""),
-        )
         return self._parse(raw, view)
 
     async def repair(
         self, view: ReadLoopView, rejected: ProjectAnswerDecision, reason: str
     ) -> ProjectAnswerDecision:
         prompt = (
-            f"{self.SYSTEM_PROMPT}\n\n上一次输出不符合契约（{reason}）。"
-            f"请重新输出符合契约的 JSON。\n\n{view.to_prompt()}"
+            f"上一次输出不符合契约（{reason}）。请重新输出符合契约的 JSON。\n\n{view.to_prompt()}"
         )
         raw = await self._call(prompt)
-        self.last_usage = BudgetUsage(
-            model_requests=1,
-            input_tokens=estimate_tokens(prompt),
-            output_tokens=estimate_tokens(raw or ""),
-        )
         return self._parse(raw, view)
 
     async def _call(self, prompt: str) -> str:
+        self.last_usage = None
         result = self._client.generate(
             model=self._model,
             system=self.SYSTEM_PROMPT,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=1024,
         )
-        import asyncio
+        if inspect.isawaitable(result):
+            result = await result
+        from orgpilot.knowledge.llm import GenerationResult
 
-        if asyncio.iscoroutine(result):
-            return await result
-        return result
+        if not isinstance(result, GenerationResult):
+            raise TypeError("project generator must return GenerationResult with usage")
+        self.last_usage = BudgetUsage(
+            model_requests=1,
+            input_tokens=result.input_tokens
+            if result.input_tokens is not None
+            else (len(prompt.encode("utf-8")) + 512),
+            output_tokens=result.output_tokens if result.output_tokens is not None else 1024,
+            unknown_token_usage=result.input_tokens is None or result.output_tokens is None,
+        )
+        return result.text
+
+    async def aclose(self):
+        await self._client.aclose()
 
     def _parse(self, raw: str, view: ReadLoopView) -> ProjectAnswerDecision:
         try:
             data = json.loads(_extract_json(raw or ""))
         except ValueError as exc:
             raise DecisionValidationError(f"invalid JSON: {exc}") from exc
+        if not isinstance(data, dict):
+            raise DecisionValidationError("decision must be a JSON object")
+        try:
+            return self._parse_object(data, view)
+        except (ValueError, TypeError, KeyError, AttributeError) as exc:
+            raise DecisionValidationError(f"invalid decision: {exc}") from exc
+
+    def _parse_object(self, data, view):
         kind = data.get("kind")
         if kind == "lookup":
+            if not isinstance(data.get("tool"), str) or not isinstance(data.get("args"), dict):
+                raise DecisionValidationError("lookup needs a tool name and object args")
             return ProjectAnswerDecision.lookup(
                 data.get("tool"), data.get("args") or {}, summary=str(data.get("args"))[:120]
             )
         if kind == "finish":
             statements = []
-            for item in data.get("statements", [])[:MAX_ANSWER_STATEMENTS]:
+            items = data.get("statements", [])
+            if not isinstance(items, list) or len(items) > MAX_ANSWER_STATEMENTS:
+                raise DecisionValidationError("invalid statements list")
+            for item in items:
                 ref = EvidenceRef(
                     revision_id=str(item.get("revision_id", "")),
                     source_id=str(item.get("source_id", "")),
@@ -371,7 +385,15 @@ class LLMProjectAnswerer:
                     GroundedStatement(text=str(item.get("text", "")), evidence_refs=(ref,))
                 )
             status = AnswerStatus(str(data.get("answer_status", "unavailable")))
-            return ProjectAnswerDecision.finish(tuple(statements), status, summary="finish")
+            extras = {}
+            for name in ("uncertainties", "conflicts", "missing_info"):
+                values = data.get(name, [])
+                if not isinstance(values, list) or not all(isinstance(v, str) for v in values):
+                    raise DecisionValidationError(f"{name} must be a string list")
+                extras[name] = tuple(values)
+            return ProjectAnswerDecision.finish(
+                tuple(statements), status, **extras, summary="finish"
+            )
         if kind == "ask_clarification":
             return ProjectAnswerDecision.ask_clarification(str(data.get("question", "")))
         if kind == "report_gap":

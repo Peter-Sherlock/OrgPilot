@@ -79,9 +79,7 @@ def verify_signature(secret: str, payload_body: bytes, signature_header: str | N
     prefix = "sha256="
     if not signature_header.startswith(prefix):
         return False
-    expected = hmac.new(
-        secret.encode("utf-8"), payload_body, hashlib.sha256
-    ).hexdigest()
+    expected = hmac.new(secret.encode("utf-8"), payload_body, hashlib.sha256).hexdigest()
     return hmac.compare_digest(signature_header[len(prefix) :].lower(), expected)
 
 
@@ -202,7 +200,18 @@ class GitHubSyncService:
             counts["processed"] += 1
             counts[result if result in counts else "refreshed"] += 1
         await self.runs.set_run_state(run_id, SyncRunState.COMPLETED)
+        await self._publish_current(binding)
         return counts
+
+    async def _publish_current(self, binding: ProjectSourceBinding) -> None:
+        from orgpilot.knowledge.derive import DerivationPipeline
+
+        current_id = await self.knowledge.current_generation_id(binding.project_id)
+        base = await self.knowledge.get_generation(current_id) if current_id else None
+        if base is not None and base.valid:
+            return
+        pipeline = DerivationPipeline(self.sources, self.knowledge, self.clock)
+        await pipeline.build_and_publish(binding, reason="sync", base_generation=base)
 
     async def _process_entry(
         self,
@@ -212,9 +221,7 @@ class GitHubSyncService:
         run_id: str,
     ) -> str:
         """Claims one entry, refreshes, and commits everything atomically."""
-        await self.inbox.set_status(
-            entry.repository_id, entry.delivery_id, InboxStatus.PROCESSING
-        )
+        await self.inbox.set_status(entry.repository_id, entry.delivery_id, InboxStatus.PROCESSING)
         try:
             outcome = await self._apply_event(entry, binding, client)
         except GitHubReadError as exc:
@@ -345,9 +352,7 @@ class GitHubSyncService:
         """A push refreshes documents only for the bound branch (§5.3)."""
         ref = entry.payload.get("ref", "")
         if ref != f"refs/heads/{binding.branch}":
-            return RefreshOutcome(
-                result="ignored", detail=f"push to unbound ref {ref}"
-            )
+            return RefreshOutcome(result="ignored", detail=f"push to unbound ref {ref}")
         return await self._refresh_documents(binding, client)
 
     async def _refresh_documents(
@@ -369,8 +374,10 @@ class GitHubSyncService:
             )
             content = client.get_blob(item.blob_sha)
             now = self.clock.now()
-            source_id = existing.source_id if existing else await self._new_document_identity(
-                binding, normalized
+            source_id = (
+                existing.source_id
+                if existing
+                else await self._new_document_identity(binding, normalized)
             )
             metadata = {"blob_sha": item.blob_sha, "size": item.size}
             # Pre-check dedup: unchanged documents queue no write (the
@@ -423,9 +430,7 @@ class GitHubSyncService:
             outcome.result = "refreshed"
         return outcome
 
-    async def _new_document_identity(
-        self, binding: ProjectSourceBinding, path: str
-    ) -> str:
+    async def _new_document_identity(self, binding: ProjectSourceBinding, path: str) -> str:
         from orgpilot.knowledge.models import SourceObjectIdentity
 
         identity = SourceObjectIdentity(
@@ -457,11 +462,13 @@ class GitHubSyncService:
                 binding.project_id, binding.binding_version, SourceKind.ISSUE, str(number)
             )
             if stored is None:
-                return RefreshOutcome(
-                    result="ignored", detail=f"issue #{number} outside selector"
-                )
+                return RefreshOutcome(result="ignored", detail=f"issue #{number} outside selector")
         return await self._record_work_item(
-            binding, SourceKind.ISSUE, number, issue.updated_at, issue.model_dump(mode="json"),
+            binding,
+            SourceKind.ISSUE,
+            number,
+            issue.updated_at,
+            issue.model_dump(mode="json"),
             extra_metadata={
                 "state": issue.state,
                 "assignees": list(issue.assignees),
@@ -480,9 +487,7 @@ class GitHubSyncService:
         try:
             pr = client.get_pull_request(number)
         except GitHubReadError as exc:
-            return await self._takedown_or_fail(
-                binding, SourceKind.PULL_REQUEST, str(number), exc
-            )
+            return await self._takedown_or_fail(binding, SourceKind.PULL_REQUEST, str(number), exc)
         selected = number in binding.explicit_pr_ids or binding.issue_selector.covers(
             number, pr.milestone
         )
@@ -493,7 +498,11 @@ class GitHubSyncService:
             if stored is None:
                 return RefreshOutcome(result="ignored", detail=f"PR #{number} out of scope")
         return await self._record_work_item(
-            binding, SourceKind.PULL_REQUEST, number, pr.updated_at, pr.model_dump(mode="json"),
+            binding,
+            SourceKind.PULL_REQUEST,
+            number,
+            pr.updated_at,
+            pr.model_dump(mode="json"),
             extra_metadata={
                 "state": pr.state,
                 "milestone": pr.milestone,
@@ -772,6 +781,13 @@ class GitHubSyncService:
         binding = await self.sources.get_active_binding(project_id)
         if binding is None:
             return None
+        async with self._lock_for(binding.repository_id):
+            return await self._recheck_locked(project_id)
+
+    async def _recheck_locked(self, project_id: str) -> ImportReport | None:
+        binding = await self.sources.get_active_binding(project_id)
+        if binding is None:
+            return None
         if self.client_factory is None:
             return None
         client = self.client_factory(binding)
@@ -786,6 +802,7 @@ class GitHubSyncService:
         report = await importer.import_binding_scope(binding)
         if report.fully_complete:
             await self._reconcile_deletions(binding, report)
+        await self._publish_current(binding)
         return report
 
     async def _reconcile_deletions(
@@ -799,10 +816,7 @@ class GitHubSyncService:
                 binding.project_id, binding.binding_version, kind=kind
             )
             for obj in stored_objects:
-                if (
-                    obj.availability is SourceAvailability.AVAILABLE
-                    and obj.external_id not in seen
-                ):
+                if obj.availability is SourceAvailability.AVAILABLE and obj.external_id not in seen:
                     await self.sources.set_source_availability(
                         obj.source_id,
                         SourceAvailability.DELETED,
