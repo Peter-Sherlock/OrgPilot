@@ -9,10 +9,10 @@ the four read permissions and that nothing in this package writes.
 Two implementations exist:
 
 - :class:`MockGitHubClient` runs offline against a fixed snapshot and is the
-  only client exercised by tests; it can simulate pagination, 403/404, and
+  fixture-backed sync harness; it can simulate pagination, 403/404, and
   oversized payloads.
-- :class:`HttpGitHubClient` speaks the real REST API via httpx. It is wired
-  for later live acceptance (C6 optional) and is never exercised in tests:
+- :class:`HttpGitHubClient` speaks the real REST API via httpx. Offline HTTP
+  transport tests cover its requests; live acceptance remains separate:
   live use needs explicit scope, credentials, and budget (development-plan §2).
 
 Token exchange (App → installation token) lives in
