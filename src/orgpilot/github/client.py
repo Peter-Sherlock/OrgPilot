@@ -26,6 +26,7 @@ from collections.abc import Callable
 from datetime import datetime
 from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
+from urllib.parse import quote
 
 import httpx
 
@@ -340,6 +341,7 @@ class HttpGitHubClient:
         base_url: str = "https://api.github.com",
         timeout_seconds: float = 15.0,
         retry_delay_seconds: float = 2.0,
+        client: httpx.Client | None = None,
     ) -> None:
         self._owner = owner
         self._repo = repo
@@ -347,6 +349,7 @@ class HttpGitHubClient:
         self._base_url = base_url.rstrip("/")
         self._timeout_seconds = timeout_seconds
         self._retry_delay_seconds = retry_delay_seconds
+        self._client = client
 
     def _headers(self) -> dict[str, str]:
         headers = {
@@ -357,35 +360,48 @@ class HttpGitHubClient:
             headers["Authorization"] = f"Bearer {self._credentials.installation_token()}"
         return headers
 
-    def _request(self, method: str, path: str, params: dict[str, Any] | None = None) -> Any:
-        url = f"{self._base_url}{path.format(owner=self._owner, repo=self._repo)}"
+    def _request(
+        self, path: str, params: dict[str, Any] | None = None,
+        **path_params: str | int,
+    ) -> Any:
+        values = {"owner": self._owner, "repo": self._repo, **path_params}
+        encoded = {key: quote(str(value), safe="") for key, value in values.items()}
+        url = f"{self._base_url}{path.format(**encoded)}"
         last_error: GitHubReadError | None = None
         for attempt in range(1, MAX_HTTP_ATTEMPTS + 1):
             try:
-                response = httpx.request(
-                    method,
+                request = self._client.request if self._client else httpx.request
+                response = request(
+                    "GET",
                     url,
                     params=params,
                     headers=self._headers(),
                     timeout=self._timeout_seconds,
                 )
             except httpx.TransportError as exc:
-                last_error = GitHubReadError(method, None, str(exc))
-                time.sleep(self._retry_delay_seconds)
+                last_error = GitHubReadError("GET", None, str(exc))
+                if attempt < MAX_HTTP_ATTEMPTS:
+                    time.sleep(self._retry_delay_seconds)
                 continue
             if response.status_code < 400:
                 return response.json()
             retry_after = response.headers.get("retry-after")
-            if retry_after and response.status_code in (403, 429) and attempt < MAX_HTTP_ATTEMPTS:
-                time.sleep(min(float(retry_after), 30.0))
+            if (response.status_code >= 500 or response.status_code == 429 or (
+                response.status_code == 403 and retry_after
+            )) and attempt < MAX_HTTP_ATTEMPTS:
+                try:
+                    delay = float(retry_after) if retry_after else self._retry_delay_seconds
+                except ValueError:
+                    delay = self._retry_delay_seconds
+                time.sleep(max(0.0, min(delay, 30.0)))
                 continue
-            raise GitHubReadError(method, response.status_code, response.text[:500])
-        raise last_error or GitHubReadError(method, None, "unreachable")
+            raise GitHubReadError("GET", response.status_code, response.text[:500])
+        raise last_error or GitHubReadError("GET", None, "unreachable")
 
     # -- reads ---------------------------------------------------------------------
 
     def get_repository(self) -> RepositoryInfo:
-        data = self._request("GET /repos", "/repos/{owner}/{repo}")
+        data = self._request("/repos/{owner}/{repo}")
         return RepositoryInfo(
             repository_id=str(data["id"]),
             full_name=data["full_name"],
@@ -394,16 +410,17 @@ class HttpGitHubClient:
 
     def get_branch_head(self, branch: str) -> CommitInfo:
         data = self._request(
-            "GET /branches", "/repos/{owner}/{repo}/branches/{branch}", {"branch": branch}
+            "/repos/{owner}/{repo}/branches/{branch}", branch=branch
         )
         return CommitInfo(sha=data["commit"]["sha"])
 
     def get_tree(self, commit_sha: str) -> list[TreeEntry]:
         data = self._request(
-            "GET /git/trees",
             "/repos/{owner}/{repo}/git/trees/{sha}",
-            {"sha": commit_sha, "recursive": "1"},
+            {"recursive": "1"}, sha=commit_sha,
         )
+        if data.get("truncated"):
+            raise GitHubReadError("get_tree", 503, "tree enumeration is truncated")
         entries: list[TreeEntry] = []
         for item in data.get("tree", []):
             if item.get("type") != "blob":
@@ -415,7 +432,7 @@ class HttpGitHubClient:
 
     def get_blob(self, blob_sha: str) -> str:
         data = self._request(
-            "GET /git/blobs", "/repos/{owner}/{repo}/git/blobs/{sha}", {"sha": blob_sha}
+            "/repos/{owner}/{repo}/git/blobs/{sha}", sha=blob_sha
         )
 
         if data.get("encoding") == "base64":
@@ -424,7 +441,6 @@ class HttpGitHubClient:
 
     def list_issues(self, state: str, page: int, per_page: int) -> list[IssuePayload]:
         data = self._request(
-            "GET /issues",
             "/repos/{owner}/{repo}/issues",
             {"state": state, "page": page, "per_page": per_page},
         )
@@ -434,7 +450,7 @@ class HttpGitHubClient:
 
     def get_issue(self, number: int) -> IssuePayload:
         data = self._request(
-            "GET /issues/N", "/repos/{owner}/{repo}/issues/{number}", {"number": number}
+            "/repos/{owner}/{repo}/issues/{number}", number=number
         )
         if "pull_request" in data:
             raise GitHubReadError("get_issue", 409, f"#{number} is a pull request")
@@ -444,9 +460,8 @@ class HttpGitHubClient:
         self, issue_number: int, page: int, per_page: int
     ) -> list[CommentPayload]:
         data = self._request(
-            "GET /issue comments",
             "/repos/{owner}/{repo}/issues/{number}/comments",
-            {"number": issue_number, "page": page, "per_page": per_page},
+            {"page": page, "per_page": per_page}, number=issue_number,
         )
         return [
             CommentPayload(
@@ -463,7 +478,7 @@ class HttpGitHubClient:
 
     def get_pull_request(self, number: int) -> PullRequestPayload:
         data = self._request(
-            "GET /pulls/N", "/repos/{owner}/{repo}/pulls/{number}", {"number": number}
+            "/repos/{owner}/{repo}/pulls/{number}", number=number
         )
         return PullRequestPayload(
             number=data["number"],
@@ -489,9 +504,8 @@ class HttpGitHubClient:
         self, pr_number: int, page: int, per_page: int
     ) -> list[ReviewPayload]:
         data = self._request(
-            "GET /pulls/N/reviews",
             "/repos/{owner}/{repo}/pulls/{number}/reviews",
-            {"number": pr_number, "page": page, "per_page": per_page},
+            {"page": page, "per_page": per_page}, number=pr_number,
         )
         return [
             ReviewPayload(
