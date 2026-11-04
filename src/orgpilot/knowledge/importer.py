@@ -180,23 +180,31 @@ class SourceImporter:
             reason=SyncRunReason.INITIAL_IMPORT,
             candidate_manifest={"scope": self._scope_manifest(binding)},
         )
-        report = ImportReport(
-            project_id=binding.project_id,
-            binding_version=binding.binding_version,
-            access_epoch=binding.access_epoch,
-            repository_id=repo.repository_id,
-            repository_full_name=repo.full_name,
-            pinned_commit_sha=(
-                await read_github(self.client, "get_branch_head", binding.branch)
-            ).sha,
-            run_id=run_id,
-            started_at=started_at,
-        )
-        await self._import_documents(binding, report)
-        issue_scope, pr_scope = await self._collect_work_items(binding, report)
-        await self._import_issues(binding, report, issue_scope)
-        await self._import_pull_requests(binding, report, pr_scope)
-        await self._import_sub_items(binding, report, issue_scope, pr_scope)
+        try:
+            report = ImportReport(
+                project_id=binding.project_id,
+                binding_version=binding.binding_version,
+                access_epoch=binding.access_epoch,
+                repository_id=repo.repository_id,
+                repository_full_name=repo.full_name,
+                pinned_commit_sha=(
+                    await read_github(self.client, "get_branch_head", binding.branch)
+                ).sha,
+                run_id=run_id,
+                started_at=started_at,
+            )
+            await self._import_documents(binding, report)
+            issue_scope, pr_scope = await self._collect_work_items(binding, report)
+            await self._import_issues(binding, report, issue_scope)
+            await self._import_pull_requests(binding, report, pr_scope)
+            await self._import_sub_items(binding, report, issue_scope, pr_scope)
+        except Exception as exc:
+            # An aborted import is a failed run, not one left "running" until
+            # the next restart abandons it.
+            await self.runs.set_run_state(
+                run_id, SyncRunState.FAILED, error=f"import aborted: {exc}"[:500]
+            )
+            raise
         self._finalize_coverage(report)
         report.seen_external_ids = {kind: set(ids) for kind, ids in self._seen.items()}
         await self.runs.save_checkpoint(
@@ -236,7 +244,7 @@ class SourceImporter:
             )
             report.coverage[SourceKind.DOCUMENT.value] = CoverageStatus.FAILED.value
             return
-        allowed = [entry for entry in tree if binding.allows_path(entry.path)]
+        allowed = [entry for entry in tree if binding.allows_document(entry.path)]
         allowed.sort(key=lambda entry: entry.path)
         if len(allowed) > self.limits.max_documents:
             for entry in allowed[self.limits.max_documents :]:
@@ -311,9 +319,25 @@ class SourceImporter:
         matched = len(pr_scope)
         beyond_cap = 0
         while True:
-            batch = await read_github(
-                self.client, "list_issues", state="all", page=page, per_page=50
-            )
+            try:
+                batch = await read_github(
+                    self.client, "list_issues", state="all", page=page, per_page=50
+                )
+            except GitHubReadError as exc:
+                # A failed listing hides every selected issue (and any PR found
+                # through the milestone), so it is recorded as missing coverage
+                # instead of aborting the whole import.
+                reason = f"issue listing page {page} failed: {exc}"
+                selector = binding.issue_selector
+                if selector.milestone is not None or selector.issue_ids:
+                    report.failures.append(
+                        ImportFailure(SourceKind.ISSUE.value, "*", reason, exc.status_code)
+                    )
+                if selector.milestone is not None:
+                    report.failures.append(
+                        ImportFailure(SourceKind.PULL_REQUEST.value, "*", reason, exc.status_code)
+                    )
+                break
             if not batch:
                 break
             for item in batch:
@@ -737,6 +761,9 @@ class SourceImporter:
             observed_at=now,
         )
         await self.sources.record_revision(revision)
+        if existing is not None and existing.availability is not SourceAvailability.AVAILABLE:
+            # This read just succeeded, so an earlier 403/404 or deletion is over.
+            await self.sources.restore_observed_availability(source_id)
 
     async def _mark_object_unavailable(
         self,

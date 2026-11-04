@@ -427,8 +427,14 @@ class DerivationPipeline:
         )
         available = [obj for obj in objects if obj.availability is SourceAvailability.AVAILABLE]
         base_manifest = set(base_generation.revision_manifest) if base_generation else set()
+        # Reuse only what the base generation actually published. Rows left by
+        # an aborted build pin the same revisions and would otherwise be reused
+        # as duplicates.
+        base_refs = set(base_generation.assertion_refs) if base_generation else set()
         base_assertions = {
-            a.assertion_id: a for a in await self.knowledge.list_assertions(binding.project_id)
+            a.assertion_id: a
+            for a in await self.knowledge.list_assertions(binding.project_id)
+            if a.assertion_id in base_refs
         }
         manifest: list[str] = []
         assertions: list[KnowledgeAssertion] = []

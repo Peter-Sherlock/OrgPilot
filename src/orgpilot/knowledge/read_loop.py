@@ -133,7 +133,7 @@ class ProjectReadOrchestrator:
                 return _session_gap(
                     existing, StopReason.ACCESS_DENIED, question, "当前资料授权已失效。"
                 )
-            problem = await self._context_problem(existing.spec)
+            problem = await self._context_problem(existing.spec, _answer_task_ids(existing))
             if problem:
                 return _session_gap(existing, problem, question, "项目上下文已变化，请重新提问。")
             return await self._replay(existing.spec.session_id, project_id, question)
@@ -236,7 +236,15 @@ class ProjectReadOrchestrator:
         state = await state if inspect.isawaitable(state) else state
         return state.model_copy(deep=True) if state is not None else None
 
-    async def _context_problem(self, spec):
+    async def _context_problem(self, spec, task_ids=()):
+        """Re-checks binding, grants and the pinned generation; then formal state.
+
+        Formal state is compared only for ``task_ids``: the tasks this session
+        actually read or cited. A change elsewhere in the project (another
+        member's message, a new claim) does not touch what the answer relies
+        on, so it no longer discards the answer (ADR-0015 §7.6, read-set check).
+        With no tasks used, no event replay is needed at all.
+        """
         binding = await self.sources.get_binding(spec.project_id, spec.binding_version)
         if binding is None:
             return StopReason.ACCESS_DENIED
@@ -258,8 +266,12 @@ class ProjectReadOrchestrator:
         problem = await check_generation(self.sources, self.knowledge, generation)
         if problem:
             return problem
-        if _state_refs(await self._org_state(spec.project_id)) != spec.org_state_refs:
-            return StopReason.CONTEXT_CHANGED
+        used = tuple(dict.fromkeys(task_ids))
+        if used:
+            pinned = _pinned_tasks(spec.org_state_refs)
+            current = _pinned_tasks(_state_refs(await self._org_state(spec.project_id)))
+            if any(pinned.get(task_id) != current.get(task_id) for task_id in used):
+                return StopReason.CONTEXT_CHANGED
         return None
 
     async def _assemble_valid_finish(
@@ -332,15 +344,58 @@ def _session_gap(session, reason, question, note):
     ).model_copy(update={"budget_usage": usage})
 
 
+TASK_REF_PREFIX = "task:"
+
+
 def _state_refs(state):
+    """Per-task fingerprints of the pinned formal state: ``task:<id>:<hash>``."""
     if state is None:
         return ()
-    data = state.model_dump(mode="json")
-    data["processed_event_ids"] = sorted(data["processed_event_ids"])
-    return (f"org:{canonical_payload_hash(data)}",)
+    return tuple(
+        f"{TASK_REF_PREFIX}{task_id}:"
+        f"{canonical_payload_hash(state.tasks[task_id].model_dump(mode='json'))}"
+        for task_id in sorted(state.tasks)
+    )
+
+
+def _pinned_tasks(refs) -> dict[str, str]:
+    pinned: dict[str, str] = {}
+    for ref in refs:
+        if ref.startswith(TASK_REF_PREFIX):
+            task_id, _, fingerprint = ref[len(TASK_REF_PREFIX) :].rpartition(":")
+            pinned[task_id] = fingerprint
+    return pinned
+
+
+def _task_ids_in(refs) -> tuple[str, ...]:
+    """Task ids behind ``task:<id>`` evidence sources, in first-seen order."""
+    ids = (
+        ref.source_id[len(TASK_REF_PREFIX) :]
+        for ref in refs
+        if ref.source_id.startswith(TASK_REF_PREFIX)
+    )
+    return tuple(dict.fromkeys(ids))
+
+
+def _answer_task_ids(session) -> tuple[str, ...]:
+    """Tasks a stored answer cites; a replay re-checks only those."""
+    if not session.answer_json:
+        return ()
+    answer = GroundedProjectAnswer.model_validate_json(session.answer_json)
+    return _task_ids_in(ref for statement in answer.statements for ref in statement.evidence_refs)
 
 
 def _returned_reference(ref: EvidenceRef, evidence: dict[str, EvidenceRef]) -> EvidenceRef | None:
+    """The returned evidence a citation points at, rebuilt server-side.
+
+    Identity (revision + source + kind), the quote, and any stated location
+    must match returned evidence; a forged location is still rejected. Two
+    spellings mean "no location claimed": an empty string, and the evidence's
+    own title (the old prompt asked for "paragraph or title").
+    """
+    quote = " ".join(ref.snippet.split())
+    if not quote:
+        return None
     for known in evidence.values():
         if (known.revision_id, known.source_id, known.kind) != (
             ref.revision_id,
@@ -348,13 +403,17 @@ def _returned_reference(ref: EvidenceRef, evidence: dict[str, EvidenceRef]) -> E
             ref.kind,
         ):
             continue
+        paragraph = ref.paragraph.strip() if ref.paragraph else None
+        if paragraph and paragraph != known.paragraph and paragraph == (known.title or "").strip():
+            paragraph = None
+        if paragraph is not None and paragraph != known.paragraph:
+            continue
         if any(
             getattr(ref, field) is not None and getattr(ref, field) != getattr(known, field)
-            for field in ("paragraph", "line_start", "line_end")
+            for field in ("line_start", "line_end")
         ):
             continue
-        quote = " ".join(ref.snippet.split())
-        if quote and quote in " ".join(known.snippet.split()):
+        if quote in " ".join(known.snippet.split()):
             return known.model_copy(update={"snippet": ref.snippet})
     return None
 

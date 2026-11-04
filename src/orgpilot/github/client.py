@@ -70,8 +70,46 @@ class GitHubReadError(OrgPilotError):
 
 
 def is_access_failure(status_code: int | None) -> bool:
-    """403/404 may be permissions — availability drops, deletion is not inferred."""
+    """403/404 may be permissions — availability drops, deletion is not inferred.
+
+    Rate-limit 403s never reach here as 403: the HTTP client reports them as
+    429 so they retry instead of hiding material.
+    """
     return status_code in (403, 404)
+
+
+# Raised for blobs that are not UTF-8 text; never an access failure.
+UNSUPPORTED_CONTENT_STATUS = 415
+RATE_LIMITED_STATUS = 429
+
+
+def _is_rate_limited(response: httpx.Response) -> bool:
+    """GitHub signals rate limits as 429, or as 403 with rate-limit headers."""
+    if response.status_code == RATE_LIMITED_STATUS:
+        return True
+    if response.status_code != 403:
+        return False
+    if response.headers.get("retry-after"):
+        return True
+    if response.headers.get("x-ratelimit-remaining") == "0":
+        return True
+    return "rate limit" in response.text[:500].lower()
+
+
+def _rate_limit_delay(response: httpx.Response, default: float) -> float:
+    retry_after = response.headers.get("retry-after")
+    if retry_after:
+        try:
+            return float(retry_after)
+        except ValueError:
+            return default
+    reset = response.headers.get("x-ratelimit-reset")
+    if reset:
+        try:
+            return max(0.0, float(reset) - time.time())
+        except ValueError:
+            return default
+    return default
 
 
 @runtime_checkable
@@ -395,19 +433,19 @@ class HttpGitHubClient:
                 continue
             if response.status_code < 400:
                 return response.json()
-            retry_after = response.headers.get("retry-after")
-            if (
-                response.status_code >= 500
-                or response.status_code == 429
-                or (response.status_code == 403 and retry_after)
-            ) and attempt < MAX_HTTP_ATTEMPTS:
-                try:
-                    delay = float(retry_after) if retry_after else self._retry_delay_seconds
-                except ValueError:
-                    delay = self._retry_delay_seconds
+            rate_limited = _is_rate_limited(response)
+            if (response.status_code >= 500 or rate_limited) and attempt < MAX_HTTP_ATTEMPTS:
+                delay = (
+                    _rate_limit_delay(response, self._retry_delay_seconds)
+                    if rate_limited
+                    else self._retry_delay_seconds
+                )
                 time.sleep(max(0.0, min(delay, 30.0)))
                 continue
-            raise GitHubReadError("GET", response.status_code, response.text[:500])
+            # A rate-limited 403 is not a permission answer: report it as 429
+            # so callers retry later instead of marking material unavailable.
+            status = RATE_LIMITED_STATUS if rate_limited else response.status_code
+            raise GitHubReadError("GET", status, response.text[:500])
         raise last_error or GitHubReadError("GET", None, "unreachable")
 
     # -- reads ---------------------------------------------------------------------
@@ -445,7 +483,15 @@ class HttpGitHubClient:
         data = self._request("/repos/{owner}/{repo}/git/blobs/{sha}", sha=blob_sha)
 
         if data.get("encoding") == "base64":
-            return base64.b64decode(data["content"]).decode("utf-8")
+            raw = base64.b64decode(data["content"])
+            try:
+                return raw.decode("utf-8")
+            except UnicodeDecodeError:
+                # Documents are UTF-8 Markdown (ADR-0015 §2.1); anything else
+                # is a per-file read failure, never a crash of the whole sync.
+                raise GitHubReadError(
+                    "get_blob", UNSUPPORTED_CONTENT_STATUS, f"blob {blob_sha} is not UTF-8 text"
+                ) from None
         return str(data.get("content", ""))
 
     def list_issues(self, state: str, page: int, per_page: int) -> list[IssuePayload]:

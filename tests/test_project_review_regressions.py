@@ -206,29 +206,67 @@ async def test_r3_generation_change_during_finish_stops_session(env):
     assert not answer.statements
 
 
-async def test_r3_formal_state_change_during_finish_stops_session(env):
-    from orgpilot.domain.models import OrgState
+async def test_r3_change_to_a_task_the_answer_read_stops_session(env):
+    """Formal state is checked against the session's read set (ADR-0015 §7.6)."""
+    from orgpilot.domain.enums import HealthStatus
+    from tests.test_knowledge_context import make_org_state
 
-    state = OrgState(project_id="proj-a")
+    state = make_org_state()
+
+    class ReadThenChange:
+        generator_version = "review-task-change"
+        calls = 0
+
+        async def decide(self, view):
+            self.calls += 1
+            if self.calls == 1:
+                return ProjectAnswerDecision.lookup(
+                    "read_task_state", {"task_ids": ["task-payment"]}
+                )
+            task = state.tasks["task-payment"]
+            state.tasks["task-payment"] = task.model_copy(
+                update={"health_status": HealthStatus.DELAYED}
+            )
+            task_ref = next(ref for ref in view.evidence if ref.source_id == "task:task-payment")
+            return ProjectAnswerDecision.finish(
+                (GroundedStatement(text="旧任务状态", evidence_refs=(task_ref,)),),
+                AnswerStatus.COMPLETE,
+            )
+
+    answer = await make_loop(
+        env, generator=ReadThenChange(), org_state_provider=lambda p: state
+    ).run("proj-a", "alice", "r3-task", "支付接入任务现在怎样？")
+    assert answer.stop_reason is StopReason.CONTEXT_CHANGED
+    assert not answer.statements
+
+
+async def test_r3_unrelated_formal_state_change_keeps_document_answer(env):
+    """Another member's message changes formal state; a document-only answer
+    reads no task, so neither the answer nor its replay is discarded."""
+    from tests.test_knowledge_context import make_org_state
+
+    state = make_org_state()
 
     class Change:
         generator_version = "review-state-change"
 
         async def decide(self, view):
             state.last_event_id = "event-new"
+            task = state.tasks["task-payment"]
+            state.tasks["task-payment"] = task.model_copy(update={"owner_id": "carol"})
             return ProjectAnswerDecision.finish(
-                (GroundedStatement(text="旧事实", evidence_refs=(view.evidence[0],)),),
+                (GroundedStatement(text="资料事实", evidence_refs=(view.evidence[0],)),),
                 AnswerStatus.COMPLETE,
             )
 
-    answer = await make_loop(env, generator=Change(), org_state_provider=lambda p: state).run(
-        "proj-a",
-        "alice",
-        "r3-state",
-        "项目目标是什么？",
-    )
-    assert answer.stop_reason is StopReason.CONTEXT_CHANGED
-    assert not answer.statements
+    loop = make_loop(env, generator=Change(), org_state_provider=lambda p: state)
+    answer = await loop.run("proj-a", "alice", "r3-state", "项目目标是什么？")
+    assert answer.stop_reason is StopReason.ANSWERED
+    assert answer.statements
+    state.last_event_id = "event-newer"
+    replay = await loop.run("proj-a", "alice", "r3-state", "项目目标是什么？")
+    assert replay.stop_reason is StopReason.ANSWERED
+    assert [s.text for s in replay.statements] == [s.text for s in answer.statements]
 
 
 async def test_r7_repair_cannot_add_a_request_after_cap(env):

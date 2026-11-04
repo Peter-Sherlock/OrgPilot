@@ -14,6 +14,7 @@ import base64
 import hashlib
 import hmac
 import json
+import math
 from dataclasses import dataclass
 
 from orgpilot.knowledge.models import (
@@ -23,6 +24,14 @@ from orgpilot.knowledge.models import (
     SourceObject,
     SourceRevision,
 )
+
+_KIND_WEIGHT = {
+    SourceKind.DOCUMENT: 0,
+    SourceKind.ISSUE: 1,
+    SourceKind.PULL_REQUEST: 2,
+    SourceKind.REVIEW: 3,
+    SourceKind.COMMENT: 4,
+}
 
 
 def _cursor_key(session_id: str, generation_id: str, tool: str, filters: dict) -> bytes:
@@ -181,31 +190,49 @@ class MaterialIndex:
         return terms
 
     def search(self, query: str, kinds: tuple[SourceKind, ...] | None = None) -> list[IndexEntry]:
-        """Text search; query length enforced by the tool layer (§7.4)."""
+        """Text search ranked by relevance; query length enforced by the tool layer (§7.4).
+
+        Each distinct query term scores by rarity (``log(1 + N / df)``), so a
+        two-character fragment that appears in nearly every paragraph ("项目",
+        "什么") barely counts, while the rare fragment the question is really
+        about decides the order. The whole query appearing verbatim, or a term
+        in the heading, adds to the score.
+        """
         cleaned = query.strip()
         if not cleaned:
             return []
         if len(cleaned) > SEARCH_QUERY_MAX_CHARS:
             cleaned = cleaned[:SEARCH_QUERY_MAX_CHARS]
         lowered = cleaned.lower()
-        terms = self._match_terms(cleaned)
-        hits: list[IndexEntry] = []
-        for entry in self._entries:
-            if kinds is not None and entry.kind not in kinds:
-                continue
-            haystack = f"{entry.title or ''}\n{entry.text}".lower()
-            if lowered in haystack or (terms and any(term in haystack for term in terms)):
-                hits.append(entry)
-        # No per-page cap here, ranking only: the tool layer slices pages of
-        # SEARCH_MAX_HITS and signs cursors for the rest (§7.4). Rank order is
-        # deterministic and kind-weighted: authoritative documents first, then
-        # work records, then conversation sub-objects (comments last).
-        weight = {
-            SourceKind.DOCUMENT: 0,
-            SourceKind.ISSUE: 1,
-            SourceKind.PULL_REQUEST: 2,
-            SourceKind.REVIEW: 3,
-            SourceKind.COMMENT: 4,
+        terms = list(dict.fromkeys(term for term in self._match_terms(cleaned) if term.strip()))
+        candidates = [entry for entry in self._entries if kinds is None or entry.kind in kinds]
+        haystacks = [f"{entry.title or ''}\n{entry.text}".lower() for entry in candidates]
+        titles = [(entry.title or "").lower() for entry in candidates]
+        total = len(candidates)
+        rarity = {
+            term: math.log(1 + total / df)
+            for term in terms
+            if (df := sum(1 for haystack in haystacks if term in haystack))
         }
-        hits.sort(key=lambda e: (weight[e.kind], e.source_id, e.external_id, e.line_start or 0))
-        return hits
+        scored: list[tuple[float, IndexEntry]] = []
+        for entry, haystack, title in zip(candidates, haystacks, titles, strict=True):
+            score = sum(weight for term, weight in rarity.items() if term in haystack)
+            if lowered in haystack:
+                score += 2 * max(rarity.values(), default=1.0) + 1.0
+            score += 0.5 * sum(weight for term, weight in rarity.items() if term in title)
+            if score > 0:
+                scored.append((score, entry))
+        # No per-page cap here, ranking only: the tool layer slices pages of
+        # SEARCH_MAX_HITS and signs cursors for the rest (§7.4). Ties keep the
+        # deterministic kind order: authoritative documents first, then work
+        # records, then conversation sub-objects (comments last).
+        scored.sort(
+            key=lambda item: (
+                -round(item[0], 9),
+                _KIND_WEIGHT[item[1].kind],
+                item[1].source_id,
+                item[1].external_id,
+                item[1].line_start or 0,
+            )
+        )
+        return [entry for _, entry in scored]
