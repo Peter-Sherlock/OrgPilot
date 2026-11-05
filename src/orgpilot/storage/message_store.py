@@ -72,15 +72,43 @@ class SqlMessageStore:
                 )
             )
 
-    async def get_outcome(
-        self, project_id: str, message_id: str
-    ) -> ProcessedMessageRecord | None:
+    async def get_outcome(self, project_id: str, message_id: str) -> ProcessedMessageRecord | None:
         async with self.db.session() as session:
             stmt = select(ProcessedMessageRecord).where(
                 ProcessedMessageRecord.project_id == project_id,
                 ProcessedMessageRecord.message_id == message_id,
             )
             return (await session.execute(stmt)).scalar_one_or_none()
+
+    async def revise_project_reply(
+        self,
+        project_id: str,
+        message_id: str,
+        sender_id: str,
+        reply_category: str,
+        reply_text: str,
+        response: dict[str, Any],
+    ) -> None:
+        """Replace a project answer invalidated after recording, before dispatch.
+
+        The inbound identity, timestamp and intent stay immutable. This never
+        changes ordinary business replies or creates a second message row.
+        """
+        async with self.db.session() as session:
+            record = (
+                await session.execute(
+                    select(ProcessedMessageRecord).where(
+                        ProcessedMessageRecord.project_id == project_id,
+                        ProcessedMessageRecord.message_id == message_id,
+                        ProcessedMessageRecord.sender_id == sender_id,
+                        ProcessedMessageRecord.reply_category == "project_answer",
+                    )
+                )
+            ).scalar_one_or_none()
+            if record is not None:
+                record.reply_category = reply_category
+                record.reply_text = reply_text
+                record.response_json = json.dumps(response, ensure_ascii=False, default=str)
 
     async def recent_turns(
         self, project_id: str, sender_id: str, limit: int = 6

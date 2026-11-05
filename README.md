@@ -157,7 +157,7 @@ PM 批准改期后，更新的是 OrgPilot 里的任务截止时间。名单导�
 
 ## 关键设计取舍
 
-- **LLM 的边界**：模型只产出 claim，状态变更全部由确定性代码完成（ADR-0003、ADR-0008）；
+- **LLM 的边界**：协作状态变更由确定性代码处理 claim（ADR-0003、ADR-0008）；项目问答仅生成只读查阅决策与带证据的答复（ADR-0015）；
 - **规则放代码，不放提示词**：截止日比较、未知健康度不写 claim、追问次数上限都是护栏代码，有单元测试；
 - **评测纪律**：test 集冻结并有哈希校验，提示词改动只看 dev 和对话评测；在线响应录制回放，测试全部离线；
 - **导入不回滚审批**：重新导入名单时，任务字段按"上次导入的值 / 当前名单 / 运行时值"三方比对，
@@ -183,6 +183,8 @@ PM 批准改期后，更新的是 OrgPilot 里的任务截止时间。名单导�
 | [`docs/feishu-demo-runbook.md`](docs/feishu-demo-runbook.md) | 真实飞书演示的步骤、检查点与排错 |
 | [`docs/development.md`](docs/development.md) | 开发环境、Git 工作流、完成标准 |
 | [`docs/development-log.md`](docs/development-log.md) | 每一步已实现、已验证、未覆盖的内容 |
+| [`docs/project-context-usage.md`](docs/project-context-usage.md) | GitHub 项目资料接入、`/项目` 问答与预算配置 |
+| [`docs/project-context-review-fixes.md`](docs/project-context-review-fixes.md) | PR #20 九项审查修复及验证边界 |
 | [`evals/intent/LABELING.md`](evals/intent/LABELING.md) | 意图评测标注规则 |
 | [`evals/intent/BASELINE.md`](evals/intent/BASELINE.md) | 意图评测历史数字与口径 |
 | [`OrgPilot-Initial-Design.md`](OrgPilot-Initial-Design.md) | 初期设计（目标与里程碑，不代表已实现） |
@@ -199,6 +201,7 @@ PM 批准改期后，更新的是 OrgPilot 里的任务截止时间。名单导�
 - [ADR-0008](docs/adr/0008-layered-intent-recognition.md) 分层意图识别
 - [ADR-0009](docs/adr/0009-team-onboarding-and-roster-import.md) 团队接入与名单导入
 - [ADR-0013](docs/adr/0013-persist-in-flight-conversations.md) 进行中的对话状态与同步会话持久化（0010–0012 为另一分支上的草稿预留）
+- [ADR-0015](docs/adr/0015-github-project-context-sync.md) GitHub 只读项目上下文、同步与有界查阅（PR #20，真实验收待完成）
 
 ## 代码结构
 
@@ -212,6 +215,8 @@ src/orgpilot/
 ├── agent/         # 有界 Agent Loop 与执行轨迹
 ├── intent/        # MessageRouter、意图客户端、护栏、评测
 ├── extraction/    # claim 抽取、原文反查、相对时间解析
+├── github/        # 只读资料连接器、持久收件箱与同步 worker
+├── knowledge/     # 固定代次、只读工具、查阅循环与持久预算
 ├── team/          # team.yaml 解析与导入计划
 ├── feishu/        # 飞书 OpenAPI、Webhook、WebSocket、卡片
 ├── gateway/       # FastAPI 网关与 Web 控制台

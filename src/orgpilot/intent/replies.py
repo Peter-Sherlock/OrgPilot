@@ -50,6 +50,7 @@ class ReplyKind(StrEnum):
 
     CLAIM_RECORDED = "claim_recorded"
     QUERY_ANSWER = "query_answer"
+    PROJECT_ANSWER = "project_answer"
     SYNC_CONFIRM = "sync_confirm"
     SYNC_STARTED = "sync_started"
     NO_PERMISSION = "no_permission"
@@ -69,6 +70,7 @@ REPLY_PRIORITY: tuple[ReplyKind, ...] = (
     ReplyKind.CLARIFY,
     ReplyKind.CLAIM_RECORDED,
     ReplyKind.QUERY_ANSWER,
+    ReplyKind.PROJECT_ANSWER,
     ReplyKind.NOTED,
     ReplyKind.UNSUPPORTED,
     ReplyKind.HELP,

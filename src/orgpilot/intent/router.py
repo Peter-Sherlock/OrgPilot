@@ -267,6 +267,22 @@ class MessageRouter:
                 previous_msg = json.loads(prior.response_json).get("msg", "success")
             except ValueError:
                 previous_msg = "success"
+            if prior.reply_category == ReplyKind.PROJECT_ANSWER.value:
+                refreshed = await self._refresh_project_answer(
+                    RouterOutcome(reply_category=ReplyKind.PROJECT_ANSWER),
+                    project_id,
+                    sender_id,
+                    message_id,
+                    text,
+                )
+                return refreshed.model_copy(
+                    update={
+                        "msg": "duplicate_suppressed",
+                        "duplicate": True,
+                        "suppress_reply_send": True,
+                        "data": {**refreshed.data, "previous_msg": previous_msg},
+                    }
+                )
             return RouterOutcome(
                 reply_category=ReplyKind(prior.reply_category),
                 reply_text=prior.reply_text,
@@ -292,6 +308,13 @@ class MessageRouter:
             # stays the turn's last write.
             await self.checkpoint(project_id)
 
+        outcome = await self._refresh_project_answer(
+            outcome,
+            project_id,
+            sender_id,
+            message_id,
+            text,
+        )
         intent_summary = outcome.data.get("intent_summary", {})
         await self.messages.record_outcome(
             project_id=project_id,
@@ -304,8 +327,29 @@ class MessageRouter:
             response={"code": 0, "msg": outcome.msg, "data": _jsonable(outcome.data)},
             created_at=occurred_at,
         )
+        recorded_outcome = outcome
+        outcome = await self._refresh_project_answer(
+            outcome,
+            project_id,
+            sender_id,
+            message_id,
+            text,
+        )
         if outcome.reply_text and not outcome.suppress_reply_send:
-            await self.messenger_for(project_id).send_text(sender_id, outcome.reply_text)
+            try:
+                # No further database work between this authorization check
+                # and dispatch. A changed result is reflected in history too.
+                await self.messenger_for(project_id).send_text(sender_id, outcome.reply_text)
+            finally:
+                if outcome != recorded_outcome:
+                    await self.messages.revise_project_reply(
+                        project_id,
+                        message_id,
+                        sender_id,
+                        outcome.reply_category.value,
+                        outcome.reply_text,
+                        {"code": 0, "msg": outcome.msg, "data": _jsonable(outcome.data)},
+                    )
         return outcome
 
     # ------------------------------------------------------------- card action
@@ -340,9 +384,7 @@ class MessageRouter:
     ) -> dict[str, Any]:
         action = action_value.get("action")
         requested_at = _parse_iso(action_value.get("requested_at"))
-        confirmation = self.dialogue.get_pending_sync_confirmation(
-            project_id, operator_id, now=now
-        )
+        confirmation = self.dialogue.get_pending_sync_confirmation(project_id, operator_id, now=now)
 
         agent = await self.service.get_or_replay_agent(project_id)
         member = agent.projector.state.members.get(operator_id)
@@ -367,9 +409,7 @@ class MessageRouter:
                         f"已有进行中的全员同步（{active.progress_summary()}），本次确认未重复发起。",
                     ),
                 }
-            session = await self.start_sync(
-                project_id, initiated_by=operator_id, occurred_at=now
-            )
+            session = await self.start_sync(project_id, initiated_by=operator_id, occurred_at=now)
             return {
                 "code": 0,
                 "msg": "sync_session_started",
@@ -439,7 +479,11 @@ class MessageRouter:
         stripped = text.strip()
         if stripped.startswith("/"):
             return await self._handle_command(
-                project_id=project_id, member=member, command=stripped, occurred_at=occurred_at
+                project_id=project_id,
+                member=member,
+                command=stripped,
+                message_id=message_id,
+                occurred_at=occurred_at,
             )
 
         # Probe replies now flow through the same intent pipeline as normal
@@ -492,9 +536,18 @@ class MessageRouter:
         project_id: str,
         member: Any,
         command: str,
+        message_id: str,
         occurred_at: datetime,
     ) -> RouterOutcome:
         head = command.split()[0] if command.split() else command
+        if head == "/项目":
+            return await self._handle_project_question(
+                project_id=project_id,
+                member=member,
+                command=command,
+                message_id=message_id,
+                occurred_at=occurred_at,
+            )
         if head == "/同步":
             if member.role != "pm":
                 return RouterOutcome(
@@ -536,6 +589,86 @@ class MessageRouter:
             reply_category=ReplyKind.HELP,
             reply_text=HELP_TEXT,
             data={"intent_summary": {"command": head}},
+        )
+
+    async def _handle_project_question(
+        self,
+        *,
+        project_id: str,
+        member: Any,
+        command: str,
+        message_id: str,
+        occurred_at: datetime,
+    ) -> RouterOutcome:
+        """ADR-0015 §7.2: the /项目 entry, after membership, before probes.
+
+        This is a pure read path: it never touches the dialogue store, so
+        pending probes/claims/sync confirmations are neither consumed,
+        renewed, nor overwritten by asking a project question. The answer
+        goes only to the asker.
+        """
+        question = command[len("/项目") :].strip()
+        if not question:
+            usage = (
+                "用法：/项目 <问题>\n例如：/项目 联调的前置条件是什么？\n"
+                "可询问项目目标、术语、交付约定与已接入的工作记录。"
+            )
+            return RouterOutcome(
+                reply_category=ReplyKind.HELP,
+                reply_text=usage,
+                data={"intent_summary": {"command": "/项目"}},
+            )
+        service = getattr(self.service, "project_knowledge", None)
+        if service is None or not self.settings.project_qa_enabled:
+            return RouterOutcome(
+                reply_category=ReplyKind.NOTED,
+                reply_text="项目资料问答入口尚未开启。",
+                data={"intent_summary": {"command": "/项目"}},
+            )
+        answer = await service.answer(
+            project_id=project_id,
+            requester_id=member.member_id,
+            message_key=message_id,
+            question=question,
+            occurred_at=occurred_at,
+        )
+        return self._project_answer_outcome(answer)
+
+    async def _refresh_project_answer(self, outcome, project_id, sender_id, message_id, text):
+        if outcome.reply_category is not ReplyKind.PROJECT_ANSWER:
+            return outcome
+        service = getattr(self.service, "project_knowledge", None)
+        if service is None or not self.settings.project_qa_enabled:
+            return outcome.model_copy(
+                update={
+                    "reply_text": "项目资料问答入口当前不可用。",
+                    "data": {
+                        "answer_status": "unavailable",
+                        "stop_reason": "access_denied",
+                        "intent_summary": {"command": "/项目"},
+                    },
+                }
+            )
+        answer = await service.revalidate_answer(
+            project_id,
+            sender_id,
+            message_id,
+            text.strip()[len("/项目") :].strip(),
+        )
+        return self._project_answer_outcome(answer)
+
+    @staticmethod
+    def _project_answer_outcome(answer):
+        return RouterOutcome(
+            reply_category=ReplyKind.PROJECT_ANSWER,
+            reply_text=answer.rendered_text,
+            data={
+                "read_session_id": answer.read_session_id,
+                "stop_reason": (answer.stop_reason.value if answer.stop_reason else None),
+                "answer_status": answer.answer_status.value,
+                "budget_usage": answer.budget_usage.model_dump(mode="json"),
+                "intent_summary": {"command": "/项目"},
+            },
         )
 
     async def _build_context(

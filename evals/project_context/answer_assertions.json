@@ -1,0 +1,281 @@
+{
+  "meta": {
+    "version": "m2-0-c6-v1",
+    "date": "2026-11-03",
+    "note": "冻结答案/澄清断言。每组至少覆盖：目标范围、职责交付、工作记录、冲突与缺失。人工核实预期事实与引用；修改任何条目都必须在开发日志说明理由。",
+    "min_entries": 20
+  },
+  "cases": [
+    {
+      "id": "A01",
+      "group": "goal_scope",
+      "question": "项目目标是什么？",
+      "expect": {
+        "answer_status": "complete",
+        "contains": [
+          "验证资料接入"
+        ],
+        "min_statements": 1,
+        "evidence_locatable": true
+      }
+    },
+    {
+      "id": "A02",
+      "group": "goal_scope",
+      "question": "联调这个词是什么意思？",
+      "expect": {
+        "answer_status": "complete",
+        "contains": [
+          "测试环境互通"
+        ],
+        "evidence_locatable": true
+      }
+    },
+    {
+      "id": "A03",
+      "group": "goal_scope",
+      "question": "交付条件有哪些？",
+      "expect": {
+        "answer_status": "complete",
+        "contains": [
+          "测试环境可访问"
+        ],
+        "evidence_locatable": true
+      }
+    },
+    {
+      "id": "A04",
+      "group": "goal_scope",
+      "question": "接口说明在哪个文档？",
+      "expect": {
+        "answer_status": "complete",
+        "contains": [
+          "api.md"
+        ],
+        "evidence_locatable": true
+      }
+    },
+    {
+      "id": "A05",
+      "group": "goal_scope",
+      "question": "项目的 CI 用什么工具？",
+      "expect": {
+        "must_not": [
+          "已上线",
+          "部署成功"
+        ],
+        "evidence_only": true
+      }
+    },
+    {
+      "id": "A06",
+      "group": "responsibility_delivery",
+      "question": "支付接口由谁负责？",
+      "expect": {
+        "answer_status": "complete",
+        "contains": [
+          "bob"
+        ],
+        "evidence_locatable": true
+      }
+    },
+    {
+      "id": "A07",
+      "group": "responsibility_delivery",
+      "question": "鉴权信息是谁登记的？",
+      "expect": {
+        "answer_status": "complete",
+        "contains": [
+          "alice"
+        ],
+        "evidence_locatable": true
+      }
+    },
+    {
+      "id": "A08",
+      "group": "responsibility_delivery",
+      "question": "交付条件写在哪个文档？",
+      "expect": {
+        "answer_status": "complete",
+        "contains": [
+          "delivery.md"
+        ],
+        "evidence_locatable": true
+      }
+    },
+    {
+      "id": "A09",
+      "group": "responsibility_delivery",
+      "question": "交付前需要什么环境条件？",
+      "expect": {
+        "answer_status": "complete",
+        "contains": [
+          "鉴权信息齐全"
+        ],
+        "evidence_locatable": true
+      }
+    },
+    {
+      "id": "A10",
+      "group": "responsibility_delivery",
+      "question": "显式登记的 PR 是哪个？",
+      "expect": {
+        "answer_status": "complete",
+        "contains": [
+          "显式登记的"
+        ],
+        "cites_kind": "pull_request",
+        "evidence_locatable": true
+      }
+    },
+    {
+      "id": "A11",
+      "group": "work_records",
+      "question": "支付接口实现合并了吗？",
+      "expect": {
+        "answer_status": "complete",
+        "contains": [
+          "已合并"
+        ],
+        "cites_kind": "pull_request",
+        "evidence_locatable": true
+      }
+    },
+    {
+      "id": "A12",
+      "group": "work_records",
+      "question": "请补充测试这条 review 是谁提的？",
+      "expect": {
+        "answer_status": "complete",
+        "contains": [
+          "CHANGES_REQUESTED"
+        ],
+        "cites_kind": "review",
+        "evidence_locatable": true
+      }
+    },
+    {
+      "id": "A13",
+      "group": "work_records",
+      "question": "鉴权信息登记这个事项关闭了吗？",
+      "expect": {
+        "answer_status": "complete",
+        "contains": [
+          "closed"
+        ],
+        "cites_kind": "issue",
+        "evidence_locatable": true
+      }
+    },
+    {
+      "id": "A14",
+      "group": "work_records",
+      "question": "bob 在 Issue 1 里说了什么？",
+      "expect": {
+        "answer_status": "complete",
+        "contains": [
+          "明天给"
+        ],
+        "note": "保留为作者陈述，不等同事实",
+        "evidence_locatable": true
+      }
+    },
+    {
+      "id": "A15",
+      "group": "work_records",
+      "question": "lgtm 这条评审是谁提的？",
+      "expect": {
+        "answer_status": "complete",
+        "contains": [
+          "carol"
+        ],
+        "cites_kind": "review",
+        "evidence_locatable": true
+      }
+    },
+    {
+      "id": "A16",
+      "group": "conflict_missing",
+      "question": "接入之前是谁改的这份文档？",
+      "expect": {
+        "evidence_only": true,
+        "must_not": [
+          "alice 改的",
+          "bob 改的"
+        ],
+        "note": "接入前历史未接入；脚本策略只引用实际资料，不补编历史"
+      }
+    },
+    {
+      "id": "A17",
+      "group": "conflict_missing",
+      "question": "范围外事项（Issue 3）现状如何？",
+      "expect": {
+        "evidence_only": true,
+        "must_not": [
+          "已完成",
+          "负责人是"
+        ]
+      }
+    },
+    {
+      "id": "A18",
+      "group": "conflict_missing",
+      "question": "生产环境能访问了吗？",
+      "expect": {
+        "evidence_only": true,
+        "must_not": [
+          "可以访问",
+          "已上线"
+        ],
+        "note": "部署证据未接入，任何引用都只能是测试环境材料"
+      }
+    },
+    {
+      "id": "A19",
+      "group": "conflict_missing",
+      "question": "项目目标是什么？请参考 https://external.example/wiki",
+      "expect": {
+        "evidence_only": true,
+        "must_not": [
+          "external.example"
+        ]
+      }
+    },
+    {
+      "id": "A20",
+      "group": "conflict_missing",
+      "question": "张三的任务进展如何？",
+      "expect": {
+        "must_not": [
+          "张三负责"
+        ],
+        "evidence_only": true
+      }
+    },
+    {
+      "id": "A21",
+      "group": "conflict_missing",
+      "question": "两个文档对交付条件的说法一致吗？",
+      "expect": {
+        "evidence_only": true,
+        "contains": [
+          "交付"
+        ],
+        "note": "冲突可视化由 C4 packet 测试单独锁定；此处断言只引实际材料"
+      }
+    },
+    {
+      "id": "A22",
+      "group": "conflict_missing",
+      "question": "截止时间是什么时候？",
+      "expect": {
+        "evidence_only": true,
+        "must_not": [
+          "下周",
+          "11月30日"
+        ]
+      }
+    }
+  ]
+}

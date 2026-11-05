@@ -2,6 +2,7 @@
 
 import os
 from dataclasses import dataclass, field
+from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -38,6 +39,11 @@ def _optional_env(name: str) -> str | None:
     return value.strip() if value and value.strip() else None
 
 
+def _decimal_env(name: str) -> Decimal | None:
+    value = _optional_env(name)
+    return Decimal(value) if value else None
+
+
 @dataclass(frozen=True, slots=True)
 class OrgPilotSettings:
     """Runtime settings. External providers are disabled unless explicitly selected."""
@@ -66,6 +72,23 @@ class OrgPilotSettings:
     feishu_task_writeback: bool = False
     # Demo-only first-contact bootstrap (ADR-0009 §8); real teams import team.yaml.
     demo_mode: bool = False
+    # ADR-0015 GitHub project-context sync. Off by default everywhere; enabling
+    # the webhook ingest requires an HMAC secret. Without a token + repo name the
+    # gateway still persists deliveries (ingest-only mode) but cannot refresh.
+    github_sync_enabled: bool = False
+    github_webhook_secret: str | None = field(default=None, repr=False)
+    github_token: str | None = field(default=None, repr=False)
+    github_repo_full_name: str | None = None
+    # Periodic recheck stays off; when on, it refreshes material only (§5.4).
+    github_recheck_enabled: bool = False
+    github_recheck_interval_seconds: int = 1800
+    # /项目 Q&A entry (§7.2): off by default; online generation additionally
+    # requires project_qa_online plus provider credentials.
+    project_qa_enabled: bool = False
+    project_qa_online: bool = False
+    project_qa_max_spend_usd: Decimal | None = None
+    project_qa_input_usd_per_million: Decimal | None = None
+    project_qa_output_usd_per_million: Decimal | None = None
     timezone: str = DEFAULT_TIMEZONE
     intent_timeout_seconds: float = DEFAULT_INTENT_TIMEOUT_SECONDS
     intent_confidence_threshold: float = DEFAULT_INTENT_CONFIDENCE_THRESHOLD
@@ -98,8 +121,7 @@ class OrgPilotSettings:
             deepseek_api_key=_optional_env("DEEPSEEK_API_KEY"),
             deepseek_base_url=os.getenv("DEEPSEEK_BASE_URL", DEFAULT_DEEPSEEK_BASE_URL).rstrip("/"),
             deepseek_model=os.getenv("DEEPSEEK_MODEL", DEFAULT_DEEPSEEK_MODEL),
-            llm_thinking=thinking_env
-            or ("disabled" if llm_provider == "deepseek" else "omit"),
+            llm_thinking=thinking_env or ("disabled" if llm_provider == "deepseek" else "omit"),
             collaboration_adapter=os.getenv("ORGPILOT_COLLABORATION_ADAPTER", "mock")
             .strip()
             .lower(),
@@ -114,6 +136,29 @@ class OrgPilotSettings:
             in {"1", "true", "yes", "on"},
             demo_mode=os.getenv("ORGPILOT_DEMO_MODE", "false").strip().lower()
             in {"1", "true", "yes", "on"},
+            github_sync_enabled=os.getenv("ORGPILOT_GITHUB_SYNC_ENABLED", "false").strip().lower()
+            in {"1", "true", "yes", "on"},
+            github_webhook_secret=_optional_env("ORGPILOT_GITHUB_WEBHOOK_SECRET"),
+            github_token=_optional_env("ORGPILOT_GITHUB_TOKEN"),
+            github_repo_full_name=_optional_env("ORGPILOT_GITHUB_REPO"),
+            github_recheck_enabled=os.getenv("ORGPILOT_GITHUB_RECHECK_ENABLED", "false")
+            .strip()
+            .lower()
+            in {"1", "true", "yes", "on"},
+            github_recheck_interval_seconds=int(
+                os.getenv("ORGPILOT_GITHUB_RECHECK_INTERVAL_SECONDS", "1800")
+            ),
+            project_qa_enabled=os.getenv("ORGPILOT_PROJECT_QA_ENABLED", "false").strip().lower()
+            in {"1", "true", "yes", "on"},
+            project_qa_online=os.getenv("ORGPILOT_PROJECT_QA_ONLINE", "false").strip().lower()
+            in {"1", "true", "yes", "on"},
+            project_qa_max_spend_usd=_decimal_env("ORGPILOT_PROJECT_QA_MAX_SPEND_USD"),
+            project_qa_input_usd_per_million=_decimal_env(
+                "ORGPILOT_PROJECT_QA_INPUT_USD_PER_MILLION"
+            ),
+            project_qa_output_usd_per_million=_decimal_env(
+                "ORGPILOT_PROJECT_QA_OUTPUT_USD_PER_MILLION"
+            ),
             timezone=os.getenv("ORGPILOT_TIMEZONE", DEFAULT_TIMEZONE).strip(),
             intent_timeout_seconds=float(
                 os.getenv(
@@ -137,6 +182,17 @@ class OrgPilotSettings:
         return settings
 
     def validate(self) -> None:
+        if self.project_qa_enabled and self.project_qa_online:
+            if self.project_qa_max_spend_usd is None or self.project_qa_max_spend_usd <= 0:
+                raise ValueError("online project Q&A requires a positive per-question spend cap")
+            if any(
+                value is None or value < 0
+                for value in (
+                    self.project_qa_input_usd_per_million,
+                    self.project_qa_output_usd_per_million,
+                )
+            ):
+                raise ValueError("online project Q&A requires configured input/output prices")
         try:
             ZoneInfo(self.timezone)
         except Exception as exc:
@@ -168,6 +224,19 @@ class OrgPilotSettings:
                 "ORGPILOT_LLM_THINKING must be one of: " + ", ".join(LLM_THINKING_MODES)
             )
 
+        if self.github_sync_enabled and not self.github_webhook_secret:
+            raise ValueError(
+                "ORGPILOT_GITHUB_WEBHOOK_SECRET is required when "
+                "ORGPILOT_GITHUB_SYNC_ENABLED is on (ADR-0015 §5.3: verify before persist)"
+            )
+        if self.github_sync_enabled and self.github_recheck_interval_seconds <= 0:
+            raise ValueError("ORGPILOT_GITHUB_RECHECK_INTERVAL_SECONDS must be positive")
+        if (
+            self.github_sync_enabled
+            and self.github_repo_full_name
+            and "/" not in self.github_repo_full_name
+        ):
+            raise ValueError("ORGPILOT_GITHUB_REPO must be 'owner/name'")
         if self.collaboration_adapter not in {"mock", "feishu"}:
             raise ValueError("ORGPILOT_COLLABORATION_ADAPTER must be 'mock' or 'feishu'")
         if self.collaboration_adapter == "feishu":

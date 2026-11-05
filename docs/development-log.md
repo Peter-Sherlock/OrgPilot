@@ -1,5 +1,189 @@
 # 开发记录
 
+## 2026-11-04：M2-0 PR #20 九项审查收尾（仅 C1–C6）
+
+- 对照审查报告 R1–R9 修复当前授权、旧答案复用、引用原文验证、固定代次与同步发布、
+  GitHub 请求构造、异步模型适配及可见上下文、统一硬预算与未知数额结算、持久收件箱 worker。
+  逐项实现和回归位置见 [修复清单](project-context-review-fixes.md)。
+- 同消息绑定原请求者与问题哈希；并发重投只运行一个会话。每轮及发送前检查当前绑定、epoch、
+  资料代次与正式状态；缓存和旧结果也检查，撤权或版本变化时不返回旧事实。
+- 来源写入在同一事务中使旧代次失效；通知消费 / 补查自动派生，发布事务再校验后切换指针。
+  问答按固定 manifest 取修订；不完整导入的 coverage 保留为不完整，不被派生阶段改成 complete。
+- 真实 HTTP 适配器通过离线 MockTransport；模型替身只读实际序列化 prompt，完成搜索、
+  关系查询、原文读取和引用收尾。没有使用内部 Python 对象代替模型输入来通过该测试。
+- 探索、修复和收尾共用 `SessionBudget`；最终预留只消费一次，所有尝试先持久化再调用。
+  完整输出和供应方 usage 用于结算，缓存 token 计入，非法或缺失用量保留最坏数额；
+  会话结束不能退回消费。在线开启须配置保守单价和费用上限，脚本字符估算不授权在线请求。
+- Webhook 先落盘再 ACK；worker 自动处理积压与到期重试，真实 lifespan 重启后验证记录实际到 DONE。
+  同步 HTTP 与退避移出网关事件循环，补查 / drain 共享项目锁；先停 worker，再关闭客户端与数据库。
+  修复内存 SQLite 单连接下并发 session 互相提交的问题；原分页测试改为先发布新代次再分页，
+  保留原五条分页、游标隔离断言；原代次测试强化为来源写入时即已失效，未改冻结 gold。
+- 主要修复提交：`a63b475`（R4）、`e86125f`（R1–R3 / R5–R6）、`6fb4d49`（统一预算、恢复 worker 及端到端收尾）。
+- 本地最终门槛：**773 passed**（原 PR 719，新增 54 项回归），branch-aware 覆盖率 **90.82%**；
+  Ruff 通过；基础回放 **9/9**；生命周期 **58/59**，唯一 D3 `round_9:termination` 保留；
+  冻结意图回放 dev **97/102**、test **53/58**、conversations **10/10**，未重录提示词或 gold。
+  本地为 Python 3.14.7；PR CI 使用项目配置的 Python 3.12，检查结果以对应 head 的远端 CI 为准。
+- 补齐 ADR-0015、分步计划、消息驱动计划、使用说明和本轮修复说明。保留原工作区与设计草稿。
+- 证据边界：以上为 SQLite 内存 / 文件库、固定快照和离线 HTTP 协议验收。
+  **真实 GitHub / Webhook 接入、在线问答忠实度和 PostgreSQL 实际并发验收未执行**，产品真实 API / 模型费用为 0。
+  PR 保持待审查，不合并、不部署，不推进依赖等待、普通消息注入或时间驱动协调。
+
+## 2026-11-03：M2-0 C6——综合验收、冻结样例与证据分层（ADR-0015）
+
+- 新增 `evals/project_context/` 三组冻结样例（各自带 meta 版本与最低数量门槛，修改需在开发日志说明）：
+  `answer_assertions.json` 22 项答案断言（目标范围 / 职责交付 / 工作记录 / 冲突缺失四组，
+  关键词、禁语、cites_kind、证据可定位逐条核对）；`change_sequences.json` 14 条变化 / 失败序列
+  （重复读取、A→B→A、同投递 ID 冲突、乱序、子评论独立刷新、非绑定分支、完整枚举删除、
+  403 只降可用性、丢通知补查收敛、枚举不完整不下架、重试耗尽、崩溃恢复、代次失效重建、100 重投），
+  以 op DSL 驱动；`loop_cases.json` 18 项主动查阅边界（§7.7 各项 + 6 项多材料交叉），含
+  假计时器、墙钟回拨、伪造证据修复、未知结果、撤权、同消息重投等自定义生成器。
+- 新增 `tests/test_project_context_gateway.py`：文件库 + 真实 app 接线的重启集成——导入 → 派生 →
+  `/项目` 问答 → 关闭 → 重启后同消息复用会话与结果、startup_recovery 恢复、业务表全程零写入。
+- 为使冻结断言与实现互相诚实，落了三处真实改进：检索排序按来源类型加权（文档 > Issue > PR >
+  review > 评论，字母序曾让评论淹没规范原文）；脚本策略分词与索引一致（CJK 二字碎片，整句退化
+  曾致永远走前两条兜底）；答案装配补全被引修订的确定性元数据事实（工作记录状态 / 合并 / 评审
+  作者 / 来源文档），平台字段因此可引用且无模型虚构。渲染层不再回显问题中的外部 URL。
+- 证据分层：**离线验收通过**（本组测试 + 全量回归 + 回放）；**真实 GitHub / Webhook 同步**与
+  **在线模型问答质量**未执行——本环境无授权仓库、App 凭据与在线预算，列为待完成项，
+  不以 Mock / 录制替代真实能力结论（HttpGitHubClient 与 LLMProjectAnswerer 已就位，凭据与
+  范围明确后即可执行 C6 真实验收）。
+- 使用说明见 `docs/project-context-usage.md`（能力、边界、接入步骤、开关与回滚）。
+
+## 2026-11-03：M2-0 C5——`/项目` 入口、有界主动查阅循环与问答（ADR-0015）
+
+- 新增 `knowledge/read_loop.ProjectReadOrchestrator`：确定性控制器执行 §7.3 循环——round-0 组包
+  （初始检索计入额度）、每轮先预留最坏模型调用再决策、lookup 经四类工具白名单执行、证据按
+  「修订+位置」识别新进度；关系线索计进度但不产生可引用片段（命中标题不证明未读正文）。
+  预算全由控制器记账：4 探索轮 / 8 工具（缓存、分页、失败均计）/ 6 模型请求（含最终归纳与
+  至多一次结构化修复）/ 累计 32,768 tokens（chars/4 估算器，版本入账）/ 12 片段 12,000 字符 /
+  60 秒总时限（预留 15 秒收尾）/ 探索 45 秒上限，单调计时器注入，墙钟回拨不返还。未知模型
+  结果整笔预留转 unknown 消耗；两轮无新证据 no_progress；finish 答案逐条校验「引用已收集且
+  片段可定位」，修复一次仍不合约即 model_failed 落确定性缺口模板。发送前复检授权与来源可用性，
+  撤权即弃用已生成内容转 access_denied。同消息重投复用会话与结果；崩溃保留账本转 interrupted。
+- 新增 `knowledge/answerer`：`ProjectAnswerDecision` 四类决策（lookup/finish/ask_clarification/
+  report_gap）；`ScriptedAnswerGenerator`（scripted-v1）为离线默认——关键词检索→沿工作记录
+  关系→以引用收尾或报缺口，从不虚构证据；`LLMProjectAnswerer`（llm-answerer-v1）结构化输出
+  契约 + 一次修复，SDK 级重试关闭，仅显式 `ORGPILOT_PROJECT_QA_ONLINE` + 供应商凭据时启用，
+  在线效果验证留待 C6。
+- 新增 `knowledge/service.ProjectKnowledgeService`：只读取 OrgState（`get_or_replay_agent` 的
+  投影快照，绝不触碰 run_turn / commit_extracted_events / save_agent_state）。
+- 路由接线：`/项目 <问题>` 在成员检查后、探针/意图路径前识别；不读写对话状态——待答 probe、
+  claim、同步确认既不被消费也不被续期；答复只回发起者。空问题返回用法；入口默认关闭
+  （`ORGPILOT_PROJECT_QA_ENABLED`）。新增 `ReplyKind.PROJECT_ANSWER` 与帮助文本条目。
+- 修复实现过程中的五处缺陷：冻结 BudgetUsage 被原地累加（改可变 _Ledger 快照落库）、发送前
+  复检误用空请求者导致恒判撤权、重放读取模型上不存在的 answer_json、finish_session 双重
+  JSON 编码、最终账本未落库（finish_session 增加 final_budget 快照）。
+- 新增 25 项测试（`test_project_read_loop.py`）：目标/交付/沿 Issue→PR 链式补读、缺资料报缺口
+  不虚构、未绑定/未授权、同消息幂等与跨消息新会话、工具/模型/token/片段/时间各预算边界、
+  假计时器探索上限与墙钟回拨、两轮无进展、未知结果保留预留、修复恰好一次、不可修复落模板、
+  会话中撤权弃内容、换代不混用、探针/claim 不受影响、路由三分支、脚本轨迹重放一致、业务零写入。
+- 全量 **662 passed**，Ruff 通过；冻结意图回归不受影响（新增回复类别不改分类器提示词）。
+  真实在线模型问答效果为 C6 可选验收项，当前不声称在线生成质量。
+
+## 2026-11-03：M2-0 C4——资料代次、上下文与四类只读工具（ADR-0015）
+
+- 新增 `knowledge/derive.DerivationPipeline`：规则提取器（rule-v1）从 Markdown 段落切分中提取
+  项目目标 / 术语 / 交付条件，从平台字段提取 state / assignee / milestone 断言；每条断言绑定
+  确切 EvidenceRef（修订、段落定位、行号、≤200 字原文片段）。staging → 发布前重新校验绑定
+  版本 / access_epoch / 清单源最新修订 / 源可用性，任一变化即 fail 不发布并抛 DerivationAborted；
+  发布在同一事务翻转项目指针。发布后源更新由 `invalidate_stale_generations` 按独立 valid 标记
+  失效，不改写旧代次内容。未变化来源复用基代次断言（相同 assertion_id），无关提交不重复提取。
+- 新增 `knowledge/retrieval`：MaterialIndex 仅装载可用来源的段落数据；检索带 CJK 二字碎片
+  匹配，排序不分页（分页与 5 条/页上限由工具层执行）；`encode_cursor/decode_cursor` 以
+  session+generation+tool+filters 派生密钥签发 HMAC 游标，跨会话 / 跨代次 / 过滤条件不符即拒。
+- 新增 `knowledge/context.ProjectContextBuilder`：组装 round-0 ProjectContextPacket——固定代次
+  摘要（≤2000）、初始检索证据（上限 4 条、超出列入 excluded）、只读任务状态 refs、冲突边界
+  说明与不可用来源缺口；拒绝无效代次、跨绑定代次与未授权成员（PermissionError）。
+- 新增 `knowledge/read_tools`：search_project / read_source / get_related_items / read_task_state。
+  服务端注入会话身份；未知参数键拒绝（不可携带写参数）；URL / Shell / SQL 样内容 tool_denied；
+  越权 / 范围外 / 已撤 / 不存在统一 unavailable（不泄露存在性）；read_source 按 1000 字符窗口
+  行号定位分页；候选依赖带 is_candidate 标记不入 DAG；任务只读视图不含协调轮次。结果序列化
+  ≤4096 字符：先缩片段再丢尾部条目、保留身份与定位，单条仍超限返回 result_overflow 拒绝。
+  会话缓存命中计一次调用且先复检可用性，已撤来源的缓存立即失效；检索 / 读取同样先复检可用性。
+- 修复实现错误：撤权核对把修订 ID 集合误当来源 ID 集合（永远不命中），发布校验因此失效。
+- 新增 26 项测试（`test_knowledge_context.py`）：目标 / 交付条件原文定位、代次发布指针与摘要、
+  文档升级失效与重建更新、无关提交不重提取、构建中改绑定 / 撤源中止且指针不动、packet 组装
+  与三类拒绝、检索命中 / 注入拒绝 / 签名游标分页 / 伪造游标、读取窗口与跨代次不可用、关系
+  类型与确认态、任务只读 / 未登记不编造 / 注入拒绝、缓存复检、结果上限收缩与溢出拒绝、
+  会话版本隔离、派生与工具全程业务零写入。
+- 全量 **637 passed**，Ruff 通过。模型自主选工具与答案忠实度留待 C5/C6 分层验证。
+
+## 2026-11-03：M2-0 C3——持久化通知、增量刷新、补查与恢复（ADR-0015）
+
+- 新增 `github/sync.GitHubSyncService`：验签（HMAC-SHA256 常数时间比较）→ 先写 `sync_inbox` 再响应；
+  单项目 asyncio 锁串行 drain；每批 webhook 处理建独立 sync run。网络读取全部在事务外完成，
+  修订写入、run 检查点与 inbox 完成状态在同一事务提交——中途崩溃只留下 processing 声明，
+  无半写修订；`startup_recovery` 将 processing 重置为 pending、死 run 标记 abandoned。
+- 事件路由：push 仅处理绑定分支（旧分支通知直接忽略）；issues / issue_comment / pull_request /
+  pull_request_review 刷新对应对象；作用域由平台数据 + 存储绑定共同判定，通知载荷不能重定义范围。
+  乱序保护：载荷 updated_at 早于最新修订即 stale_skipped；评论、review 作为子对象独立于父对象
+  updated_at 刷新；内容去重吸收无变化刷新。
+- 403/404 仅降可用性；删除只在完整枚举后由补查核对执行（recheck 注入 `seen_external_ids`，
+  枚举不完整时绝不下架）。瞬态失败按指数退避落 retry_wait，超过 5 次转 failed 不再循环。
+- 手动补查复用 C2 导入器（幂等）；定期补查默认关闭、启用后按间隔（默认 1800s）仅刷新资料。
+- 网关接线：`/api/v1/github/webhook` 路由（未绑定仓库 200 应答不落盘、冲突投递应答 conflict 不覆盖原记录、
+  验签失败 401）；`build_gateway_service` 改为返回 (service, llm_client, sync_service) 三元组，
+  HTTP app 与独立飞书监听器共享同一同步写者；lifespan 启动先恢复、关闭先停同步再关数据库。
+- 配置：`ORGPILOT_GITHUB_SYNC_ENABLED`（默认关，开启必须配 webhook secret）、
+  `ORGPILOT_GITHUB_TOKEN/REPO`（缺省为仅接收模式：只落盘不刷新，绝不伪造刷新）、
+  `ORGPILOT_GITHUB_RECHECK_ENABLED/INTERVAL_SECONDS`。
+- 新增 31 项测试（`test_github_sync.py` 24 + `test_github_webhook_route.py` 7）：验签、100 次重投、
+  乱序不回滚、子评论独立刷新、403/500/404 分类、崩溃回滚 + 恢复重放、退避到 failed、
+  完整/不完整枚举的下架差异、定期补查到期、业务表前后不变、仅接收模式、路由门禁与端到端刷新。
+  同步更新三个既有测试对 build_gateway_service 三元组的解包。
+- 全量 **611 passed**，Ruff 通过；真实 GitHub / Webhook 验收仍列为 C6 可选待完成项。
+
+## 2026-11-03：M2-0 C2——只读 GitHub 连接器与首次范围导入（ADR-0015）
+
+- 新增 `orgpilot.github` 只读连接层：`GitHubReadClient` 协议（9 个读取方法）、冻结 payload 模型
+  （Issue 含 `is_pull_request` 路由标志、Comment、PR 合并事实、Review）、`ENDPOINT_CATALOG`
+  端点↔权限目录（仅 Metadata/Contents/Issues/Pull requests 四项读权限，测试锁定目录恰好覆盖
+  全部客户端方法且无写动词）。认证换 token 由独立 `StaticTokenCredentialProvider` 承担，
+  与内容读取分离。
+- `MockGitHubClient` 完全离线：REST 风格快照 fixture（`tests/fixtures/github_snapshot.json`）、
+  按 page/per_page 切片分页、可注入 403/404/500 失败模拟；`HttpGitHubClient` 提供真实 REST
+  映射（base64 blob、Z→+00:00 时间、milestone/labels 展开、每请求最多 3 次有界重试、遵守
+  Retry-After），供 C6 可选真实验收，测试从不触网。
+- 新增 `knowledge/importer.SourceImporter`：按绑定范围首次导入——文档在固定 commit SHA 上读取
+  （tree+blob，路径白名单过滤、256 KiB 尺寸上限、50 篇上限），Issue/PR 经 issues 全量分页枚举后
+  按 milestone ∪ 显式清单过滤（PR 条目按对象类型路由，不重复归类），评论与 review 作为子对象
+  挂接父来源（每对象 100 条上限），PR 正文用平台闭合关键字解析出 `implements` 平台关联、
+  其余 `#N` 仅记 `mentions`，不猜测重命名。
+- 覆盖率诚实性：任一失败/截断使对应类别 coverage=partial（零成功则 failed），
+  `ImportReport` 汇总范围、固定版本、计数、失败、截断、冲突（显式 PR id 读不出 PR 对象即冲突）、
+  关系数与 `fully_complete` 判定；403/404 只降可用性，不推断删除；检查点写入 sync run。
+- 修复导入器两处实现错误（canonical payload 直接当哈希串、work-items 上限不真正截断），
+  并修正测试对范围含 #6 的预期错误。
+- 新增 32 项测试（`test_github_connector.py` 13 + `test_source_importer.py` 19）：多页完整性、
+  同标题不误合并、范围过滤、部分失败不标完整、404 不判删、上限可见、固定 commit、
+  幂等重导入（无关提交同内容不生新版本）、内容变更新修订、关系分类、合并事实保留、
+  业务零写入（events/cases/approvals 全程为空）、检查点覆盖、树枚举失败、冲突登记。
+- 全量 **580 passed**（C1 后 548 + 32），Ruff 通过；未触真实 GitHub。
+  真实只读接入验证列为 C6 可选项，需明确仓库范围、App 凭据与预算后执行。
+
+## 2026-11-03：M2-0 C1——项目资料契约、独立持久化与版本身义（ADR-0015）
+
+- 新增 `orgpilot.knowledge` 契约包：绑定（含路径白名单、Issue 选择器、共享名单、access_epoch）、
+  来源对象（`src-` 命名空间、评论子对象、规范化仓库路径）、不可变修订（`rev-` 命名空间、
+  change_sequence、内容哈希）、同步收件箱 / 运行检查点、断言 / 关系 / 资料代次（staging→ready 指针切换）、
+  查阅会话与预算预留 / 结算账本、`GroundedProjectAnswer` / `ProjectContextPacket` 输出契约。
+  资料命名空间与 OrgEvent 事件 ID 保持互斥，并有专项测试锁定。
+- 新增独立表 13 张（`project_source_bindings`、`source_objects`、`source_revisions`、`sync_inbox`、
+  `sync_runs`、`knowledge_*`、`project_read_sessions`、`project_read_steps`、`project_context_packets`），
+  只增不改既有表；所有 store 写入均支持调用方共享 session，跨表发布可在单事务内原子完成。
+- 修订去重契约：仅与**最新**修订内容哈希比较——重复读取幂等不生新版本（无关提交、轮询时间均不触发）、
+  A→B→A 保留三次修订、序列号倒退直接拒绝；通知收件箱同投递 ID 不同载荷拒绝且不覆盖原记录。
+- 预算账本契约：预留先于执行持久化并按累计维度拦截超额；结算未知结果时整笔预留记为 unknown 消耗
+  （不记零）；会话同消息幂等、完成只能一次、中断保留已用与预留，不重置为新预算。
+- 修复资料时间往返：aiosqlite 丢失时区偏移，所有写入统一 `astimezone(UTC)`（与 SqlEventStore 相同做法），
+  读回补 UTC 标签，注入 Clock 的时区语义往返无损。
+- 新增 `tests/test_project_source_store.py` 24 项：绑定幂等 / 冲突 / 停用、白名单与共享校验、
+  修订三态、A→B→A、跨项目隔离、收件箱冲突与到期、运行检查点、代次发布指针 / 失效不改写、
+  预算预留 / 结算 / 未知消耗 / 超额拦截 / 中断保留、步骤与包往返、共享 session 失败完整回滚、
+  文件库重启保持、命名空间互斥、注入时钟。
+- 全量 **548 passed**（基线 524 + 新增 24），覆盖率与 Ruff 通过；未接 GitHub、无网络访问。
+  回滚：关闭资料同步 / 问答入口（C3/C5 引入）即可停用；本阶段仅新增独立表，无既有 schema 变更。
+
 ## 2026-11-02：D1b 合并前复核——结案时间缺失时不自动重开
 
 原判断在 `updated_at=None` 时放行所有未见声明，与“证据必须晚于结案”的约定不符。
