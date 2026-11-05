@@ -17,6 +17,7 @@ Deduplication contracts frozen here (ADR-0015 §4.2):
 """
 
 import json
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -55,6 +56,12 @@ from orgpilot.storage.models import (
     SourceRevisionRecord,
     SyncInboxRecord,
     SyncRunRecord,
+)
+
+# A successful platform read proves these states are over; see
+# ``SqlProjectSourceStore.restore_observed_availability``.
+_RESTORABLE_AVAILABILITY = frozenset(
+    {SourceAvailability.UNAVAILABLE.value, SourceAvailability.DELETED.value}
 )
 
 
@@ -253,8 +260,9 @@ class SqlProjectSourceStore:
     ) -> bool:
         """Registers or refreshes one source object; returns True when created.
 
-        Availability is owned by explicit ``set_source_availability`` calls, so
-        an observation refresh never silently resurrects a revoked source.
+        Availability is owned by explicit ``set_source_availability`` and
+        ``restore_observed_availability`` calls, so an observation refresh never
+        silently resurrects a revoked source.
         """
         async with coowned_session(self.db, session) as owned:
             record = (
@@ -367,6 +375,48 @@ class SqlProjectSourceStore:
             record.unavailable_reason = reason
             record.updated_at = _to_utc(self.clock.now())
             await self._invalidate_generations(record.project_id, owned)
+
+    async def restore_observed_availability(
+        self, source_id: str, session: AsyncSession | None = None
+    ) -> bool:
+        """Brings a source back after a successful platform read; True if it changed.
+
+        Only ``unavailable`` (a 403/404 seen earlier) and ``deleted`` (missing
+        from a complete enumeration) recover this way, because a later read
+        proves the object is reachable again. ``revoked`` and ``out_of_scope``
+        are admin decisions and stay as they are.
+        """
+        async with coowned_session(self.db, session) as owned:
+            record = (
+                await owned.execute(
+                    select(SourceObjectRecord).where(SourceObjectRecord.source_id == source_id)
+                )
+            ).scalar_one_or_none()
+            if record is None or record.availability not in _RESTORABLE_AVAILABILITY:
+                return False
+            await self._lock_project(record.project_id, owned)
+            record.availability = SourceAvailability.AVAILABLE.value
+            record.unavailable_reason = None
+            record.updated_at = _to_utc(self.clock.now())
+            await self._invalidate_generations(record.project_id, owned)
+            return True
+
+    async def get_source_objects(
+        self, source_ids: Iterable[str], session: AsyncSession | None = None
+    ) -> dict[str, SourceObject]:
+        """Loads many source objects in one query, keyed by source id."""
+        wanted = list(dict.fromkeys(source_ids))
+        if not wanted:
+            return {}
+        async with coowned_session(self.db, session) as owned:
+            records = list(
+                (
+                    await owned.execute(
+                        select(SourceObjectRecord).where(SourceObjectRecord.source_id.in_(wanted))
+                    )
+                ).scalars()
+            )
+        return {record.source_id: self._object_from(record) for record in records}
 
     async def _invalidate_generations(self, project_id: str, session: AsyncSession) -> None:
         generations = (
@@ -489,6 +539,25 @@ class SqlProjectSourceStore:
                 )
             ).scalar_one_or_none()
         return self._revision_from(record) if record is not None else None
+
+    async def get_revisions(
+        self, revision_ids: Iterable[str], session: AsyncSession | None = None
+    ) -> dict[str, SourceRevision]:
+        """Loads many revisions in one query, keyed by revision id."""
+        wanted = list(dict.fromkeys(revision_ids))
+        if not wanted:
+            return {}
+        async with coowned_session(self.db, session) as owned:
+            records = list(
+                (
+                    await owned.execute(
+                        select(SourceRevisionRecord).where(
+                            SourceRevisionRecord.revision_id.in_(wanted)
+                        )
+                    )
+                ).scalars()
+            )
+        return {record.revision_id: self._revision_from(record) for record in records}
 
     async def latest_revision(
         self, source_id: str, session: AsyncSession | None = None
@@ -752,6 +821,29 @@ class SqlSyncRunStore:
                     select(SyncRunRecord)
                     .where(SyncRunRecord.project_id == project_id)
                     .order_by(SyncRunRecord.created_at.desc(), SyncRunRecord.run_id.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+        return self._run_from(record) if record is not None else None
+
+    async def latest_successful_run(
+        self,
+        project_id: str,
+        reasons: Iterable[SyncRunReason],
+        session: AsyncSession | None = None,
+    ) -> SyncRun | None:
+        """Newest run of the given reasons that recorded a successful checkpoint."""
+        reason_values = [reason.value for reason in reasons]
+        async with coowned_session(self.db, session) as owned:
+            record = (
+                await owned.execute(
+                    select(SyncRunRecord)
+                    .where(
+                        SyncRunRecord.project_id == project_id,
+                        SyncRunRecord.reason.in_(reason_values),
+                        SyncRunRecord.last_success_at.is_not(None),
+                    )
+                    .order_by(SyncRunRecord.last_success_at.desc(), SyncRunRecord.run_id.desc())
                     .limit(1)
                 )
             ).scalar_one_or_none()

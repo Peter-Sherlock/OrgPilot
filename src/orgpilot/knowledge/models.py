@@ -110,6 +110,14 @@ def normalize_repo_path(path: str) -> str:
     return "/".join(parts)
 
 
+MARKDOWN_SUFFIXES = (".md", ".markdown")
+
+
+def is_markdown_path(path: str) -> bool:
+    """Documents are Markdown files; the suffix check ignores case."""
+    return normalize_repo_path(path).lower().endswith(MARKDOWN_SUFFIXES)
+
+
 def content_hash(raw: str | bytes) -> str:
     """SHA-256 over the exact observable content; observation time never enters."""
     if isinstance(raw, str):
@@ -390,6 +398,14 @@ class ProjectSourceBinding(KnowledgeFrozen):
             or normalized.startswith(f"{normalize_repo_path(allowed)}/")
             for allowed in self.path_allowlist
         )
+
+    def allows_document(self, path: str) -> bool:
+        """An allowed path that is also a Markdown file (ADR-0015 §2.1).
+
+        Images and other binaries under an allowed folder are not documents;
+        reading them would fail UTF-8 decoding and break the whole sync.
+        """
+        return self.allows_path(path) and is_markdown_path(path)
 
     def member_can_read(self, member_id: str | None) -> bool:
         return member_id is not None and member_id in self.sharing_grants

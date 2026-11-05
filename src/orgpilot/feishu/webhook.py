@@ -4,6 +4,7 @@ import asyncio
 import hmac
 import json
 import logging
+import weakref
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -25,6 +26,13 @@ if TYPE_CHECKING:
     from orgpilot.intent.router import MessageRouter
 
 logger = logging.getLogger(__name__)
+
+# Message ids being routed right now, per long-lived router. Handlers are built
+# per request, so this cannot live on the handler. Feishu redelivers an event
+# whose first delivery has not answered in time; the router records an outcome
+# only after routing finishes, so a slow turn (a /项目 read can take up to a
+# minute) would otherwise run twice and send two replies.
+_IN_FLIGHT: "weakref.WeakKeyDictionary[Any, set[str]]" = weakref.WeakKeyDictionary()
 
 
 class FeishuWebhookHandler:
@@ -154,14 +162,24 @@ class FeishuWebhookHandler:
         message_id = message.get("message_id") or (
             f"noid-{int(occurred_at.timestamp() * 1000)}-{abs(hash(raw_text)) % 10_000_000}"
         )
-        outcome = await self.router.handle_message(
-            project_id=self.project_id,
-            sender_id=actor_id,
-            message_id=message_id,
-            text=raw_text,
-            occurred_at=occurred_at,
-            chat_type=chat_type,
-        )
+        router = self.router
+        in_flight = _IN_FLIGHT.setdefault(router, set())
+        key = f"{self.project_id}\x1f{message_id}"
+        if key in in_flight:
+            logger.info("Message %s is still being processed; redelivery dropped", message_id)
+            return {"code": 0, "msg": "duplicate_in_flight", "data": {}}
+        in_flight.add(key)
+        try:
+            outcome = await router.handle_message(
+                project_id=self.project_id,
+                sender_id=actor_id,
+                message_id=message_id,
+                text=raw_text,
+                occurred_at=occurred_at,
+                chat_type=chat_type,
+            )
+        finally:
+            in_flight.discard(key)
         return self._outcome_response(outcome)
 
     async def _bootstrap_demo_project(self, actor_id: str, now_ts: datetime) -> bool:

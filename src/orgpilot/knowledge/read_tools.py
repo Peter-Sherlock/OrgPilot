@@ -23,7 +23,8 @@ as a tool call and re-validates availability before returning.
 
 import hashlib
 import json
-from collections.abc import Awaitable, Callable
+import re
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -51,8 +52,16 @@ from orgpilot.storage.project_source_store import SqlProjectSourceStore
 _TOOL_NAMES = ("search_project", "read_source", "get_related_items", "read_task_state")
 
 _URL_MARKERS = ("http://", "https://", "www.", "ftp://")
-_SHELL_MARKERS = (";", "|", "&", "$(", "`", "&&", "||", "\nrm ", "rm -rf", "sudo ")
-_SQL_MARKERS = ("--", "/*", "select ", "union select", "drop table", "insert into", "delete from")
+# Recognizable command and SQL shapes only. Single characters such as ";",
+# "|", "&", "--" or the word "select" appear in ordinary questions ("select
+# 组件 & 表单"), and a denial ends the whole read session.
+_SHELL_PATTERN = re.compile(
+    r"\$\(|`|&&|\|\||\brm\s+-[a-z]*[rf]|\bsudo\s|[;|]\s*(?:rm|sh|bash|curl|wget|cat|chmod)\b"
+)
+_SQL_PATTERN = re.compile(
+    r"\bunion\s+(?:all\s+)?select\b|\bdrop\s+table\b|\binsert\s+into\b|\bdelete\s+from\b"
+    r"|\bselect\b.+\bfrom\b|/\*|'\s*or\s+'?1'?\s*=\s*'?1|;\s*--"
+)
 
 
 def guard_text(value: str) -> str | None:
@@ -61,12 +70,10 @@ def guard_text(value: str) -> str | None:
     for marker in _URL_MARKERS:
         if marker in lowered:
             return "raw URLs are not accepted"
-    for marker in _SHELL_MARKERS:
-        if marker in lowered:
-            return "shell-like content is not accepted"
-    for marker in _SQL_MARKERS:
-        if marker in lowered:
-            return "SQL-like content is not accepted"
+    if _SHELL_PATTERN.search(lowered):
+        return "shell-like content is not accepted"
+    if _SQL_PATTERN.search(lowered):
+        return "SQL-like content is not accepted"
     return None
 
 
@@ -253,19 +260,25 @@ class ReadTools:
             return False
         return obj.availability is SourceAvailability.AVAILABLE
 
-    async def _cache_still_valid(self, cached: ToolCallResult) -> bool:
-        """Cached reads re-check availability before returning (§7.4)."""
+    async def _available_ids(self, source_ids: Iterable[str]) -> set[str]:
+        """The subset of ``source_ids`` currently available, in one store read."""
+        wanted = [str(source_id) for source_id in source_ids]
         sources = self.session.sources
         if sources is None:
-            return True
-        for item in cached.items:
-            source_id = item.get("source_id")
-            if source_id is None:
-                continue
-            obj = await sources.get_source_object(str(source_id))
-            if obj is None or obj.availability is not SourceAvailability.AVAILABLE:
-                return False
-        return True
+            return set(wanted)
+        objects = await sources.get_source_objects(wanted)
+        return {
+            source_id
+            for source_id, obj in objects.items()
+            if obj.availability is SourceAvailability.AVAILABLE
+        }
+
+    async def _cache_still_valid(self, cached: ToolCallResult) -> bool:
+        """Cached reads re-check availability before returning (§7.4)."""
+        wanted = {
+            str(item["source_id"]) for item in cached.items if item.get("source_id") is not None
+        }
+        return wanted <= await self._available_ids(wanted)
 
     async def _dispatch(self, tool: str, args: dict[str, Any]) -> ToolCallResult:
         if tool == "search_project":
@@ -318,7 +331,8 @@ class ReadTools:
         all_hits = self.session.index.search(query, kind_filter)
         # Fresh calls re-check availability too: a source revoked since index
         # build must not surface its hits (§7.4: checks before AND after).
-        live_hits = [entry for entry in all_hits if await self._source_available(entry.source_id)]
+        available = await self._available_ids(entry.source_id for entry in all_hits)
+        live_hits = [entry for entry in all_hits if entry.source_id in available]
         page = live_hits[offset : offset + min(SEARCH_MAX_HITS, self.session.max_fragments)]
         items = []
         evidence_keys = []

@@ -31,9 +31,15 @@ async def check_generation(
     knowledge: SqlKnowledgeStore,
     generation: KnowledgeGeneration,
 ) -> StopReason | None:
+    # Two bulk reads instead of two queries per revision: this check runs
+    # before and after every tool call, inside the per-tool time budget.
+    revisions = await sources.get_revisions(generation.revision_manifest)
+    objects = await sources.get_source_objects(
+        revision.source_id for revision in revisions.values()
+    )
     for revision_id in generation.revision_manifest:
-        revision = await sources.get_revision(revision_id)
-        obj = await sources.get_source_object(revision.source_id) if revision else None
+        revision = revisions.get(revision_id)
+        obj = objects.get(revision.source_id) if revision else None
         if obj is None or obj.availability is not SourceAvailability.AVAILABLE:
             return StopReason.ACCESS_DENIED
         if (

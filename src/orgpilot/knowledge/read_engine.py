@@ -58,8 +58,17 @@ class ReadEngine:
             )
         )
 
+    def used_task_ids(self) -> tuple[str, ...]:
+        """Formal tasks this session has read so far (its formal-state read set)."""
+        from orgpilot.knowledge.read_loop import _task_ids_in
+
+        return _task_ids_in(self.evidence.values())
+
+    async def context_problem(self):
+        return await self.owner._context_problem(self.spec, self.used_task_ids())
+
     async def check(self):
-        problem = await self.owner._context_problem(self.spec)
+        problem = await self.context_problem()
         if problem:
             raise ReadStopped(problem, "项目上下文或访问授权已变化，请重新提问。")
 
@@ -275,7 +284,7 @@ class ReadEngine:
                 ),
                 sources=self.owner.sources,
                 clock=self.owner.clock,
-                context_check=lambda: self.owner._context_problem(self.spec),
+                context_check=self.context_problem,
             )
         )
 
@@ -406,7 +415,7 @@ class ReadEngine:
         return progress
 
     async def finish(self, answer, stop):
-        problem = await self.owner._context_problem(self.spec) if self.generation else None
+        problem = await self.context_problem() if self.generation else None
         if problem:
             stop, answer = problem, None
         restricted = stop in (
