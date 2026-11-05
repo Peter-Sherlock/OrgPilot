@@ -621,13 +621,15 @@ class BudgetLimits(KnowledgeFrozen):
     max_total_tokens: int = Field(default=32768, ge=0, le=32768)
     max_evidence_fragments: int = Field(default=12, ge=0, le=12)
     max_evidence_chars: int = Field(default=12000, ge=0, le=12000)
-    summary_max_chars: int = PROJECT_BRIEF_MAX_CHARS
-    total_time_seconds: float = 60.0
-    exploration_time_seconds: float = 45.0
-    finalize_reserve_seconds: float = 15.0
-    max_model_seconds: float = 10.0
-    max_tool_seconds: float = 2.0
-    max_no_progress_rounds: int = 2
+    summary_max_chars: int = Field(
+        default=PROJECT_BRIEF_MAX_CHARS, ge=0, le=PROJECT_BRIEF_MAX_CHARS
+    )
+    total_time_seconds: float = Field(default=60.0, ge=0, le=60.0)
+    exploration_time_seconds: float = Field(default=45.0, ge=0, le=45.0)
+    finalize_reserve_seconds: float = Field(default=15.0, ge=0, le=15.0)
+    max_model_seconds: float = Field(default=10.0, ge=0, le=10.0)
+    max_tool_seconds: float = Field(default=2.0, ge=0, le=2.0)
+    max_no_progress_rounds: int = Field(default=2, ge=0, le=2)
     max_spend_usd: Decimal | None = Field(default=None, gt=0)
     input_usd_per_million: Decimal | None = Field(default=None, ge=0)
     output_usd_per_million: Decimal | None = Field(default=None, ge=0)

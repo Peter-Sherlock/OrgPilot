@@ -247,6 +247,13 @@ class ReadEngine:
             max_evidence=count,
             max_chars=chars,
         )
+        if len(self.packet.brief) > self.limits.summary_max_chars:
+            self.packet = self.packet.model_copy(
+                update={
+                    "brief": self.packet.brief[: self.limits.summary_max_chars],
+                    "missing_info": self.packet.missing_info + ("项目摘要受会话额度限制已截断。",),
+                }
+            )
         await self.check()
         await self.owner.read_sessions.save_packet(self.packet)
         self.evidence = {evidence_key(ref): ref for ref in self.packet.relevant_evidence}

@@ -128,7 +128,7 @@ class GitHubSyncService:
         self._stopping = False
         self._accepting = True
         self._worker: asyncio.Task | None = None
-        self._bootstrap_attempted: set[str] = set()
+        self._bootstrap_attempted: set[tuple[str, int, int]] = set()
 
     async def start(self, poll_seconds: float = 1.0) -> None:
         if self._worker is not None and not self._worker.done():
@@ -160,8 +160,20 @@ class GitHubSyncService:
                     continue
                 try:
                     current_id = await self.knowledge.current_generation_id(binding.project_id)
-                    if current_id is None and binding.project_id not in self._bootstrap_attempted:
-                        self._bootstrap_attempted.add(binding.project_id)
+                    current = (
+                        await self.knowledge.get_generation(current_id) if current_id else None
+                    )
+                    binding_key = (
+                        binding.project_id,
+                        binding.binding_version,
+                        binding.access_epoch,
+                    )
+                    needs_import = current is None or (
+                        current.binding_version,
+                        current.access_epoch,
+                    ) != (binding.binding_version, binding.access_epoch)
+                    if needs_import and binding_key not in self._bootstrap_attempted:
+                        self._bootstrap_attempted.add(binding_key)
                         await self.manual_recheck(binding.project_id)
                     if await self.inbox.list_due(binding.repository_id, limit=1):
                         await self.drain_repository(binding.repository_id)
@@ -261,9 +273,17 @@ class GitHubSyncService:
 
         current_id = await self.knowledge.current_generation_id(binding.project_id)
         base = await self.knowledge.get_generation(current_id) if current_id else None
-        if base is not None and base.valid and (coverage is None or coverage == base.coverage):
+        if (
+            base is not None
+            and base.valid
+            and (base.binding_version, base.access_epoch)
+            == (binding.binding_version, binding.access_epoch)
+            and (coverage is None or coverage == base.coverage)
+        ):
             return
-        if not await self.sources.list_source_objects(binding.project_id, binding.binding_version):
+        if not await self.sources.list_source_objects(
+            binding.project_id, binding.binding_version
+        ) and (not coverage or any(status != "complete" for status in coverage.values())):
             return
         pipeline = DerivationPipeline(self.sources, self.knowledge, self.clock)
         await pipeline.build_and_publish(

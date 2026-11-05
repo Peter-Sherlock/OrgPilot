@@ -180,6 +180,27 @@ class ProjectReadOrchestrator:
                 session, StopReason.INTERRUPTED, question, "本次查询被中断；同消息不会重跑。"
             )
 
+    async def revalidate(self, project_id, requester_id, message_key, question):
+        """Dispatch-time read only validation; never create a session or call a model."""
+        session = await self.read_sessions.get_by_message(project_id, message_key)
+        question = question.strip()[:QUESTION_MAX_CHARS]
+        if session is None:
+            return deterministic_gap_answer(
+                "rds-unavailable",
+                StopReason.CONTEXT_UNAVAILABLE,
+                question,
+                (),
+                "原查询记录不可用，请重新提问。",
+            )
+        if session.spec.requester_id != requester_id or (
+            session.spec.question_hash != question_hash(question)
+        ):
+            return _session_gap(session, StopReason.ACCESS_DENIED, question, "消息身份不匹配。")
+        problem = await self._context_problem(session.spec)
+        if problem:
+            return _session_gap(session, problem, question, "资料授权或上下文已变化，请重新提问。")
+        return await self._replay(session.spec.session_id, project_id, question)
+
     async def _replay(
         self, session_id: str, project_id: str, question: str
     ) -> GroundedProjectAnswer:

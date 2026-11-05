@@ -109,3 +109,11 @@ class ProjectKnowledgeService:
             question=question,
             occurred_at=occurred_at,
         )
+
+    async def revalidate_answer(self, project_id, requester_id, message_key, question):
+        return await self.orchestrator.revalidate(
+            project_id,
+            requester_id,
+            message_key,
+            question,
+        )
