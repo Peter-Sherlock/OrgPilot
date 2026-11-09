@@ -198,6 +198,25 @@ class SourceImporter:
             await self._import_issues(binding, report, issue_scope)
             await self._import_pull_requests(binding, report, pr_scope)
             await self._import_sub_items(binding, report, issue_scope, pr_scope)
+            self._finalize_coverage(report)
+            report.seen_external_ids = {kind: set(ids) for kind, ids in self._seen.items()}
+            run_state = _run_state_for(report)
+            async with self.runs.db.session() as session:
+                await self.runs.save_checkpoint(
+                    run_id,
+                    per_source_cursor={"pinned_commit": report.pinned_commit_sha},
+                    coverage=dict(report.coverage),
+                    last_success_at=self.clock.now() if report.fully_complete else None,
+                    session=session,
+                )
+                await self.runs.set_run_state(
+                    run_id,
+                    run_state,
+                    error=(
+                        None if report.fully_complete else f"coverage: {report.coverage_summary()}"
+                    ),
+                    session=session,
+                )
         except Exception as exc:
             # An aborted import is a failed run, not one left "running" until
             # the next restart abandons it.
@@ -205,24 +224,6 @@ class SourceImporter:
                 run_id, SyncRunState.FAILED, error=f"import aborted: {exc}"[:500]
             )
             raise
-        self._finalize_coverage(report)
-        report.seen_external_ids = {kind: set(ids) for kind, ids in self._seen.items()}
-        await self.runs.save_checkpoint(
-            run_id,
-            per_source_cursor={"pinned_commit": report.pinned_commit_sha},
-            coverage=dict(report.coverage),
-            last_success_at=self.clock.now(),
-        )
-        run_state = _run_state_for(report)
-        await self.runs.set_run_state(
-            run_id,
-            run_state,
-            error=(
-                None
-                if run_state is SyncRunState.COMPLETED and report.fully_complete
-                else f"coverage: {report.coverage_summary()}"
-            ),
-        )
         report.finished_at = self.clock.now()
         return report
 
@@ -739,7 +740,6 @@ class SourceImporter:
             source_updated_at=source_updated_at,
             metadata=metadata,
         )
-        await self.sources.upsert_source_object(obj)
         revision_content_hash = (
             canonical_payload_hash(payload_for_hash)
             if payload_for_hash is not None
@@ -760,10 +760,10 @@ class SourceImporter:
             source_updated_at=source_updated_at,
             observed_at=now,
         )
-        await self.sources.record_revision(revision)
-        if existing is not None and existing.availability is not SourceAvailability.AVAILABLE:
-            # This read just succeeded, so an earlier 403/404 or deletion is over.
-            await self.sources.restore_observed_availability(source_id)
+        async with self.sources.db.session() as session:
+            await self.sources.upsert_source_object(obj, session)
+            await self.sources.record_revision(revision, session)
+            await self.sources.restore_observed_availability(source_id, session)
 
     async def _mark_object_unavailable(
         self,
@@ -788,6 +788,7 @@ class SourceImporter:
             identity.source_id(),
             SourceAvailability.UNAVAILABLE,
             f"platform status {exc.status_code}",
+            platform_observation=True,
         )
 
     # -- coverage -------------------------------------------------------------------

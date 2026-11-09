@@ -395,17 +395,20 @@ class ReadEngine:
             self.spec.session_id, reservation.reservation_id, usage
         )
         await self.budget.refresh()
+        result_summary = {
+            "ok": result.ok,
+            "cached": result.cached,
+            "error_code": result.error_code,
+            "truncated": result.truncated,
+        }
+        if decision.tool == "read_task_state" and result.ok:
+            result_summary["returned_task_ids"] = [item["task_id"] for item in result.items]
         await self.step(
             ReadStepKind.TOOL_CALL,
             tool_name=decision.tool,
             params_summary=decision.args,
             usage=usage,
-            result_summary={
-                "ok": result.ok,
-                "cached": result.cached,
-                "error_code": result.error_code,
-                "truncated": result.truncated,
-            },
+            result_summary=result_summary,
             outcome="cache_hit" if result.cached else (result.error_code or "executed"),
         )
         if not result.ok:

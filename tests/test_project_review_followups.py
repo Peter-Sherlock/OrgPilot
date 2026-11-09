@@ -12,15 +12,20 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-from sqlalchemy import event
+from sqlalchemy import event, select
 
+from orgpilot.config import OrgPilotSettings
 from orgpilot.domain.clock import FrozenClock
+from orgpilot.domain.enums import HealthStatus
+from orgpilot.domain.models import MemberState
 from orgpilot.feishu.webhook import FeishuWebhookHandler
+from orgpilot.gateway.app import build_gateway_service
 from orgpilot.github.client import GitHubReadError, HttpGitHubClient, is_access_failure
 from orgpilot.intent.replies import ReplyKind, RouterOutcome
 from orgpilot.knowledge.access import check_generation
 from orgpilot.knowledge.answerer import (
     LLMProjectAnswerer,
+    ProjectAnswerDecision,
     ReadLoopView,
     ScriptedAnswerGenerator,
 )
@@ -28,18 +33,22 @@ from orgpilot.knowledge.context import ProjectContextBuilder
 from orgpilot.knowledge.derive import DerivationPipeline
 from orgpilot.knowledge.importer import SourceImporter
 from orgpilot.knowledge.models import (
+    AnswerStatus,
     BudgetUsage,
     EvidenceRef,
+    GroundedStatement,
     InboxStatus,
+    ReadStepKind,
     SourceAvailability,
     SourceKind,
     StopReason,
     content_hash,
     new_revision_id,
 )
-from orgpilot.knowledge.read_loop import _returned_reference
+from orgpilot.knowledge.read_loop import ProjectReadOrchestrator, _returned_reference
 from orgpilot.knowledge.read_tools import guard_text
 from orgpilot.knowledge.retrieval import IndexEntry, MaterialIndex
+from orgpilot.storage.models import ProjectReadStepRecord
 from tests import test_github_sync as sync_harness
 from tests.test_github_sync import T0, ingest_and_drain, load_snapshot, make_binding
 from tests.test_knowledge_context import make_org_state
@@ -123,6 +132,31 @@ class TestAvailabilityRecovers:
         issue = await sources.get_source_object(issue.source_id)
         assert issue.availability is SourceAvailability.REVOKED
 
+    @pytest.mark.parametrize(
+        "protected", [SourceAvailability.REVOKED, SourceAvailability.OUT_OF_SCOPE]
+    )
+    async def test_platform_failure_does_not_clear_admin_protection(self, setup, protected) -> None:
+        service, sources, client, _ = setup
+        client._snapshot = load_snapshot()
+        await service.manual_recheck("proj-a")
+        issue = await sources.find_source_object("proj-a", 1, SourceKind.ISSUE, "1")
+        await sources.set_source_availability(issue.source_id, protected, "admin decision")
+        client._snapshot["failures"] = [
+            {"method": "get_issue", "match": {"number": 1}, "status": 403}
+        ]
+        payload = {"action": "edited", "issue": {"number": 1}}
+        await ingest_and_drain(service, "protected-403", "issues", payload)
+        after_failure = await sources.get_source_object(issue.source_id)
+        assert after_failure.availability is protected
+        assert after_failure.unavailable_reason == "admin decision"
+
+        client._snapshot["failures"] = []
+        await ingest_and_drain(service, "protected-200", "issues", payload)
+        assert (await sources.get_source_object(issue.source_id)).availability is protected
+        current_id = await service.knowledge.current_generation_id("proj-a")
+        current = await service.knowledge.get_generation(current_id)
+        assert issue.latest_revision_id not in current.revision_manifest
+
 
 # ------------------------------------------------- 2 + 3: blobs and rate limits
 
@@ -163,6 +197,45 @@ async def test_images_are_not_documents_and_a_bad_blob_is_partial(setup) -> None
     assert (
         await sources.find_source_object("proj-a", 1, SourceKind.DOCUMENT, "docs/arch.png") is None
     )
+
+
+@pytest.mark.parametrize("already_imported", [False, True])
+async def test_bad_markdown_does_not_block_other_push_revisions(setup, already_imported) -> None:
+    service, sources, client, snapshot = setup
+    bad_path = "docs/legacy.md"
+    bad_blob = {"path": bad_path, "blob_sha": "b-legacy", "size": 10}
+    snapshot["blobs"]["b-legacy"] = "# Legacy"
+    if already_imported:
+        snapshot["trees"]["c0ffee1"].append(bad_blob)
+    client._snapshot = snapshot
+    await service.manual_recheck("proj-a")
+    readme = await sources.find_source_object("proj-a", 1, SourceKind.DOCUMENT, "README.md")
+    if not already_imported:
+        snapshot["trees"]["c0ffee1"].append(bad_blob)
+    snapshot["blobs"]["b-readme"] += "\nNew revision from the push.\n"
+    snapshot["failures"] = [
+        {"method": "get_blob", "match": {"blob_sha": "b-legacy"}, "status": 415}
+    ]
+    _, counts = await ingest_and_drain(service, "push-415", "push", {"ref": "refs/heads/main"})
+    assert counts["refreshed"] == 1
+    entry = await service.inbox.get_entry("1001", "push-415")
+    assert entry.status is InboxStatus.DONE
+    assert bad_path in entry.last_error
+    current_readme = await sources.get_source_object(readme.source_id)
+    assert current_readme.latest_revision_id != readme.latest_revision_id
+    bad = await sources.find_source_object("proj-a", 1, SourceKind.DOCUMENT, bad_path)
+    assert bad.availability is SourceAvailability.UNAVAILABLE
+    current_id = await service.knowledge.current_generation_id("proj-a")
+    current = await service.knowledge.get_generation(current_id)
+    assert current.coverage["document"] == "partial"
+    assert current_readme.latest_revision_id in current.revision_manifest
+    assert bad.latest_revision_id not in current.revision_manifest
+
+    snapshot["failures"] = []
+    await ingest_and_drain(service, "push-fixed", "push", {"ref": "refs/heads/main"})
+    recovered = await sources.get_source_object(bad.source_id)
+    assert recovered.availability is SourceAvailability.AVAILABLE
+    assert recovered.latest_revision_id is not None
 
 
 def _rate_limited(request: httpx.Request) -> httpx.Response:
@@ -296,6 +369,24 @@ async def test_unexpected_import_crash_marks_the_run_failed(setup, monkeypatch) 
     assert run.state.value == "failed"
 
 
+async def test_import_checkpoint_exception_marks_the_run_failed(setup, monkeypatch) -> None:
+    service, sources, client, _ = setup
+    client._snapshot = load_snapshot()
+    save_checkpoint = service.runs.save_checkpoint
+
+    async def fail_after_write(*args, **kwargs):
+        await save_checkpoint(*args, **kwargs)
+        raise RuntimeError("checkpoint interrupted")
+
+    monkeypatch.setattr(service.runs, "save_checkpoint", fail_after_write)
+    importer = SourceImporter(client, sources, service.knowledge, service.runs, clock=service.clock)
+    with pytest.raises(RuntimeError, match="checkpoint interrupted"):
+        await importer.import_binding_scope(make_binding(), run_id="run-checkpoint")
+    run = await service.runs.get_run("run-checkpoint")
+    assert run.state.value == "failed"
+    assert run.checkpoint.last_success_at is None
+
+
 # --------------------------------------------------------- 12: periodic recheck
 
 
@@ -308,6 +399,54 @@ async def test_empty_webhook_drain_does_not_suppress_periodic_recheck(setup, clo
     # A ping writes nothing, so its run has no success time.
     await ingest_and_drain(service, "d-ping", "ping", {"zen": "hi"})
     assert await service.periodic_recheck_if_due("proj-a") is True
+
+
+@pytest.mark.parametrize("legacy_timestamp", [False, True])
+async def test_partial_read_does_not_postpone_full_recheck(setup, clock, legacy_timestamp) -> None:
+    service, _, client, snapshot = setup
+    service.recheck_interval_seconds = 1800
+    client._snapshot = snapshot
+    assert (await service.manual_recheck("proj-a")).fully_complete
+    clock.advance(timedelta(seconds=1700))
+    snapshot["failures"] = [{"method": "list_issues", "match": {}, "status": 429}]
+    partial = await service.manual_recheck("proj-a")
+    assert not partial.fully_complete
+    checkpoint = (await service.runs.get_run(partial.run_id)).checkpoint
+    assert checkpoint.last_success_at is None
+    if legacy_timestamp:
+        await service.runs.save_checkpoint(
+            partial.run_id,
+            per_source_cursor=checkpoint.per_source_cursor,
+            coverage=partial.coverage,
+            last_success_at=clock.now(),
+        )
+    snapshot["failures"] = []
+    assert await service.periodic_recheck_if_due("proj-a") is False
+    clock.advance(timedelta(seconds=101))
+    assert await service.periodic_recheck_if_due("proj-a") is True
+
+
+async def test_first_incomplete_read_does_not_disable_periodic_rechecks(setup) -> None:
+    service, _, client, snapshot = setup
+    client._snapshot = snapshot
+    snapshot["failures"] = [{"method": "list_issues", "match": {}, "status": 429}]
+    assert not (await service.manual_recheck("proj-a")).fully_complete
+    snapshot["failures"] = []
+    assert await service.periodic_recheck_if_due("proj-a") is True
+
+
+async def test_periodic_rechecks_only_active_binding_once_per_project(setup, clock) -> None:
+    service, sources, client, snapshot = setup
+    client._snapshot = snapshot
+    assert (await service.manual_recheck("proj-a")).fully_complete
+    clock.advance(timedelta(seconds=1))
+    newer = make_binding().model_copy(update={"binding_version": 2, "access_epoch": 2})
+    await sources.create_binding(newer)
+    snapshot["failures"] = [{"method": "list_issues", "match": {}, "status": 429}]
+    assert await service.recheck_all_due() == ["proj-a"]
+    latest = await service.runs.latest_run("proj-a")
+    assert latest.binding_version == 2
+    assert latest.checkpoint.last_success_at is None
 
 
 async def test_route_does_not_store_unsupported_events() -> None:
@@ -397,6 +536,179 @@ async def test_document_answer_replays_formal_state_only_once(env) -> None:
     )
     assert answer.statements
     assert len(calls) == 1  # pinned at start; no task was read afterwards
+
+
+class TaskReadAnswer:
+    generator_version = "review-task-read-set"
+
+    def __init__(self, *, read_task=True, cite_task=False):
+        self.read_task = read_task
+        self.cite_task = cite_task
+        self.calls = 0
+
+    async def decide(self, view):
+        self.calls += 1
+        if self.read_task and self.calls == 1:
+            return ProjectAnswerDecision.lookup(
+                "read_task_state", {"task_ids": ["task-payment", "not-yet-registered"]}
+            )
+        ref = next(
+            ref for ref in view.evidence if ref.source_id.startswith("task:") == self.cite_task
+        )
+        return ProjectAnswerDecision.finish(
+            (GroundedStatement(text="本轮答复内容", evidence_refs=(ref,)),), AnswerStatus.COMPLETE
+        )
+
+
+async def test_read_set_survives_recreating_the_orchestrator(env):
+    state = make_org_state()
+    generator = TaskReadAnswer()
+    args = ("proj-a", "alice", "persisted-task-read-set", "项目目标是什么？")
+    first = await make_loop(env, generator=generator, org_state_provider=lambda _: state).run(*args)
+    assert first.stop_reason is StopReason.ANSWERED
+    assert all(
+        not ref.source_id.startswith("task:")
+        for statement in first.statements
+        for ref in statement.evidence_refs
+    )
+    steps = await env["read_sessions"].list_steps(first.read_session_id)
+    step = next(
+        step for step in steps
+        if step.tool_name == "read_task_state" and step.kind is ReadStepKind.TOOL_CALL
+    )
+    assert step.result_summary["returned_task_ids"] == ["task-payment"]
+
+    replay = make_loop(env, generator=generator, org_state_provider=lambda _: state)
+    task = state.tasks["task-payment"]
+    state.tasks["not-yet-registered"] = task.model_copy(update={"task_id": "not-yet-registered"})
+    assert (await replay.run(*args)) == first
+    state.tasks["task-payment"] = task.model_copy(update={"health_status": HealthStatus.DELAYED})
+    stale = await replay.run(*args)
+    assert stale.stop_reason is StopReason.CONTEXT_CHANGED
+    assert stale.budget_usage == first.budget_usage
+    assert not stale.statements
+    assert generator.calls == 2
+
+
+async def test_legacy_tool_result_without_returned_ids_cannot_be_replayed(env):
+    state = make_org_state()
+    generator = TaskReadAnswer()
+    loop = make_loop(env, generator=generator, org_state_provider=lambda _: state)
+    args = ("proj-a", "alice", "legacy-task-read-set", "项目目标是什么？")
+    first = await loop.run(*args)
+    assert first.stop_reason is StopReason.ANSWERED
+    async with env["db"].session() as session:
+        step = (
+            await session.execute(
+                select(ProjectReadStepRecord).where(
+                    ProjectReadStepRecord.session_id == first.read_session_id,
+                    ProjectReadStepRecord.kind == ReadStepKind.TOOL_CALL.value,
+                    ProjectReadStepRecord.tool_name == "read_task_state",
+                )
+            )
+        ).scalar_one()
+        summary = json.loads(step.result_summary_json)
+        summary.pop("returned_task_ids")
+        step.result_summary_json = json.dumps(summary)
+    stale = await loop.run(*args)
+    assert stale.stop_reason is StopReason.CONTEXT_CHANGED
+    assert not stale.statements
+    assert generator.calls == 2
+
+
+@pytest.mark.skipif(
+    not hasattr(ProjectReadOrchestrator, "revalidate"),
+    reason="gateway delivery hook is supplied by PR #20 cf0c0e7",
+)
+@pytest.mark.parametrize(
+    "read_task,cite_task,phase,changed_task,delivery_reason,replay_reason",
+    [
+        (True, True, "checkpoint", "task-payment", "context_changed", "context_changed"),
+        (True, False, "record", "task-payment", "context_changed", "context_changed"),
+        (True, False, "after_send", "task-payment", "answered", "context_changed"),
+        (True, True, "record", "task-unrelated", "answered", "answered"),
+        (False, False, "record", "task-payment", "answered", "answered"),
+    ],
+)
+async def test_gateway_revalidates_persisted_task_read_set(
+    env, monkeypatch, read_task, cite_task, phase, changed_task, delivery_reason, replay_reason
+):
+    state = make_org_state()
+    clock = env["clock"]
+    state.members["alice"] = MemberState(
+        member_id="alice",
+        display_name="Alice",
+        role="pm",
+        source_event_id="member-alice",
+        last_update_at=clock.now(),
+    )
+    state.tasks["task-unrelated"] = state.tasks["task-payment"].model_copy(
+        update={"task_id": "task-unrelated"}
+    )
+    generator = TaskReadAnswer(read_task=read_task, cite_task=cite_task)
+    settings = OrgPilotSettings(project_qa_enabled=True)
+    sent = []
+
+    async def agent(project_id):
+        return SimpleNamespace(projector=SimpleNamespace(state=state))
+
+    class Messenger:
+        async def send_text(self, recipient, text):
+            sent.append(text)
+
+    def make_router():
+        service, _, _ = build_gateway_service(settings, env["db"], clock)
+        monkeypatch.setattr(service, "get_or_replay_agent", agent)
+        monkeypatch.setattr(service.project_knowledge.orchestrator, "generator", generator)
+        router = service.intent_router
+        monkeypatch.setattr(router, "messenger_for", lambda _: Messenger())
+        return router
+
+    def change_task():
+        task = state.tasks[changed_task]
+        state.tasks[changed_task] = task.model_copy(update={"health_status": HealthStatus.DELAYED})
+
+    router = make_router()
+    if phase == "checkpoint":
+        checkpoint = router.checkpoint
+
+        async def after_checkpoint(project_id):
+            await checkpoint(project_id)
+            change_task()
+
+        monkeypatch.setattr(router, "checkpoint", after_checkpoint)
+    elif phase == "record":
+        record = router.messages.record_outcome
+
+        async def after_record(**fields):
+            await record(**fields)
+            change_task()
+
+        monkeypatch.setattr(router.messages, "record_outcome", after_record)
+
+    args = {
+        "project_id": "proj-a",
+        "sender_id": "alice",
+        "message_id": "task-state-dispatch",
+        "text": "/项目 项目目标是什么？",
+        "occurred_at": clock.now(),
+    }
+    outcome = await router.handle_message(**args)
+    assert outcome.data["stop_reason"] == delivery_reason
+    assert len(sent) == 1
+    assert ("本轮答复内容" in sent[0]) == (delivery_reason == "answered")
+    recorded = await router.messages.get_outcome("proj-a", args["message_id"])
+    assert recorded.reply_text == sent[0]
+
+    if phase == "after_send":
+        change_task()
+    replay = await make_router().handle_message(**args)
+    assert replay.duplicate and replay.suppress_reply_send
+    assert replay.data["stop_reason"] == replay_reason
+    assert ("本轮答复内容" in replay.reply_text) == (replay_reason == "answered")
+    assert replay.data["budget_usage"] == outcome.data["budget_usage"]
+    assert len(sent) == 1
+    assert generator.calls == (2 if read_task else 1)
 
 
 # ------------------------------------------------------- 6: citations and prompt
@@ -524,7 +836,14 @@ def test_ordinary_punctuation_is_not_injection(text) -> None:
 
 @pytest.mark.parametrize(
     "text",
-    ["a; rm -rf /", "1; DROP TABLE tasks", "x' or '1'='1", "$(curl evil)", "select * from users"],
+    [
+        "a; rm -rf /",
+        "1; DROP TABLE tasks",
+        "x' or '1'='1",
+        "$(curl evil)",
+        "select * from users",
+        "SELECT id\nFROM tasks",
+    ],
 )
 def test_injection_shapes_are_still_denied(text) -> None:
     assert guard_text(text) is not None

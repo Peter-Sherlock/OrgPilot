@@ -32,6 +32,7 @@ from orgpilot.knowledge.errors import (
     RevisionConflict,
 )
 from orgpilot.knowledge.models import (
+    CoverageStatus,
     InboxStatus,
     IssueSelector,
     ProjectSourceBinding,
@@ -62,6 +63,9 @@ from orgpilot.storage.models import (
 # ``SqlProjectSourceStore.restore_observed_availability``.
 _RESTORABLE_AVAILABILITY = frozenset(
     {SourceAvailability.UNAVAILABLE.value, SourceAvailability.DELETED.value}
+)
+_ADMIN_AVAILABILITY = frozenset(
+    {SourceAvailability.REVOKED.value, SourceAvailability.OUT_OF_SCOPE.value}
 )
 
 
@@ -356,11 +360,14 @@ class SqlProjectSourceStore:
         availability: SourceAvailability,
         reason: str | None = None,
         session: AsyncSession | None = None,
+        *,
+        platform_observation: bool = False,
     ) -> None:
         """Marks a source unavailable/revoked/deleted; citing must stop (§5.4).
 
         A 403/404 is recorded as ``unavailable`` with its reason; only a
         confirmed deletion or revocation uses ``deleted``/``revoked``.
+        Platform observations never replace an administrator's decision.
         """
         async with coowned_session(self.db, session) as owned:
             record = (
@@ -371,6 +378,10 @@ class SqlProjectSourceStore:
             if record is None:
                 raise KnowledgeContractError(f"source object {source_id} not found")
             await self._lock_project(record.project_id, owned)
+            if platform_observation:
+                await owned.refresh(record)
+                if record.availability in _ADMIN_AVAILABILITY:
+                    return
             record.availability = availability.value
             record.unavailable_reason = reason
             record.updated_at = _to_utc(self.clock.now())
@@ -395,6 +406,9 @@ class SqlProjectSourceStore:
             if record is None or record.availability not in _RESTORABLE_AVAILABILITY:
                 return False
             await self._lock_project(record.project_id, owned)
+            await owned.refresh(record)
+            if record.availability not in _RESTORABLE_AVAILABILITY:
+                return False
             record.availability = SourceAvailability.AVAILABLE.value
             record.unavailable_reason = None
             record.updated_at = _to_utc(self.clock.now())
@@ -826,28 +840,39 @@ class SqlSyncRunStore:
             ).scalar_one_or_none()
         return self._run_from(record) if record is not None else None
 
-    async def latest_successful_run(
+    async def latest_complete_read(
         self,
         project_id: str,
+        binding_version: int,
+        access_epoch: int,
         reasons: Iterable[SyncRunReason],
-        session: AsyncSession | None = None,
     ) -> SyncRun | None:
-        """Newest run of the given reasons that recorded a successful checkpoint."""
+        """Newest complete read of the active binding and access epoch."""
         reason_values = [reason.value for reason in reasons]
-        async with coowned_session(self.db, session) as owned:
-            record = (
-                await owned.execute(
-                    select(SyncRunRecord)
-                    .where(
-                        SyncRunRecord.project_id == project_id,
-                        SyncRunRecord.reason.in_(reason_values),
-                        SyncRunRecord.last_success_at.is_not(None),
-                    )
-                    .order_by(SyncRunRecord.last_success_at.desc(), SyncRunRecord.run_id.desc())
-                    .limit(1)
+        async with self.db.session() as owned:
+            records = await owned.stream_scalars(
+                select(SyncRunRecord)
+                .where(
+                    SyncRunRecord.project_id == project_id,
+                    SyncRunRecord.binding_version == binding_version,
+                    SyncRunRecord.access_epoch == access_epoch,
+                    SyncRunRecord.reason.in_(reason_values),
+                    SyncRunRecord.state == SyncRunState.COMPLETED.value,
+                    SyncRunRecord.last_success_at.is_not(None),
                 )
-            ).scalar_one_or_none()
-        return self._run_from(record) if record is not None else None
+                .order_by(SyncRunRecord.last_success_at.desc(), SyncRunRecord.run_id.desc())
+            )
+            try:
+                # Older partial runs can also have a success timestamp.
+                async for record in records:
+                    coverage = load_json(record.coverage_json, {})
+                    if coverage and all(
+                        status == CoverageStatus.COMPLETE.value for status in coverage.values()
+                    ):
+                        return self._run_from(record)
+            finally:
+                await records.close()
+        return None
 
     @staticmethod
     def _run_from(record: SyncRunRecord) -> SyncRun:

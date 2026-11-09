@@ -49,8 +49,10 @@ from orgpilot.knowledge.models import (
     EvidenceRef,
     GroundedProjectAnswer,
     GroundedStatement,
+    ProjectReadSession,
     ProjectReadSessionSpec,
     ReadSessionStatus,
+    ReadStepKind,
     SourceAvailability,
     SourceKind,
     StopReason,
@@ -133,7 +135,7 @@ class ProjectReadOrchestrator:
                 return _session_gap(
                     existing, StopReason.ACCESS_DENIED, question, "当前资料授权已失效。"
                 )
-            problem = await self._context_problem(existing.spec, _answer_task_ids(existing))
+            problem = await self._context_problem(existing.spec)
             if problem:
                 return _session_gap(existing, problem, question, "项目上下文已变化，请重新提问。")
             return await self._replay(existing.spec.session_id, project_id, question)
@@ -209,6 +211,14 @@ class ProjectReadOrchestrator:
                 return deterministic_gap_answer(
                     session_id, StopReason.ACCESS_DENIED, question, (), "当前资料授权已失效。"
                 )
+            task_ids = await self._saved_task_ids(session, answer)
+            if task_ids is None or await self._tasks_changed(session.spec, task_ids):
+                return _session_gap(
+                    session,
+                    StopReason.CONTEXT_CHANGED,
+                    question,
+                    "正式任务状态已变化或无法复核，请重新提问。",
+                )
             if not answer.rendered_text:
                 answer = answer.model_copy(
                     update={"rendered_text": render_answer(answer, question)}
@@ -243,7 +253,8 @@ class ProjectReadOrchestrator:
         actually read or cited. A change elsewhere in the project (another
         member's message, a new claim) does not touch what the answer relies
         on, so it no longer discards the answer (ADR-0015 §7.6, read-set check).
-        With no tasks used, no event replay is needed at all.
+        An active loop supplies its in-memory read set. Stored answers are
+        checked in ``_replay`` after their authorization and evidence checks.
         """
         binding = await self.sources.get_binding(spec.project_id, spec.binding_version)
         if binding is None:
@@ -266,13 +277,43 @@ class ProjectReadOrchestrator:
         problem = await check_generation(self.sources, self.knowledge, generation)
         if problem:
             return problem
-        used = tuple(dict.fromkeys(task_ids))
-        if used:
-            pinned = _pinned_tasks(spec.org_state_refs)
-            current = _pinned_tasks(_state_refs(await self._org_state(spec.project_id)))
-            if any(pinned.get(task_id) != current.get(task_id) for task_id in used):
-                return StopReason.CONTEXT_CHANGED
+        if await self._tasks_changed(spec, task_ids):
+            return StopReason.CONTEXT_CHANGED
         return None
+
+    async def _tasks_changed(
+        self, spec: ProjectReadSessionSpec, task_ids: tuple[str, ...]
+    ) -> bool:
+        if not task_ids:
+            return False
+        pinned = _pinned_tasks(spec.org_state_refs)
+        state = await self._org_state(spec.project_id)
+        return state is None or any(
+            task_id not in pinned
+            or task_id not in state.tasks
+            or pinned[task_id] != _task_fingerprint(state.tasks[task_id])
+            for task_id in task_ids
+        )
+
+    async def _saved_task_ids(
+        self, session: ProjectReadSession, answer: GroundedProjectAnswer
+    ) -> tuple[str, ...] | None:
+        task_ids = list(
+            _task_ids_in(ref for statement in answer.statements for ref in statement.evidence_refs)
+        )
+        for step in await self.read_sessions.list_steps(session.spec.session_id):
+            if (
+                step.kind is ReadStepKind.TOOL_CALL
+                and step.tool_name == "read_task_state"
+                and step.result_summary.get("ok")
+            ):
+                returned = step.result_summary.get("returned_task_ids")
+                if returned is None:
+                    # Older steps kept requests but not which tasks actually
+                    # came back. Their read set cannot be verified safely.
+                    return None
+                task_ids.extend(returned)
+        return tuple(dict.fromkeys(task_ids))
 
     async def _assemble_valid_finish(
         self, spec, decision: ProjectAnswerDecision, evidence: dict[str, EvidenceRef]
@@ -352,10 +393,13 @@ def _state_refs(state):
     if state is None:
         return ()
     return tuple(
-        f"{TASK_REF_PREFIX}{task_id}:"
-        f"{canonical_payload_hash(state.tasks[task_id].model_dump(mode='json'))}"
+        f"{TASK_REF_PREFIX}{task_id}:{_task_fingerprint(state.tasks[task_id])}"
         for task_id in sorted(state.tasks)
     )
+
+
+def _task_fingerprint(task) -> str:
+    return canonical_payload_hash(task.model_dump(mode="json"))
 
 
 def _pinned_tasks(refs) -> dict[str, str]:
@@ -375,14 +419,6 @@ def _task_ids_in(refs) -> tuple[str, ...]:
         if ref.source_id.startswith(TASK_REF_PREFIX)
     )
     return tuple(dict.fromkeys(ids))
-
-
-def _answer_task_ids(session) -> tuple[str, ...]:
-    """Tasks a stored answer cites; a replay re-checks only those."""
-    if not session.answer_json:
-        return ()
-    answer = GroundedProjectAnswer.model_validate_json(session.answer_json)
-    return _task_ids_in(ref for statement in answer.statements for ref in statement.evidence_refs)
 
 
 def _returned_reference(ref: EvidenceRef, evidence: dict[str, EvidenceRef]) -> EvidenceRef | None:

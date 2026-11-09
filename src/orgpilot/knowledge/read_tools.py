@@ -60,7 +60,7 @@ _SHELL_PATTERN = re.compile(
 )
 _SQL_PATTERN = re.compile(
     r"\bunion\s+(?:all\s+)?select\b|\bdrop\s+table\b|\binsert\s+into\b|\bdelete\s+from\b"
-    r"|\bselect\b.+\bfrom\b|/\*|'\s*or\s+'?1'?\s*=\s*'?1|;\s*--"
+    r"|\bselect\b(?s:.+)\bfrom\b|/\*|'\s*or\s+'?1'?\s*=\s*'?1|;\s*--"
 )
 
 
