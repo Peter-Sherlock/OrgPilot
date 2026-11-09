@@ -11,7 +11,7 @@ Two implementations:
 
 - :class:`ScriptedAnswerGenerator` — deterministic keyword-driven decisions
   for offline tests, replay, and the mock-provider default. Its outputs are
-  explicitly labeled ``scripted-v1``; they never impersonate an online model
+  explicitly labeled with the scripted policy version
   (development-plan §2: fixtures prove controller bounds, not model quality).
 - :class:`LLMProjectAnswerer` — calls the shared Anthropic-compatible client
   with a structured-output prompt. No SDK-level retries; timeouts are
@@ -26,6 +26,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from orgpilot.knowledge.models import (
     AnswerStatus,
+    BudgetLimits,
     BudgetUsage,
     EvidenceRef,
     GroundedProjectAnswer,
@@ -35,7 +36,7 @@ from orgpilot.knowledge.models import (
 )
 
 DECISION_KINDS = ("lookup", "finish", "ask_clarification", "report_gap")
-SCRIPTED_GENERATOR_VERSION = "scripted-v2"
+SCRIPTED_GENERATOR_VERSION = "scripted-v3"
 # v2: the prompt states each tool's arguments and how to copy a locator.
 LLM_GENERATOR_VERSION = "llm-answerer-v2"
 TOKEN_ESTIMATOR_VERSION = "chars-over-4"
@@ -43,6 +44,7 @@ MAX_ANSWER_STATEMENTS = 8
 
 _STOPWORDS = ("的", "吗", "呢", "？", "?", "。", "，", "！", "什么", "哪些", "怎么样")
 _NON_WORD = re.compile(r"[^\w]+")
+_TABLE_SEPARATOR = re.compile(r"\|(?:\s*:?-+:?\s*\|)+")
 
 
 def estimate_tokens(text: str) -> int:
@@ -120,6 +122,23 @@ class ProjectAnswerDecision:
         return cls(kind="report_gap", gap=gap, action_summary=summary)
 
 
+def decision_wire(decision: ProjectAnswerDecision) -> str:
+    return json.dumps(
+        {
+            "kind": decision.kind,
+            "tool": decision.tool,
+            "args": decision.args,
+            "statements": [s.model_dump(mode="json") for s in decision.statements],
+            "uncertainties": decision.uncertainties,
+            "conflicts": decision.conflicts,
+            "missing_info": decision.missing_info,
+            "gap": decision.gap,
+            "clarification": decision.clarification_question,
+        },
+        ensure_ascii=False,
+    )
+
+
 @runtime_checkable
 class ProjectAnswerGenerator(Protocol):
     """The only model-facing surface the loop talks to."""
@@ -153,6 +172,7 @@ class ReadLoopView:
         limits_summary: str,
         tool_results: tuple[dict[str, Any], ...] = (),
         allow_tools: bool = True,
+        max_output_tokens: int = BudgetLimits().max_output_tokens_per_call,
     ) -> None:
         self.round_number = round_number
         self.question = question
@@ -163,6 +183,7 @@ class ReadLoopView:
         self.limits_summary = limits_summary
         self.tool_results = tool_results
         self.allow_tools = allow_tools
+        self.max_output_tokens = max_output_tokens
 
     def to_prompt(self) -> str:
         """Deterministic prompt rendering; the LLM answerer adds its contract."""
@@ -205,17 +226,7 @@ class ScriptedAnswerGenerator:
             return ProjectAnswerDecision.lookup(
                 "get_related_items", {"source_id": source_id}, summary="follow relations"
             )
-        statements = self._statements_for(view)
-        if statements:
-            return ProjectAnswerDecision.finish(
-                statements,
-                AnswerStatus.COMPLETE,
-                uncertainties=self._uncertainties(view),
-                summary="finish with cited evidence",
-            )
-        return ProjectAnswerDecision.report_gap(
-            "资料中没有能回答该问题的依据", summary="report gap"
-        )
+        return self._finish_for(view, keywords)
 
     async def repair(
         self, view: ReadLoopView, rejected: ProjectAnswerDecision, reason: str
@@ -258,32 +269,92 @@ class ScriptedAnswerGenerator:
             if ref.kind in (SourceKind.ISSUE, SourceKind.PULL_REQUEST)
         ]
 
-    def _statements_for(self, view: ReadLoopView) -> tuple[GroundedStatement, ...]:
-        keywords = self._keywords(view.question)
+    @staticmethod
+    def _finish_for(view: ReadLoopView, keywords: list[str]) -> ProjectAnswerDecision:
         # Match against title + locator + snippet — the same haystack the
         # index searched — so a heading match (e.g. 交付条件) cites the
         # document even when its body text lacks the keyword.
         matched = [ref for ref in view.evidence if _matches(ref, keywords)]
         if not matched:
-            # Citing whatever was retrieved first would present unrelated text
-            # as a complete answer; the caller reports a gap instead.
-            return ()
-        return tuple(
-            GroundedStatement(
-                text=f"资料记载：{ref.snippet[:160]}",
-                evidence_refs=(ref,),
+            return ProjectAnswerDecision.report_gap(
+                "资料中没有能回答该问题的依据", summary="report gap"
             )
-            for ref in matched[:MAX_ANSWER_STATEMENTS]
-        )
 
-    @staticmethod
-    def _uncertainties(view: ReadLoopView) -> tuple[str, ...]:
-        return tuple(view.unresolved)
+        def finish(statements: tuple[GroundedStatement, ...]) -> ProjectAnswerDecision:
+            return ProjectAnswerDecision.finish(
+                statements,
+                AnswerStatus.COMPLETE,
+                uncertainties=view.unresolved,
+                summary="finish with cited evidence",
+            )
+
+        ordinary = finish(
+            tuple(
+                GroundedStatement(
+                    text=f"资料记载：{ref.snippet[:160]}",
+                    evidence_refs=(ref,),
+                )
+                for ref in matched[:MAX_ANSWER_STATEMENTS]
+            )
+        )
+        if estimate_tokens(decision_wire(ordinary)) <= view.max_output_tokens:
+            return ordinary
+
+        compact = ProjectAnswerDecision.report_gap(
+            "输出预算内无法保留有效引文", summary="report gap"
+        )
+        seen_quotes: set[str] = set()
+        for ref in matched:
+            statement = _focused_statement(ref, keywords)
+            quote = statement.evidence_refs[0].snippet
+            if quote in seen_quotes:
+                continue
+            # A single common shingle is weak support for an additional quote.
+            if compact.statements and sum(keyword in quote for keyword in keywords) < min(
+                2, len(keywords)
+            ):
+                continue
+            candidate = finish((*compact.statements, statement))
+            if estimate_tokens(decision_wire(candidate)) <= view.max_output_tokens:
+                compact = candidate
+                seen_quotes.add(quote)
+                if len(compact.statements) == MAX_ANSWER_STATEMENTS:
+                    break
+        return compact
 
 
 def _matches(ref: EvidenceRef, keywords: list[str]) -> bool:
     haystack = f"{ref.title or ''} {ref.paragraph or ''} {ref.snippet}"
     return (not keywords) or any(keyword in haystack for keyword in keywords)
+
+
+def _focused_statement(ref: EvidenceRef, keywords: list[str]) -> GroundedStatement:
+    lines = ref.snippet.splitlines()
+    index = max(
+        (index for index, line in enumerate(lines) if line.strip()),
+        key=lambda index: sum(keyword in lines[index] for keyword in keywords),
+    )
+    quote = lines[index].strip()
+    text = quote
+    if quote.startswith("|") and quote.endswith("|"):
+        # Preserve column meanings when quoting a single row without its table.
+        start = index
+        while start > 0 and lines[start - 1].lstrip().startswith("|"):
+            start -= 1
+        if index >= start + 2 and _TABLE_SEPARATOR.fullmatch(lines[start + 1].strip()):
+            labels = lines[start].strip().strip("|").split("|")
+            cells = quote[1:-1].split("|")
+            if len(labels) == len(cells):
+                text = "，".join(
+                    f"{label.strip()} {cell.strip()}"
+                    for label, cell in zip(labels, cells, strict=True)
+                )
+    elif sum(line.lstrip().startswith(("```", "~~~")) for line in lines[:index]) % 2:
+        text = f"示例：{quote}"
+    return GroundedStatement(
+        text=f"资料记载：{text}",
+        evidence_refs=(ref.model_copy(update={"snippet": quote}),),
+    )
 
 
 class LLMProjectAnswerer:

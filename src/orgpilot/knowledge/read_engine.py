@@ -95,6 +95,7 @@ class ReadEngine:
             f"{max(0, self.start + self.limits.total_time_seconds - self.owner.timer.now()):.2f}",
             tool_results=tuple(self.results[-2:]),
             allow_tools=not final,
+            max_output_tokens=self.limits.max_output_tokens_per_call,
         )
 
     async def choose(self, final=False):

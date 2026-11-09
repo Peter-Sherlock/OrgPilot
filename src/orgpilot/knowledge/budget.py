@@ -1,12 +1,12 @@
 """One persistent accounting path for exploration, repair and final generation."""
 
 import asyncio
-import json
 from decimal import Decimal
 
 from orgpilot.knowledge.answerer import (
     TOKEN_ESTIMATOR_VERSION,
     DecisionValidationError,
+    decision_wire,
     estimate_tokens,
 )
 from orgpilot.knowledge.errors import KnowledgeContractError
@@ -24,23 +24,6 @@ class ReadStopped(Exception):
         super().__init__(detail)
         self.reason = reason
         self.detail = detail
-
-
-def decision_wire(decision) -> str:
-    return json.dumps(
-        {
-            "kind": decision.kind,
-            "tool": decision.tool,
-            "args": decision.args,
-            "statements": [s.model_dump(mode="json") for s in decision.statements],
-            "uncertainties": decision.uncertainties,
-            "conflicts": decision.conflicts,
-            "missing_info": decision.missing_info,
-            "gap": decision.gap,
-            "clarification": decision.clarification_question,
-        },
-        ensure_ascii=False,
-    )
 
 
 class SessionBudget:
