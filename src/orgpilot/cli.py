@@ -36,32 +36,39 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     intent_eval.add_argument("--split", choices=["dev", "test"], default="dev")
     intent_eval.add_argument("--mode", choices=["mock", "replay", "live"], default="mock")
-    intent_eval.add_argument(
-        "--system", choices=["baseline", "layered"], default="baseline"
-    )
+    intent_eval.add_argument("--system", choices=["baseline", "layered"], default="baseline")
     intent_eval.add_argument("--intent", choices=["heuristic", "oracle"], default="heuristic")
     intent_eval.add_argument(
-        "--client", choices=["heuristic", "llm"], default="heuristic",
+        "--client",
+        choices=["heuristic", "llm"],
+        default="heuristic",
         help="heuristic keeps the mock pipeline; llm uses the DeepSeek/AIHubMix client (3b)",
     )
     intent_eval.add_argument(
-        "--live", action="store_true",
+        "--live",
+        action="store_true",
         help="--client llm: send real requests (requires --confirm-spend and the provider key)",
     )
     intent_eval.add_argument(
-        "--replay", action="store_true",
+        "--replay",
+        action="store_true",
         help="--client llm: run offline from recordings (missing recording fails)",
     )
     intent_eval.add_argument(
-        "--confirm-spend", action="store_true",
+        "--confirm-spend",
+        action="store_true",
         help="acknowledge that live calls cost money",
     )
     intent_eval.add_argument(
-        "--limit", type=int, default=None,
+        "--limit",
+        type=int,
+        default=None,
         help="evaluate only the first N samples/conversations",
     )
     intent_eval.add_argument(
-        "--max-spend-usd", type=float, default=None,
+        "--max-spend-usd",
+        type=float,
+        default=None,
         help="abort live runs once the estimated cost at official peak prices exceeds this",
     )
     intent_eval.add_argument(
@@ -390,8 +397,7 @@ def _eval_intent(
         llm_client = _prepare_llm_client(gate_args)
         run_mode = f"llm-{'live' if live else 'replay'}"
         title_suffix = (
-            f"LLMIntentClient {llm_client.model}"
-            f"（{'live 在线' if live else 'replay 离线回放'}）"
+            f"LLMIntentClient {llm_client.model}（{'live 在线' if live else 'replay 离线回放'}）"
         )
         # §8: wrap (never replace) the client so the classifier output of every
         # sample is recorded for the intent-layer metrics.
@@ -443,10 +449,7 @@ def _eval_intent(
     if client == "llm" and llm_client is not None:
         _print_llm_stats(aggregate_llm_metrics(llm_client.metrics))
     print(f"  - Samples: {metrics.total_samples}")
-    print(
-        f"  - Claim precision: {metrics.claim_precision:.2%}, "
-        f"recall: {metrics.claim_recall:.2%}"
-    )
+    print(f"  - Claim precision: {metrics.claim_precision:.2%}, recall: {metrics.claim_recall:.2%}")
     print(
         f"  - Task id accuracy: {metrics.task_id_accuracy:.2%}, "
         f"health accuracy: {metrics.health_status_accuracy:.2%}, "
@@ -467,8 +470,8 @@ def _eval_intent(
     if metrics.intent_metrics is not None:
         im = metrics.intent_metrics
         macro = "—" if im.macro_f1 is None else f"{im.macro_f1:.2%}"
-        answers = "—" if im.answers_pending_accuracy is None else (
-            f"{im.answers_pending_accuracy:.2%}"
+        answers = (
+            "—" if im.answers_pending_accuracy is None else (f"{im.answers_pending_accuracy:.2%}")
         )
         print(
             f"  - Intent set exact match: {im.intent_set_exact_match_rate:.2%} "
@@ -482,7 +485,6 @@ def _eval_intent(
 
 def _start_feishu_ws(project_id: str | None = None) -> int:
     import asyncio
-    import time
 
     from orgpilot.config import OrgPilotSettings
     from orgpilot.extraction.client import AnthropicCompatibleLLMClient
@@ -511,7 +513,7 @@ def _start_feishu_ws(project_id: str | None = None) -> int:
 
     # Same wiring as the HTTP gateway. Before this, the listener ran the mock
     # adapter and a default router, so approval cards and probes never reached Feishu.
-    service, llm_client = build_gateway_service(settings, db)
+    service, llm_client, sync_service = build_gateway_service(settings, db)
     listener = FeishuWebSocketListener(
         app_id=app_id,
         app_secret=app_secret,
@@ -525,16 +527,24 @@ def _start_feishu_ws(project_id: str | None = None) -> int:
     print("[*] WebSocket long-connection active. Listening for Feishu messages and card actions...")
     print("[*] Press Ctrl+C to stop.")
 
+    if sync_service is not None:
+        loop.run_until_complete(sync_service.start())
     listener.start()
     try:
-        while True:
-            time.sleep(1)
+        loop.run_forever()
     except KeyboardInterrupt:
         print("\n[*] Stopping Feishu WebSocket Listener...")
         return 0
     finally:
+        if sync_service is not None:
+            loop.run_until_complete(sync_service.stop())
+        knowledge = getattr(service, "project_knowledge", None)
+        if knowledge is not None:
+            loop.run_until_complete(knowledge.aclose())
         if isinstance(llm_client, AnthropicCompatibleLLMClient):
             llm_client.close()
+        loop.run_until_complete(db.close())
+        loop.close()
 
 
 def _team_directory(settings: Any) -> Any:

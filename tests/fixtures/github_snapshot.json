@@ -1,0 +1,245 @@
+{
+  "repository": {
+    "repository_id": "1001",
+    "full_name": "org/demo",
+    "default_branch": "main"
+  },
+  "branches": {
+    "main": {
+      "sha": "c0ffee1"
+    },
+    "feature": {
+      "sha": "dead123"
+    }
+  },
+  "trees": {
+    "c0ffee1": [
+      {
+        "path": "README.md",
+        "blob_sha": "b-readme",
+        "size": 120
+      },
+      {
+        "path": "docs/delivery.md",
+        "blob_sha": "b-delivery",
+        "size": 300
+      },
+      {
+        "path": "docs/spec/api.md",
+        "blob_sha": "b-api",
+        "size": 200
+      },
+      {
+        "path": "src/main.py",
+        "blob_sha": "b-main",
+        "size": 800
+      }
+    ],
+    "dead123": [
+      {
+        "path": "README.md",
+        "blob_sha": "b-readme-feature",
+        "size": 120
+      }
+    ]
+  },
+  "blobs": {
+    "b-readme": "# OrgPilot 演示项目\n\n项目目标：验证资料接入后的项目问答。\n",
+    "b-delivery": "# 交付规范\n\n## 交付条件\n\n测试环境可访问、鉴权信息齐全后才可联调。\n\n## 术语\n\n- 联调：双方系统在测试环境互通。\n",
+    "b-api": "# 接口说明\n\n支付接口由 Bob 负责，联调前需提供鉴权信息。\n",
+    "b-main": "print('demo')\n",
+    "b-readme-feature": "# OrgPilot 演示项目（feature 分支）\n"
+  },
+  "issues": [
+    {
+      "number": 1,
+      "issue_id": "9001",
+      "title": "接入支付接口",
+      "body": "需要完成支付接口联调。",
+      "state": "open",
+      "milestone": "m2",
+      "assignees": [
+        "bob"
+      ],
+      "labels": [
+        "integration"
+      ],
+      "html_url": "https://github.com/org/demo/issues/1",
+      "updated_at": "2026-10-20T09:00:00+08:00",
+      "closed_at": null
+    },
+    {
+      "number": 2,
+      "issue_id": "9002",
+      "title": "鉴权信息登记",
+      "body": "登记测试环境鉴权信息。",
+      "state": "closed",
+      "milestone": "m2",
+      "assignees": [
+        "alice"
+      ],
+      "labels": [],
+      "html_url": "https://github.com/org/demo/issues/2",
+      "updated_at": "2026-10-21T10:00:00+08:00",
+      "closed_at": "2026-10-21T09:00:00+08:00"
+    },
+    {
+      "number": 3,
+      "issue_id": "9003",
+      "title": "范围外事项",
+      "body": "属于 m3，不在首版范围。",
+      "state": "open",
+      "milestone": "m3",
+      "assignees": [],
+      "labels": [],
+      "html_url": "https://github.com/org/demo/issues/3",
+      "updated_at": "2026-10-22T09:00:00+08:00",
+      "closed_at": null
+    },
+    {
+      "number": 4,
+      "issue_id": "9004",
+      "title": "显式登记的 Issue",
+      "body": "不在 milestone，但被显式纳入。",
+      "state": "open",
+      "milestone": null,
+      "assignees": [
+        "carol"
+      ],
+      "labels": [],
+      "html_url": "https://github.com/org/demo/issues/4",
+      "updated_at": "2026-10-23T09:00:00+08:00",
+      "closed_at": null
+    },
+    {
+      "number": 6,
+      "issue_id": "9006",
+      "title": "接入支付接口",
+      "body": "与 #1 同标题但不同对象。",
+      "state": "open",
+      "milestone": "m2",
+      "assignees": [],
+      "labels": [],
+      "html_url": "https://github.com/org/demo/issues/6",
+      "updated_at": "2026-10-24T09:00:00+08:00",
+      "closed_at": null
+    },
+    {
+      "number": 5,
+      "issue_id": "9500",
+      "title": "支付接口实现",
+      "body": "实现支付接口的 PR。",
+      "state": "closed",
+      "milestone": "m2",
+      "assignees": [
+        "bob"
+      ],
+      "labels": [],
+      "html_url": "https://github.com/org/demo/pull/5",
+      "pull_request": {
+        "merged_at": "2026-10-25T08:00:00+08:00"
+      },
+      "updated_at": "2026-10-25T08:00:00+08:00",
+      "closed_at": "2026-10-25T08:00:00+08:00"
+    }
+  ],
+  "issue_comments": [
+    {
+      "id": "7001",
+      "issue_number": 1,
+      "user": {
+        "login": "bob"
+      },
+      "body": "明天给。",
+      "html_url": "https://github.com/org/demo/issues/1#issuecomment-7001",
+      "created_at": "2026-10-20T10:00:00+08:00",
+      "updated_at": "2026-10-20T10:00:00+08:00"
+    },
+    {
+      "id": "7002",
+      "issue_number": 1,
+      "user": {
+        "login": "alice"
+      },
+      "body": "联调环境还没就绪。",
+      "html_url": "https://github.com/org/demo/issues/1#issuecomment-7002",
+      "created_at": "2026-10-20T11:00:00+08:00",
+      "updated_at": "2026-10-20T11:00:00+08:00"
+    },
+    {
+      "id": "7003",
+      "issue_number": 1,
+      "user": {
+        "login": "bob"
+      },
+      "body": "鉴权信息已提交。",
+      "html_url": "https://github.com/org/demo/issues/1#issuecomment-7003",
+      "created_at": "2026-10-21T09:30:00+08:00",
+      "updated_at": "2026-10-21T09:30:00+08:00"
+    },
+    {
+      "id": "7004",
+      "issue_number": 2,
+      "user": {
+        "login": "alice"
+      },
+      "body": "鉴权信息见交付规范。",
+      "html_url": "https://github.com/org/demo/issues/2#issuecomment-7004",
+      "created_at": "2026-10-21T10:30:00+08:00",
+      "updated_at": "2026-10-21T10:30:00+08:00"
+    }
+  ],
+  "pull_requests": [
+    {
+      "number": 5,
+      "pr_id": "9500",
+      "title": "支付接口实现",
+      "body": "Fixes #1, 相关讨论见 #2。",
+      "state": "closed",
+      "merged": true,
+      "merge_commit_sha": "merge-5",
+      "head_sha": "head-5",
+      "base_sha": "c0ffee1",
+      "html_url": "https://github.com/org/demo/pull/5",
+      "updated_at": "2026-10-25T08:00:00+08:00",
+      "closed_at": "2026-10-25T08:00:00+08:00",
+      "milestone": "m2"
+    },
+    {
+      "number": 10,
+      "pr_id": "9600",
+      "title": "显式登记的 PR",
+      "body": "Closes #4",
+      "state": "open",
+      "merged": false,
+      "merge_commit_sha": null,
+      "head_sha": "head-10",
+      "base_sha": "c0ffee1",
+      "html_url": "https://github.com/org/demo/pull/10",
+      "updated_at": "2026-10-26T08:00:00+08:00",
+      "closed_at": null
+    }
+  ],
+  "pull_request_reviews": [
+    {
+      "id": "8000",
+      "pr_number": 5,
+      "user": {
+        "login": "carol"
+      },
+      "state": "APPROVED",
+      "body": "lgtm",
+      "submitted_at": "2026-10-24T18:00:00+08:00"
+    },
+    {
+      "id": "8001",
+      "pr_number": 10,
+      "user": {
+        "login": "alice"
+      },
+      "state": "CHANGES_REQUESTED",
+      "body": "请补充测试。",
+      "submitted_at": "2026-10-26T09:00:00+08:00"
+    }
+  ]
+}

@@ -98,7 +98,9 @@ async def demo() -> tuple[GatewayService, MockFeishuClient, FeishuWebhookHandler
         feishu_project_id=PROJECT,
     )
     client = MockFeishuClient(mobile_directory={"13800000001": PM, "13800000002": ENGINEER})
-    service, _ = build_gateway_service(settings, db, FrozenClock(T0), feishu_client=client)
+    service, _llm, _sync = build_gateway_service(
+        settings, db, FrozenClock(T0), feishu_client=client
+    )
     handler = FeishuWebhookHandler(service=service, project_id=PROJECT)
     yield service, client, handler
     await db.close()

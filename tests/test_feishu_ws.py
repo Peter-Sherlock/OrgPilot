@@ -166,7 +166,7 @@ def test_shared_wiring_gives_the_listener_the_gateway_adapter_and_router(
     monkeypatch.setenv("ORGPILOT_FEISHU_TASK_WRITEBACK", "true")
     settings = OrgPilotSettings.from_env()
 
-    service, _ = build_gateway_service(
+    service, _llm, _sync = build_gateway_service(
         settings, Database("sqlite+aiosqlite:///:memory:"), feishu_client=MockFeishuClient()
     )
 
