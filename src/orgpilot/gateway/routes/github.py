@@ -13,7 +13,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
-from orgpilot.github.sync import GitHubSyncService, verify_signature
+from orgpilot.github.sync import SUPPORTED_EVENTS, GitHubSyncService, verify_signature
 from orgpilot.knowledge.errors import DuplicateDeliveryConflict
 
 logger = logging.getLogger(__name__)
@@ -50,6 +50,10 @@ async def handle_github_webhook(request: Request) -> dict[str, Any]:
     if binding is None:
         # Not a bound repository: acknowledge without persisting anything.
         return {"code": 0, "msg": "unknown_repository"}
+    if event_type not in SUPPORTED_EVENTS:
+        # CI, stars, deployments and the like never refresh material; storing
+        # them would only add inbox rows and empty sync runs.
+        return {"code": 0, "msg": "ignored_event"}
     try:
         outcome = await service.ingest_webhook(
             repository_id,

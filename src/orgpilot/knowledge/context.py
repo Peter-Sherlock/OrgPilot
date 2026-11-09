@@ -98,12 +98,17 @@ class ProjectContextBuilder:
                 for entry in hits[len(evidence) :]
             ]
 
-        unavailable = [
-            obj.external_id
-            for obj in objects
-            if obj.availability is not SourceAvailability.AVAILABLE
-        ]
-        missing_info = [f"source unavailable: {external_id}" for external_id in unavailable]
+        # Only a count, and only for temporary platform failures: names of
+        # revoked or deleted material must not reach the asker (§7.4), and
+        # deleted objects are not missing information, they are gone.
+        unavailable = sum(
+            1 for obj in objects if obj.availability is SourceAvailability.UNAVAILABLE
+        )
+        missing_info = (
+            [f"{unavailable} 份资料在平台上暂时读不到（unavailable），未参与本次回答"]
+            if unavailable
+            else []
+        )
 
         org_state_refs: tuple[str, ...] = ()
         conflicts: list[str] = []

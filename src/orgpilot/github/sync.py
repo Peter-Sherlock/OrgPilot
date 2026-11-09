@@ -35,6 +35,7 @@ from typing import Any
 from orgpilot.config import OrgPilotSettings
 from orgpilot.domain.clock import Clock, SystemClock
 from orgpilot.github.client import (
+    UNSUPPORTED_CONTENT_STATUS,
     GitHubReadClient,
     GitHubReadError,
     HttpGitHubClient,
@@ -92,7 +93,28 @@ class RefreshOutcome:
     result: str
     writes: list[tuple[SourceObject, SourceRevision]] = field(default_factory=list)
     takedowns: list[tuple[str, SourceAvailability, str]] = field(default_factory=list)
+    # Sources read successfully again whose content did not change; their
+    # earlier unavailable/deleted state is cleared in the same transaction.
+    restores: list[str] = field(default_factory=list)
     detail: str | None = None
+    unreadable_documents: list[SourceObject] = field(default_factory=list)
+    read_errors: list[str] = field(default_factory=list)
+
+
+# Runs whose checkpoint means "the whole scope was read": the periodic recheck
+# interval counts from these, never from a webhook drain.
+FULL_READ_REASONS = (
+    SyncRunReason.INITIAL_IMPORT,
+    SyncRunReason.MANUAL_RECHECK,
+    SyncRunReason.PERIODIC_RECHECK,
+)
+
+
+def _needs_restore(existing: SourceObject | None) -> bool:
+    return existing is not None and existing.availability in (
+        SourceAvailability.UNAVAILABLE,
+        SourceAvailability.DELETED,
+    )
 
 
 class GitHubSyncService:
@@ -322,13 +344,19 @@ class GitHubSyncService:
             for obj, revision in outcome.writes:
                 await self.sources.upsert_source_object(obj, session)
                 await self.sources.record_revision(revision, session)
+                # A successful read ends an earlier 403/404 or deletion.
+                await self.sources.restore_observed_availability(obj.source_id, session)
+            for source_id in outcome.restores:
+                await self.sources.restore_observed_availability(source_id, session)
+            for obj in outcome.unreadable_documents:
+                await self.sources.upsert_source_object(obj, session)
             for source_id, availability, reason in outcome.takedowns:
                 record = await self.sources.get_source_object(source_id, session)
                 if record is not None:
                     await self.sources.set_source_availability(
-                        source_id, availability, reason, session
+                        source_id, availability, reason, session, platform_observation=True
                     )
-            if outcome.writes or outcome.takedowns:
+            if outcome.writes or outcome.takedowns or outcome.restores:
                 await self.runs.save_checkpoint(
                     run_id,
                     per_source_cursor={"delivery_id": entry.delivery_id},
@@ -341,6 +369,7 @@ class GitHubSyncService:
                 entry.delivery_id,
                 InboxStatus.DONE,
                 attempts_delta=1,
+                last_error="; ".join(outcome.read_errors)[:500] if outcome.read_errors else None,
                 session=session,
             )
         return outcome.result
@@ -393,7 +422,9 @@ class GitHubSyncService:
             number = self._issue_number(entry.payload)
             if number is None:
                 return RefreshOutcome(result="ignored", detail="missing issue number")
-            return await self._refresh_comments(binding, client, number)
+            # GitHub marks comments on pull requests with issue.pull_request.
+            on_pull_request = "pull_request" in (entry.payload.get("issue") or {})
+            return await self._refresh_comments(binding, client, number, on_pull_request)
         if event == "pull_request":
             number = self._pr_number(entry.payload)
             if number is None:
@@ -439,7 +470,7 @@ class GitHubSyncService:
         head = await read_github(client, "get_branch_head", binding.branch)
         tree = await read_github(client, "get_tree", head.sha)
         allowed = sorted(
-            (item for item in tree if binding.allows_path(item.path)),
+            (item for item in tree if binding.allows_document(item.path)),
             key=lambda item: item.path,
         )
         seen_paths: set[str] = set()
@@ -449,7 +480,36 @@ class GitHubSyncService:
             existing = await self.sources.find_source_object(
                 binding.project_id, binding.binding_version, SourceKind.DOCUMENT, normalized
             )
-            content = await read_github(client, "get_blob", item.blob_sha)
+            try:
+                content = await read_github(client, "get_blob", item.blob_sha)
+            except GitHubReadError as exc:
+                if exc.status_code != UNSUPPORTED_CONTENT_STATUS:
+                    raise
+                reason = "blob is not UTF-8 Markdown (415)"
+                outcome.read_errors.append(f"{normalized}: {reason}")
+                if existing is None:
+                    source_id = await self._new_document_identity(binding, normalized)
+                    outcome.unreadable_documents.append(
+                        SourceObject(
+                            source_id=source_id,
+                            project_id=binding.project_id,
+                            binding_version=binding.binding_version,
+                            kind=SourceKind.DOCUMENT,
+                            external_id=normalized,
+                            title=normalized.rsplit("/", 1)[-1],
+                            availability=SourceAvailability.UNAVAILABLE,
+                            unavailable_reason=reason,
+                        )
+                    )
+                elif (
+                    existing.availability is SourceAvailability.UNAVAILABLE
+                    and existing.unavailable_reason == reason
+                ):
+                    continue
+                else:
+                    source_id = existing.source_id
+                outcome.takedowns.append((source_id, SourceAvailability.UNAVAILABLE, reason))
+                continue
             now = self.clock.now()
             source_id = (
                 existing.source_id
@@ -462,6 +522,9 @@ class GitHubSyncService:
             if existing is not None:
                 latest = await self.sources.latest_revision(source_id)
                 if latest is not None and latest.content_hash == content_hash(content):
+                    # Same content, e.g. a deleted file restored as it was.
+                    if _needs_restore(existing):
+                        outcome.restores.append(source_id)
                     continue
             revision = SourceRevision(
                 revision_id=new_revision_id(),
@@ -492,18 +555,21 @@ class GitHubSyncService:
                 metadata=metadata,
             )
             outcome.writes.append((obj, revision))
-        # Full-tree enumeration: a previously available path missing now is a
-        # confirmed deletion (§5.4); partial reads never run this branch.
+        # The tree enumeration completed, even if an individual blob failed.
+        # Absence from that tree confirms deletion (§5.4).
         stored_docs = await self.sources.list_source_objects(
             binding.project_id, binding.binding_version, kind=SourceKind.DOCUMENT
         )
         for doc in stored_docs:
-            available = doc.availability is SourceAvailability.AVAILABLE
-            if available and doc.external_id not in seen_paths:
+            visible_or_unavailable = doc.availability in (
+                SourceAvailability.AVAILABLE,
+                SourceAvailability.UNAVAILABLE,
+            )
+            if visible_or_unavailable and doc.external_id not in seen_paths:
                 outcome.takedowns.append(
                     (doc.source_id, SourceAvailability.DELETED, "missing from complete tree")
                 )
-        if outcome.writes or outcome.takedowns:
+        if outcome.writes or outcome.takedowns or outcome.restores:
             outcome.result = "refreshed"
         return outcome
 
@@ -616,6 +682,9 @@ class GitHubSyncService:
         )
         existing = await self.sources.get_source_object(identity.source_id())
         latest = await self.sources.latest_revision(identity.source_id())
+        # The platform just answered for this object, so an earlier 403/404
+        # (or a deletion inferred from a recheck) is over.
+        restores = [identity.source_id()] if _needs_restore(existing) else []
         # Stale notification guard: an older payload never rolls the object
         # back (§5.3); equal timestamps fall through to content dedup.
         if (
@@ -623,14 +692,22 @@ class GitHubSyncService:
             and latest.source_updated_at is not None
             and updated_at < latest.source_updated_at
         ):
-            return RefreshOutcome(result="stale_skipped", detail=f"#{number} payload older")
+            return RefreshOutcome(
+                result="refreshed" if restores else "stale_skipped",
+                restores=restores,
+                detail=f"#{number} payload older",
+            )
         now = self.clock.now()
         metadata = dict(extra_metadata)
         payload_hash = canonical_payload_hash(payload)
         # Content-level dedup before queueing: unchanged observations queue no
         # writes; the transactional commit re-checks defensively anyway.
         if latest is not None and latest.content_hash == payload_hash:
-            return RefreshOutcome(result="unchanged", detail=f"#{number} unchanged")
+            return RefreshOutcome(
+                result="refreshed" if restores else "unchanged",
+                restores=restores,
+                detail=f"#{number} unchanged",
+            )
         revision = SourceRevision(
             revision_id=new_revision_id(),
             source_id=identity.source_id(),
@@ -666,15 +743,34 @@ class GitHubSyncService:
         return RefreshOutcome(result="refreshed", writes=[(obj, revision)])
 
     async def _refresh_comments(
-        self, binding: ProjectSourceBinding, client: GitHubReadClient, number: int
+        self,
+        binding: ProjectSourceBinding,
+        client: GitHubReadClient,
+        number: int,
+        on_pull_request: bool = False,
     ) -> RefreshOutcome:
-        """Sub-object edits refresh independently of the parent's updated_at."""
-        parent_kind = (
-            SourceKind.PULL_REQUEST if number in binding.explicit_pr_ids else SourceKind.ISSUE
+        """Sub-object edits refresh independently of the parent's updated_at.
+
+        The parent kind comes from the event (``issue.pull_request``) or an
+        explicit PR id; a PR picked by the milestone selector is not in
+        ``explicit_pr_ids``, so the stored object decides when the event is
+        silent.
+        """
+        is_pr = on_pull_request or number in binding.explicit_pr_ids
+        candidates = (
+            (SourceKind.PULL_REQUEST, SourceKind.ISSUE)
+            if is_pr
+            else (SourceKind.ISSUE, SourceKind.PULL_REQUEST)
         )
-        stored_parent = await self.sources.find_source_object(
-            binding.project_id, binding.binding_version, parent_kind, str(number)
-        )
+        stored_parent = None
+        parent_kind = candidates[0]
+        for kind in candidates:
+            stored_parent = await self.sources.find_source_object(
+                binding.project_id, binding.binding_version, kind, str(number)
+            )
+            if stored_parent is not None:
+                parent_kind = kind
+                break
         if stored_parent is None:
             return RefreshOutcome(result="ignored", detail="parent not in scope")
         outcome = RefreshOutcome(result="unchanged")
@@ -697,6 +793,8 @@ class GitHubSyncService:
                 if existing is not None:
                     latest = await self.sources.latest_revision(identity.source_id())
                     if latest is not None and latest.content_hash == payload_hash:
+                        if _needs_restore(existing):
+                            outcome.restores.append(identity.source_id())
                         continue
                 now = self.clock.now()
                 metadata = {
@@ -742,7 +840,7 @@ class GitHubSyncService:
             if len(batch) < 50:
                 break
             page += 1
-        if outcome.writes:
+        if outcome.writes or outcome.restores:
             outcome.result = "refreshed"
         return outcome
 
@@ -776,6 +874,8 @@ class GitHubSyncService:
                 if existing is not None:
                     latest = await self.sources.latest_revision(identity.source_id())
                     if latest is not None and latest.content_hash == payload_hash:
+                        if _needs_restore(existing):
+                            outcome.restores.append(identity.source_id())
                         continue
                 now = self.clock.now()
                 metadata = {
@@ -819,7 +919,7 @@ class GitHubSyncService:
             if len(batch) < 50:
                 break
             page += 1
-        if outcome.writes:
+        if outcome.writes or outcome.restores:
             outcome.result = "refreshed"
         return outcome
 
@@ -895,26 +995,38 @@ class GitHubSyncService:
                 binding.project_id, binding.binding_version, kind=kind
             )
             for obj in stored_objects:
-                if obj.availability is SourceAvailability.AVAILABLE and obj.external_id not in seen:
+                visible_or_unavailable = obj.availability in (
+                    SourceAvailability.AVAILABLE,
+                    SourceAvailability.UNAVAILABLE,
+                )
+                if visible_or_unavailable and obj.external_id not in seen:
                     await self.sources.set_source_availability(
                         obj.source_id,
                         SourceAvailability.DELETED,
                         "missing from complete recheck enumeration",
+                        platform_observation=True,
                     )
                     taken_down += 1
         return taken_down
 
     async def periodic_recheck_if_due(self, project_id: str) -> bool:
-        """Runs the recheck when the configured interval has elapsed."""
-        latest = await self.runs.latest_run(project_id)
-        if latest is None:
+        """Runs the recheck when the configured interval has elapsed.
+
+        The interval counts from the last *full* read (import or recheck). A
+        webhook drain that wrote nothing has no success time, and a drain that
+        wrote one object did not re-read the scope, so neither may postpone or
+        suppress the recheck.
+        """
+        binding = await self.sources.get_active_binding(project_id)
+        if binding is None:
             return False
-        if latest.checkpoint is None or latest.checkpoint.last_success_at is None:
-            return False
-        due_at = latest.checkpoint.last_success_at + timedelta(
-            seconds=self.recheck_interval_seconds
+        latest = await self.runs.latest_complete_read(
+            project_id, binding.binding_version, binding.access_epoch, FULL_READ_REASONS
         )
-        if self.clock.now() < due_at:
+        last_success = latest.checkpoint.last_success_at if latest and latest.checkpoint else None
+        if last_success and self.clock.now() < last_success + timedelta(
+            seconds=self.recheck_interval_seconds
+        ):
             return False
         report = await self.manual_recheck(project_id)
         return report is not None
@@ -922,23 +1034,9 @@ class GitHubSyncService:
     async def recheck_all_due(self) -> list[str]:
         """Periodic entry point: rechecks every project whose interval elapsed."""
         checked: list[str] = []
-        async with self.db.session() as session:
-            from sqlalchemy import select
-
-            from orgpilot.storage.models import ProjectSourceBindingRecord
-
-            records = list(
-                (
-                    await session.execute(
-                        select(ProjectSourceBindingRecord).where(
-                            ProjectSourceBindingRecord.enabled.is_(True)
-                        )
-                    )
-                ).scalars()
-            )
-        for record in records:
-            if await self.periodic_recheck_if_due(record.project_id):
-                checked.append(record.project_id)
+        for binding in await self.sources.list_active_bindings():
+            if await self.periodic_recheck_if_due(binding.project_id):
+                checked.append(binding.project_id)
         return checked
 
     # ------------------------------------------------------------- recovery

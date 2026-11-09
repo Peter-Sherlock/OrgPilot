@@ -180,41 +180,50 @@ class SourceImporter:
             reason=SyncRunReason.INITIAL_IMPORT,
             candidate_manifest={"scope": self._scope_manifest(binding)},
         )
-        report = ImportReport(
-            project_id=binding.project_id,
-            binding_version=binding.binding_version,
-            access_epoch=binding.access_epoch,
-            repository_id=repo.repository_id,
-            repository_full_name=repo.full_name,
-            pinned_commit_sha=(
-                await read_github(self.client, "get_branch_head", binding.branch)
-            ).sha,
-            run_id=run_id,
-            started_at=started_at,
-        )
-        await self._import_documents(binding, report)
-        issue_scope, pr_scope = await self._collect_work_items(binding, report)
-        await self._import_issues(binding, report, issue_scope)
-        await self._import_pull_requests(binding, report, pr_scope)
-        await self._import_sub_items(binding, report, issue_scope, pr_scope)
-        self._finalize_coverage(report)
-        report.seen_external_ids = {kind: set(ids) for kind, ids in self._seen.items()}
-        await self.runs.save_checkpoint(
-            run_id,
-            per_source_cursor={"pinned_commit": report.pinned_commit_sha},
-            coverage=dict(report.coverage),
-            last_success_at=self.clock.now(),
-        )
-        run_state = _run_state_for(report)
-        await self.runs.set_run_state(
-            run_id,
-            run_state,
-            error=(
-                None
-                if run_state is SyncRunState.COMPLETED and report.fully_complete
-                else f"coverage: {report.coverage_summary()}"
-            ),
-        )
+        try:
+            report = ImportReport(
+                project_id=binding.project_id,
+                binding_version=binding.binding_version,
+                access_epoch=binding.access_epoch,
+                repository_id=repo.repository_id,
+                repository_full_name=repo.full_name,
+                pinned_commit_sha=(
+                    await read_github(self.client, "get_branch_head", binding.branch)
+                ).sha,
+                run_id=run_id,
+                started_at=started_at,
+            )
+            await self._import_documents(binding, report)
+            issue_scope, pr_scope = await self._collect_work_items(binding, report)
+            await self._import_issues(binding, report, issue_scope)
+            await self._import_pull_requests(binding, report, pr_scope)
+            await self._import_sub_items(binding, report, issue_scope, pr_scope)
+            self._finalize_coverage(report)
+            report.seen_external_ids = {kind: set(ids) for kind, ids in self._seen.items()}
+            run_state = _run_state_for(report)
+            async with self.runs.db.session() as session:
+                await self.runs.save_checkpoint(
+                    run_id,
+                    per_source_cursor={"pinned_commit": report.pinned_commit_sha},
+                    coverage=dict(report.coverage),
+                    last_success_at=self.clock.now() if report.fully_complete else None,
+                    session=session,
+                )
+                await self.runs.set_run_state(
+                    run_id,
+                    run_state,
+                    error=(
+                        None if report.fully_complete else f"coverage: {report.coverage_summary()}"
+                    ),
+                    session=session,
+                )
+        except Exception as exc:
+            # An aborted import is a failed run, not one left "running" until
+            # the next restart abandons it.
+            await self.runs.set_run_state(
+                run_id, SyncRunState.FAILED, error=f"import aborted: {exc}"[:500]
+            )
+            raise
         report.finished_at = self.clock.now()
         return report
 
@@ -236,7 +245,7 @@ class SourceImporter:
             )
             report.coverage[SourceKind.DOCUMENT.value] = CoverageStatus.FAILED.value
             return
-        allowed = [entry for entry in tree if binding.allows_path(entry.path)]
+        allowed = [entry for entry in tree if binding.allows_document(entry.path)]
         allowed.sort(key=lambda entry: entry.path)
         if len(allowed) > self.limits.max_documents:
             for entry in allowed[self.limits.max_documents :]:
@@ -311,9 +320,25 @@ class SourceImporter:
         matched = len(pr_scope)
         beyond_cap = 0
         while True:
-            batch = await read_github(
-                self.client, "list_issues", state="all", page=page, per_page=50
-            )
+            try:
+                batch = await read_github(
+                    self.client, "list_issues", state="all", page=page, per_page=50
+                )
+            except GitHubReadError as exc:
+                # A failed listing hides every selected issue (and any PR found
+                # through the milestone), so it is recorded as missing coverage
+                # instead of aborting the whole import.
+                reason = f"issue listing page {page} failed: {exc}"
+                selector = binding.issue_selector
+                if selector.milestone is not None or selector.issue_ids:
+                    report.failures.append(
+                        ImportFailure(SourceKind.ISSUE.value, "*", reason, exc.status_code)
+                    )
+                if selector.milestone is not None:
+                    report.failures.append(
+                        ImportFailure(SourceKind.PULL_REQUEST.value, "*", reason, exc.status_code)
+                    )
+                break
             if not batch:
                 break
             for item in batch:
@@ -715,7 +740,6 @@ class SourceImporter:
             source_updated_at=source_updated_at,
             metadata=metadata,
         )
-        await self.sources.upsert_source_object(obj)
         revision_content_hash = (
             canonical_payload_hash(payload_for_hash)
             if payload_for_hash is not None
@@ -736,7 +760,10 @@ class SourceImporter:
             source_updated_at=source_updated_at,
             observed_at=now,
         )
-        await self.sources.record_revision(revision)
+        async with self.sources.db.session() as session:
+            await self.sources.upsert_source_object(obj, session)
+            await self.sources.record_revision(revision, session)
+            await self.sources.restore_observed_availability(source_id, session)
 
     async def _mark_object_unavailable(
         self,
@@ -761,6 +788,7 @@ class SourceImporter:
             identity.source_id(),
             SourceAvailability.UNAVAILABLE,
             f"platform status {exc.status_code}",
+            platform_observation=True,
         )
 
     # -- coverage -------------------------------------------------------------------
