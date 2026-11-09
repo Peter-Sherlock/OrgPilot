@@ -4,16 +4,58 @@ from decimal import Decimal
 
 import pytest
 
-from orgpilot.knowledge.answerer import ProjectAnswerDecision
+from orgpilot.knowledge.answerer import (
+    ProjectAnswerDecision,
+    ReadLoopView,
+    ScriptedAnswerGenerator,
+    decision_wire,
+    estimate_tokens,
+)
 from orgpilot.knowledge.models import (
     AnswerStatus,
     BudgetLimits,
     BudgetUsage,
+    EvidenceRef,
     GroundedStatement,
+    SourceKind,
     StopReason,
 )
 from tests.test_project_read_loop import make_loop
 from tests.test_project_review_regressions import material_fixture  # noqa: F401
+
+
+@pytest.mark.parametrize(("limit", "kind"), [(1024, "finish"), (220, "finish"), (80, "report_gap")])
+async def test_scripted_finish_fits_output_limit_with_the_relevant_quote(limit, kind):
+    row = "| `DEMO_WRITES` | `false` | 写入工具仅在显式开启后才存在 |"
+    ref = EvidenceRef(
+        revision_id="rev-config",
+        source_id="src-config",
+        kind=SourceKind.DOCUMENT,
+        paragraph="配置#L3-L8",
+        snippet="背景说明" * 1100 + "\n\n| 变量 | 默认值 | 说明 |\n| --- | --- | --- |\n" + row,
+    )
+    weak = ref.model_copy(update={"paragraph": "术语#L9-L10", "snippet": "工具分类见目录。"})
+    view = ReadLoopView(
+        round_number=2,
+        question="写入工具默认是否开启？",
+        brief="",
+        evidence=(ref, weak),
+        unresolved=(),
+        remaining=BudgetUsage(),
+        limits_summary="",
+        max_output_tokens=limit,
+    )
+    decision = await ScriptedAnswerGenerator().decide(view)
+
+    assert decision.kind == kind
+    assert estimate_tokens(decision_wire(decision)) <= limit
+    if kind == "finish":
+        (statement,) = decision.statements
+        assert "默认值 `false`" in statement.text
+        assert "仅在显式开启后才存在" in statement.text
+        assert statement.evidence_refs == (ref.model_copy(update={"snippet": row}),)
+    else:
+        assert not decision.statements
 
 
 class PricedGenerator:
