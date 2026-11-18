@@ -3,9 +3,13 @@
 from collections import defaultdict
 from datetime import datetime
 
+from orgpilot.coordination.dependency_wait import leads_upstream_question, wait_case_id
 from orgpilot.domain.enums import (
+    ActionType,
     ClaimStatus,
+    CoordinationCaseKind,
     CoordinationCaseStatus,
+    DependencyWaitStatus,
     HealthStatus,
     WorkflowStatus,
 )
@@ -14,6 +18,7 @@ from orgpilot.domain.models import (
     CoordinationAction,
     CoordinationCase,
     DependencyImpact,
+    DependencyWait,
     OrgState,
     TaskHealthClaim,
     TaskState,
@@ -119,8 +124,13 @@ class CaseLedger:
         for impact in impacts:
             impacted_by_source[impact.source_task_id].append(impact.impacted_task_id)
 
+        self._reconcile_wait_cases(state, current_time)
+
         for case in list(self._cases.values()):
-            if case.status not in _ACTIVE_STATUSES:
+            if (
+                case.status not in _ACTIVE_STATUSES
+                or case.kind is CoordinationCaseKind.DEPENDENCY_WAIT
+            ):
                 continue
 
             task = state.tasks.get(case.source_task_id)
@@ -253,6 +263,76 @@ class CaseLedger:
                 self._cases[case_id] = new_case
 
         return self.get_all_cases()
+
+    def _reconcile_wait_cases(self, state: OrgState, current_time: datetime) -> None:
+        """Keeps one case per wait in step with the projected wait (ADR-0016 §2.5).
+
+        These cases have no response timeout: nobody is chased on a timer.
+        """
+        for wait in sorted(state.dependency_waits.values(), key=lambda item: item.wait_id):
+            case_id = wait_case_id(wait.wait_id)
+            case = self._cases.get(case_id)
+            if case is None:
+                if wait.status is not DependencyWaitStatus.RELEASED:
+                    self._cases[case_id] = CoordinationCase(
+                        case_id=case_id,
+                        source_task_id=wait.waiting_task_id,
+                        status=CoordinationCaseStatus.OPEN,
+                        kind=CoordinationCaseKind.DEPENDENCY_WAIT,
+                        dependency_wait_id=wait.wait_id,
+                        created_at=current_time,
+                        updated_at=current_time,
+                    )
+                continue
+            if case.status not in _ACTIVE_STATUSES:
+                continue
+
+            if wait.status is DependencyWaitStatus.RELEASED:
+                reason = wait.release_reason.value if wait.release_reason else "released"
+                self.transition(
+                    case_id,
+                    CoordinationCaseStatus.CANCELLED,
+                    current_time,
+                    terminal_reason=f"wait released: {reason}",
+                    candidate_actions=(),
+                )
+            elif (
+                case.status is CoordinationCaseStatus.WAITING_FOR_RESPONSE
+                and self._wait_needs_action(case, wait, state)
+            ):
+                self.transition(case_id, CoordinationCaseStatus.OPEN, current_time)
+
+    def unreachable_wait_ids(self) -> frozenset[str]:
+        """Waits whose case escalated, so their question reached nobody."""
+        return frozenset(
+            case.dependency_wait_id
+            for case in self._cases.values()
+            if case.kind is CoordinationCaseKind.DEPENDENCY_WAIT
+            and case.status is CoordinationCaseStatus.ESCALATED
+            and case.dependency_wait_id is not None
+        )
+
+    def _wait_needs_action(
+        self, case: CoordinationCase, wait: DependencyWait, state: OrgState
+    ) -> bool:
+        """An estimate to relay, a new upstream owner, or a question this wait now inherits."""
+        if wait.status is DependencyWaitStatus.ESTIMATED:
+            return True
+        upstream = state.tasks.get(wait.upstream_task_id)
+        if upstream is None:
+            return False
+        owner = upstream.owner_id
+        if case.waiting_for != owner:
+            return True
+        asked_owner = any(
+            command.action_type is ActionType.ASK_DEPENDENCY_ETA and command.targets == (owner,)
+            for command in case.executed_commands
+        )
+        return (
+            not asked_owner
+            and owner != wait.reported_by
+            and leads_upstream_question(wait, state, self.unreachable_wait_ids())
+        )
 
     @staticmethod
     def _estimate_misses_deadline(task: TaskState, active_claims: list[TaskHealthClaim]) -> bool:

@@ -12,7 +12,10 @@ from orgpilot.domain.enums import (
     ClaimStatus,
     CommandStatus,
     CommitmentStatus,
+    CoordinationCaseKind,
     CoordinationCaseStatus,
+    DependencyWaitReleaseReason,
+    DependencyWaitStatus,
     HealthStatus,
     PolicyDisposition,
     RiskLevel,
@@ -75,6 +78,25 @@ class Commitment(StrictModel):
     status: CommitmentStatus = CommitmentStatus.ACTIVE
     superseded_by: str | None = None
     last_update_at: datetime
+
+
+class DependencyWait(StrictModel):
+    """One member's reported wait on a formal upstream task (ADR-0016 §2.2)."""
+
+    wait_id: str
+    waiting_task_id: str
+    upstream_task_id: str
+    reported_by: str
+    quote: str
+    status: DependencyWaitStatus = DependencyWaitStatus.AWAITING_ESTIMATE
+    evidence_event_ids: tuple[str, ...] = ()
+    estimated_at: datetime | None = None
+    estimated_by: str | None = None
+    estimate_quote: str | None = None
+    release_reason: DependencyWaitReleaseReason | None = None
+    released_by_event_id: str | None = None
+    opened_at: datetime
+    updated_at: datetime
 
 
 class DependencyImpact(StrictModel):
@@ -148,11 +170,15 @@ class CoordinationCase(StrictModel):
     case_id: str
     source_task_id: str
     status: CoordinationCaseStatus
+    kind: CoordinationCaseKind = CoordinationCaseKind.TASK_HEALTH
+    dependency_wait_id: str | None = None
     evidence_claim_ids: tuple[str, ...] = ()
     impacted_task_ids: tuple[str, ...] = ()
     missing_information: tuple[str, ...] = ()
     candidate_actions: tuple[CoordinationAction, ...] = ()
     executed_commands: tuple[ActionCommand, ...] = ()
+    # Action ids whose message was attempted but not delivered (ADR-0016).
+    delivery_failures: tuple[str, ...] = ()
     # Persist episode identity and its deduplication boundary without dropping history.
     generation: int = Field(default=0, ge=0)
     episode_command_start: int = Field(default=0, ge=0)
@@ -194,5 +220,6 @@ class OrgState(StrictModel):
     tasks: dict[str, TaskState] = Field(default_factory=dict)
     health_claims: dict[str, TaskHealthClaim] = Field(default_factory=dict)
     commitments: dict[str, Commitment] = Field(default_factory=dict)
+    dependency_waits: dict[str, DependencyWait] = Field(default_factory=dict)
     processed_event_ids: set[str] = Field(default_factory=set)
     last_event_id: str | None = None

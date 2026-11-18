@@ -46,12 +46,36 @@ class CoordinationCaseStatus(StrEnum):
     ESCALATED = "escalated"
 
 
+class CoordinationCaseKind(StrEnum):
+    """Which lifecycle rules a case follows (ADR-0016 §2.5)."""
+
+    TASK_HEALTH = "task_health"
+    DEPENDENCY_WAIT = "dependency_wait"
+
+
+class DependencyWaitStatus(StrEnum):
+    """Progress of one reported wait; an estimate never releases it (ADR-0016 §2.1)."""
+
+    AWAITING_ESTIMATE = "awaiting_estimate"
+    ESTIMATED = "estimated"
+    RELEASED = "released"
+
+
+class DependencyWaitReleaseReason(StrEnum):
+    UPSTREAM_DONE = "upstream_done"
+    WAITER_DONE = "waiter_done"
+    CANCELLED_BY_WAITER = "cancelled_by_waiter"
+
+
 class ActionType(StrEnum):
     ASK_RECOVERY_ESTIMATE = "ask_recovery_estimate"
     ASK_CLARIFICATION = "ask_clarification"
     PROPOSE_RESCHEDULE = "propose_reschedule"
     NOTIFY_GROUP = "notify_group"
     UPDATE_TASK = "update_task"
+    ASK_DEPENDENCY_ETA = "ask_dependency_eta"
+    NOTIFY_WAIT_OPENED = "notify_wait_opened"
+    RELAY_DELIVERY_ESTIMATE = "relay_delivery_estimate"
 
 
 class CommandStatus(StrEnum):
