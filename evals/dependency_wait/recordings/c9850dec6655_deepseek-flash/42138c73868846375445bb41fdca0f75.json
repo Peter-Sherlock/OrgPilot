@@ -1,0 +1,51 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "42138c73868846375445bb41fdca0f75",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 138,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2816,
+    "output_tokens": 174,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-11-18T13:07:30.154029+00:00",
+  "response": {
+    "id": "f640b572-2569-49dc-b8f1-7acb182d0b46",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_mhKoEiANSigewhjsrGm53795",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "这是假设句（“如果……就得……”），不产生状态变更；提到依赖支付接口未交付，属于对依赖方的等待说明。按规则假设永远不产生状态变更，仅识别为 dependency_wait。",
+          "items": [
+            {
+              "intent": "dependency_wait",
+              "speech_act": "hypothetical",
+              "polarity": "negative",
+              "certainty": "hedged",
+              "source_quote": "如果支付接口明天还不给，结算页面就得等到下周了",
+              "confidence": 0.72
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 138,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2816,
+      "output_tokens": 174,
+      "service_tier": "standard"
+    }
+  }
+}

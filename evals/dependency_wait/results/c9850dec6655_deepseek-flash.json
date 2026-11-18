@@ -1,0 +1,1898 @@
+{
+  "cases": [
+    {
+      "category": "explicit_wait",
+      "clarified": null,
+      "duplicate_actions": [],
+      "estimate_correct": null,
+      "fallback": false,
+      "group": "should_open",
+      "hard": false,
+      "id": "explicit_01",
+      "localized": true,
+      "missing_contacts": [],
+      "observed": {
+        "contacts": [
+          {
+            "action": "ask_dependency_eta",
+            "subject": "checkout_page->pay_api",
+            "target": "ou_hechuan"
+          },
+          {
+            "action": "notify_wait_opened",
+            "subject": "checkout_page->pay_api",
+            "target": "ou_pm"
+          }
+        ],
+        "model_items": [
+          {
+            "answers_pending": false,
+            "items": [
+              {
+                "blocker": "在等支付接口",
+                "certainty": "certain",
+                "confidence": 0.9,
+                "expected_completion": null,
+                "health_status": "at_risk",
+                "intent": "report_status",
+                "polarity": "affirmative",
+                "source_quote": "结算页面在等支付接口",
+                "speech_act": "statement",
+                "task_id": "checkout_page",
+                "time_expression": null
+              }
+            ]
+          }
+        ],
+        "reply_categories": [
+          "claim_recorded"
+        ],
+        "reply_texts": [
+          "已记录：【结算页面】在等【支付接口】。已向 何川 确认交付时间，并告知 PM，有回复后我会转告你。"
+        ],
+        "waits": [
+          {
+            "estimated_at": null,
+            "status": "awaiting_estimate",
+            "upstream": "pay_api",
+            "waiting": "checkout_page"
+          }
+        ]
+      },
+      "passed": true,
+      "reasons": [],
+      "wrong_contacts": [],
+      "wrong_contacts_to_others": []
+    },
+    {
+      "category": "explicit_wait",
+      "clarified": null,
+      "duplicate_actions": [],
+      "estimate_correct": null,
+      "fallback": false,
+      "group": "should_open",
+      "hard": false,
+      "id": "explicit_02",
+      "localized": true,
+      "missing_contacts": [],
+      "observed": {
+        "contacts": [
+          {
+            "action": "ask_dependency_eta",
+            "subject": "e2e_test->checkout_page",
+            "target": "ou_linyue"
+          },
+          {
+            "action": "notify_wait_opened",
+            "subject": "e2e_test->checkout_page",
+            "target": "ou_pm"
+          }
+        ],
+        "model_items": [
+          {
+            "answers_pending": false,
+            "items": [
+              {
+                "blocker": "在等结算页面提测",
+                "certainty": "certain",
+                "confidence": 0.9,
+                "expected_completion": null,
+                "health_status": "at_risk",
+                "intent": "report_status",
+                "polarity": "affirmative",
+                "source_quote": "全链路联调在等结算页面提测",
+                "speech_act": "statement",
+                "task_id": "e2e_test",
+                "time_expression": null
+              }
+            ]
+          }
+        ],
+        "reply_categories": [
+          "claim_recorded"
+        ],
+        "reply_texts": [
+          "已记录：【全链路联调】在等【结算页面】。已向 林悦 确认交付时间，并告知 PM，有回复后我会转告你。"
+        ],
+        "waits": [
+          {
+            "estimated_at": null,
+            "status": "awaiting_estimate",
+            "upstream": "checkout_page",
+            "waiting": "e2e_test"
+          }
+        ]
+      },
+      "passed": true,
+      "reasons": [],
+      "wrong_contacts": [],
+      "wrong_contacts_to_others": []
+    },
+    {
+      "category": "explicit_wait",
+      "clarified": null,
+      "duplicate_actions": [],
+      "estimate_correct": null,
+      "fallback": false,
+      "group": "should_open",
+      "hard": false,
+      "id": "explicit_03",
+      "localized": false,
+      "missing_contacts": [
+        [
+          "ask_dependency_eta",
+          "ou_hechuan"
+        ],
+        [
+          "notify_wait_opened",
+          "ou_pm"
+        ]
+      ],
+      "observed": {
+        "contacts": [
+          {
+            "action": "ask_recovery_estimate",
+            "subject": "checkout_page",
+            "target": "ou_linyue"
+          }
+        ],
+        "model_items": [
+          {
+            "answers_pending": false,
+            "items": [
+              {
+                "blocker": "等接口",
+                "certainty": "certain",
+                "confidence": 0.75,
+                "expected_completion": null,
+                "health_status": "at_risk",
+                "intent": "report_status",
+                "polarity": "affirmative",
+                "source_quote": "还在等接口",
+                "speech_act": "statement",
+                "task_id": "checkout_page",
+                "time_expression": null
+              }
+            ]
+          }
+        ],
+        "reply_categories": [
+          "claim_recorded"
+        ],
+        "reply_texts": [
+          "已记录：结算页面 → 有风险（阻塞：等接口）"
+        ],
+        "waits": []
+      },
+      "passed": false,
+      "reasons": [
+        "等待状态不符：期望 [('checkout_page', 'pay_api', 'awaiting_estimate')]，实际 []",
+        "错误联系：ask_recovery_estimate -> ou_linyue",
+        "漏联系：ask_dependency_eta -> ou_hechuan",
+        "漏联系：notify_wait_opened -> ou_pm"
+      ],
+      "wrong_contacts": [
+        [
+          "ask_recovery_estimate",
+          "ou_linyue"
+        ]
+      ],
+      "wrong_contacts_to_others": []
+    },
+    {
+      "category": "explicit_wait",
+      "clarified": null,
+      "duplicate_actions": [],
+      "estimate_correct": null,
+      "fallback": false,
+      "group": "should_open",
+      "hard": true,
+      "id": "explicit_04",
+      "localized": false,
+      "missing_contacts": [
+        [
+          "ask_dependency_eta",
+          "ou_hechuan"
+        ],
+        [
+          "notify_wait_opened",
+          "ou_pm"
+        ]
+      ],
+      "observed": {
+        "contacts": [
+          {
+            "action": "ask_recovery_estimate",
+            "subject": "checkout_page",
+            "target": "ou_linyue"
+          }
+        ],
+        "model_items": [
+          {
+            "answers_pending": false,
+            "items": [
+              {
+                "blocker": "支付接口还没给",
+                "certainty": "certain",
+                "confidence": 0.9,
+                "expected_completion": null,
+                "health_status": "at_risk",
+                "intent": "report_status",
+                "polarity": "negative",
+                "source_quote": "支付接口还没给，结算页面只能先等着",
+                "speech_act": "statement",
+                "task_id": "checkout_page",
+                "time_expression": null
+              }
+            ]
+          }
+        ],
+        "reply_categories": [
+          "claim_recorded"
+        ],
+        "reply_texts": [
+          "已记录：结算页面 → 有风险（阻塞：支付接口还没给）"
+        ],
+        "waits": []
+      },
+      "passed": false,
+      "reasons": [
+        "等待状态不符：期望 [('checkout_page', 'pay_api', 'awaiting_estimate')]，实际 []",
+        "错误联系：ask_recovery_estimate -> ou_linyue",
+        "漏联系：ask_dependency_eta -> ou_hechuan",
+        "漏联系：notify_wait_opened -> ou_pm"
+      ],
+      "wrong_contacts": [
+        [
+          "ask_recovery_estimate",
+          "ou_linyue"
+        ]
+      ],
+      "wrong_contacts_to_others": []
+    },
+    {
+      "category": "explicit_wait",
+      "clarified": null,
+      "duplicate_actions": [],
+      "estimate_correct": null,
+      "fallback": false,
+      "group": "should_open",
+      "hard": true,
+      "id": "explicit_05",
+      "localized": false,
+      "missing_contacts": [
+        [
+          "ask_dependency_eta",
+          "ou_hechuan"
+        ],
+        [
+          "notify_wait_opened",
+          "ou_pm"
+        ]
+      ],
+      "observed": {
+        "contacts": [
+          {
+            "action": "ask_recovery_estimate",
+            "subject": "checkout_page",
+            "target": "ou_linyue"
+          }
+        ],
+        "model_items": [
+          {
+            "answers_pending": false,
+            "items": [
+              {
+                "blocker": "被支付接口卡住了",
+                "certainty": "certain",
+                "confidence": 0.9,
+                "expected_completion": null,
+                "health_status": "at_risk",
+                "intent": "report_status",
+                "polarity": "affirmative",
+                "source_quote": "结算页面被支付接口卡住了，做不下去",
+                "speech_act": "statement",
+                "task_id": "checkout_page",
+                "time_expression": null
+              }
+            ]
+          }
+        ],
+        "reply_categories": [
+          "claim_recorded"
+        ],
+        "reply_texts": [
+          "已记录：结算页面 → 有风险（阻塞：被支付接口卡住了）"
+        ],
+        "waits": []
+      },
+      "passed": false,
+      "reasons": [
+        "等待状态不符：期望 [('checkout_page', 'pay_api', 'awaiting_estimate')]，实际 []",
+        "错误联系：ask_recovery_estimate -> ou_linyue",
+        "漏联系：ask_dependency_eta -> ou_hechuan",
+        "漏联系：notify_wait_opened -> ou_pm"
+      ],
+      "wrong_contacts": [
+        [
+          "ask_recovery_estimate",
+          "ou_linyue"
+        ]
+      ],
+      "wrong_contacts_to_others": []
+    },
+    {
+      "category": "vague_upstream",
+      "clarified": false,
+      "duplicate_actions": [],
+      "estimate_correct": null,
+      "fallback": false,
+      "group": "should_not_open",
+      "hard": false,
+      "id": "vague_01",
+      "localized": true,
+      "missing_contacts": [],
+      "observed": {
+        "contacts": [
+          {
+            "action": "ask_recovery_estimate",
+            "subject": "checkout_page",
+            "target": "ou_linyue"
+          }
+        ],
+        "model_items": [
+          {
+            "answers_pending": false,
+            "items": [
+              {
+                "blocker": "在等后端",
+                "certainty": "certain",
+                "confidence": 0.75,
+                "expected_completion": null,
+                "health_status": "at_risk",
+                "intent": "report_status",
+                "polarity": "affirmative",
+                "source_quote": "页面在等后端",
+                "speech_act": "statement",
+                "task_id": "checkout_page",
+                "time_expression": null
+              }
+            ]
+          }
+        ],
+        "reply_categories": [
+          "claim_recorded"
+        ],
+        "reply_texts": [
+          "已记录：结算页面 → 有风险（阻塞：在等后端）"
+        ],
+        "waits": []
+      },
+      "passed": false,
+      "reasons": [
+        "错误联系：ask_recovery_estimate -> ou_linyue",
+        "应回问发送者，但没有回问"
+      ],
+      "wrong_contacts": [
+        [
+          "ask_recovery_estimate",
+          "ou_linyue"
+        ]
+      ],
+      "wrong_contacts_to_others": []
+    },
+    {
+      "category": "vague_upstream",
+      "clarified": false,
+      "duplicate_actions": [],
+      "estimate_correct": null,
+      "fallback": false,
+      "group": "should_not_open",
+      "hard": false,
+      "id": "vague_02",
+      "localized": true,
+      "missing_contacts": [],
+      "observed": {
+        "contacts": [
+          {
+            "action": "ask_recovery_estimate",
+            "subject": "e2e_test",
+            "target": "ou_suhang"
+          }
+        ],
+        "model_items": [
+          {
+            "answers_pending": false,
+            "items": [
+              {
+                "blocker": "还在等那边给结果",
+                "certainty": "certain",
+                "confidence": 0.72,
+                "expected_completion": null,
+                "health_status": "at_risk",
+                "intent": "report_status",
+                "polarity": "affirmative",
+                "source_quote": "还在等那边给结果",
+                "speech_act": "statement",
+                "task_id": "e2e_test",
+                "time_expression": null
+              }
+            ]
+          }
+        ],
+        "reply_categories": [
+          "claim_recorded"
+        ],
+        "reply_texts": [
+          "已记录：全链路联调 → 有风险（阻塞：还在等那边给结果）"
+        ],
+        "waits": []
+      },
+      "passed": false,
+      "reasons": [
+        "错误联系：ask_recovery_estimate -> ou_suhang",
+        "应回问发送者，但没有回问"
+      ],
+      "wrong_contacts": [
+        [
+          "ask_recovery_estimate",
+          "ou_suhang"
+        ]
+      ],
+      "wrong_contacts_to_others": []
+    },
+    {
+      "category": "multiple_candidates",
+      "clarified": false,
+      "duplicate_actions": [],
+      "estimate_correct": null,
+      "fallback": false,
+      "group": "should_not_open",
+      "hard": false,
+      "id": "candidates_01",
+      "localized": true,
+      "missing_contacts": [],
+      "observed": {
+        "contacts": [
+          {
+            "action": "ask_recovery_estimate",
+            "subject": "refund_page",
+            "target": "ou_mengqi"
+          }
+        ],
+        "model_items": [
+          {
+            "answers_pending": false,
+            "items": [
+              {
+                "blocker": "在等接口",
+                "certainty": "certain",
+                "confidence": 0.85,
+                "expected_completion": null,
+                "health_status": "at_risk",
+                "intent": "report_status",
+                "polarity": "affirmative",
+                "source_quote": "退款页面在等接口",
+                "speech_act": "statement",
+                "task_id": "refund_page",
+                "time_expression": null
+              }
+            ]
+          }
+        ],
+        "reply_categories": [
+          "claim_recorded"
+        ],
+        "reply_texts": [
+          "已记录：退款页面 → 有风险（阻塞：在等接口）"
+        ],
+        "waits": []
+      },
+      "passed": false,
+      "reasons": [
+        "错误联系：ask_recovery_estimate -> ou_mengqi",
+        "应回问发送者，但没有回问"
+      ],
+      "wrong_contacts": [
+        [
+          "ask_recovery_estimate",
+          "ou_mengqi"
+        ]
+      ],
+      "wrong_contacts_to_others": []
+    },
+    {
+      "category": "multiple_candidates",
+      "clarified": true,
+      "duplicate_actions": [],
+      "estimate_correct": null,
+      "fallback": false,
+      "group": "should_not_open",
+      "hard": false,
+      "id": "candidates_02",
+      "localized": true,
+      "missing_contacts": [],
+      "observed": {
+        "contacts": [],
+        "model_items": [
+          {
+            "answers_pending": false,
+            "items": [
+              {
+                "blocker": "在等支付接口",
+                "certainty": "certain",
+                "confidence": 0.7,
+                "expected_completion": null,
+                "health_status": null,
+                "intent": "dependency_wait",
+                "polarity": "affirmative",
+                "source_quote": "在等支付接口",
+                "speech_act": "statement",
+                "task_id": null,
+                "time_expression": null
+              }
+            ]
+          }
+        ],
+        "reply_categories": [
+          "clarify"
+        ],
+        "reply_texts": [
+          "是哪个任务在等？你负责的有：发票页面、退款页面"
+        ],
+        "waits": []
+      },
+      "passed": true,
+      "reasons": [],
+      "wrong_contacts": [],
+      "wrong_contacts_to_others": []
+    },
+    {
+      "category": "multiple_candidates",
+      "clarified": null,
+      "duplicate_actions": [],
+      "estimate_correct": null,
+      "fallback": false,
+      "group": "should_open",
+      "hard": false,
+      "id": "candidates_03",
+      "localized": true,
+      "missing_contacts": [],
+      "observed": {
+        "contacts": [
+          {
+            "action": "ask_dependency_eta",
+            "subject": "refund_page->refund_api",
+            "target": "ou_tangmin"
+          },
+          {
+            "action": "notify_wait_opened",
+            "subject": "refund_page->refund_api",
+            "target": "ou_pm"
+          }
+        ],
+        "model_items": [
+          {
+            "answers_pending": false,
+            "items": [
+              {
+                "blocker": "在等退款接口",
+                "certainty": "certain",
+                "confidence": 0.85,
+                "expected_completion": null,
+                "health_status": "at_risk",
+                "intent": "report_status",
+                "polarity": "affirmative",
+                "source_quote": "退款页面在等退款接口",
+                "speech_act": "statement",
+                "task_id": "refund_page",
+                "time_expression": null
+              }
+            ]
+          }
+        ],
+        "reply_categories": [
+          "claim_recorded"
+        ],
+        "reply_texts": [
+          "已记录：【退款页面】在等【退款接口】。已向 唐敏 确认交付时间，并告知 PM，有回复后我会转告你。"
+        ],
+        "waits": [
+          {
+            "estimated_at": null,
+            "status": "awaiting_estimate",
+            "upstream": "refund_api",
+            "waiting": "refund_page"
+          }
+        ]
+      },
+      "passed": true,
+      "reasons": [],
+      "wrong_contacts": [],
+      "wrong_contacts_to_others": []
+    },
+    {
+      "category": "question",
+      "clarified": null,
+      "duplicate_actions": [],
+      "estimate_correct": null,
+      "fallback": false,
+      "group": "should_not_open",
+      "hard": false,
+      "id": "question_01",
+      "localized": true,
+      "missing_contacts": [],
+      "observed": {
+        "contacts": [],
+        "model_items": [
+          {
+            "answers_pending": false,
+            "items": [
+              {
+                "blocker": null,
+                "certainty": "certain",
+                "confidence": 0.95,
+                "expected_completion": null,
+                "health_status": null,
+                "intent": "query_status",
+                "polarity": "affirmative",
+                "source_quote": "支付接口什么时候能好？",
+                "speech_act": "question",
+                "task_id": "pay_api",
+                "time_expression": null
+              }
+            ]
+          }
+        ],
+        "reply_categories": [
+          "query_answer"
+        ],
+        "reply_texts": [
+          "支付接口：进行中，健康度 未知，截止 11/24 18:00"
+        ],
+        "waits": []
+      },
+      "passed": true,
+      "reasons": [],
+      "wrong_contacts": [],
+      "wrong_contacts_to_others": []
+    },
+    {
+      "category": "question",
+      "clarified": null,
+      "duplicate_actions": [],
+      "estimate_correct": null,
+      "fallback": false,
+      "group": "should_not_open",
+      "hard": false,
+      "id": "question_02",
+      "localized": true,
+      "missing_contacts": [],
+      "observed": {
+        "contacts": [],
+        "model_items": [
+          {
+            "answers_pending": false,
+            "items": [
+              {
+                "blocker": null,
+                "certainty": "hedged",
+                "confidence": 0.8,
+                "expected_completion": null,
+                "health_status": null,
+                "intent": "dependency_wait",
+                "polarity": "affirmative",
+                "source_quote": "结算页面是不是还得等支付接口？",
+                "speech_act": "question",
+                "task_id": "checkout_page",
+                "time_expression": null
+              }
+            ]
+          }
+        ],
+        "reply_categories": [
+          "noted"
+        ],
+        "reply_texts": [
+          "如果已经在等，可以直接说「某任务在等某任务」。"
+        ],
+        "waits": []
+      },
+      "passed": true,
+      "reasons": [],
+      "wrong_contacts": [],
+      "wrong_contacts_to_others": []
+    },
+    {
+      "category": "hypothetical",
+      "clarified": null,
+      "duplicate_actions": [],
+      "estimate_correct": null,
+      "fallback": false,
+      "group": "should_not_open",
+      "hard": false,
+      "id": "hypothetical_01",
+      "localized": true,
+      "missing_contacts": [],
+      "observed": {
+        "contacts": [],
+        "model_items": [
+          {
+            "answers_pending": false,
+            "items": [
+              {
+                "blocker": null,
+                "certainty": "hedged",
+                "confidence": 0.72,
+                "expected_completion": null,
+                "health_status": null,
+                "intent": "dependency_wait",
+                "polarity": "negative",
+                "source_quote": "如果支付接口明天还不给，结算页面就得等到下周了",
+                "speech_act": "hypothetical",
+                "task_id": null,
+                "time_expression": null
+              }
+            ]
+          }
+        ],
+        "reply_categories": [
+          "noted"
+        ],
+        "reply_texts": [
+          "了解，如果确认需要调整请告诉我"
+        ],
+        "waits": []
+      },
+      "passed": true,
+      "reasons": [],
+      "wrong_contacts": [],
+      "wrong_contacts_to_others": []
+    },
+    {
+      "category": "hypothetical",
+      "clarified": null,
+      "duplicate_actions": [],
+      "estimate_correct": null,
+      "fallback": false,
+      "group": "should_not_open",
+      "hard": false,
+      "id": "hypothetical_02",
+      "localized": true,
+      "missing_contacts": [],
+      "observed": {
+        "contacts": [],
+        "model_items": [
+          {
+            "answers_pending": false,
+            "items": [
+              {
+                "blocker": null,
+                "certainty": "hedged",
+                "confidence": 0.6,
+                "expected_completion": null,
+                "health_status": null,
+                "intent": "dependency_wait",
+                "polarity": "affirmative",
+                "source_quote": "要是退款接口延期，退款页面只能等着",
+                "speech_act": "hypothetical",
+                "task_id": null,
+                "time_expression": null
+              }
+            ]
+          }
+        ],
+        "reply_categories": [
+          "noted"
+        ],
+        "reply_texts": [
+          "了解，如果确认需要调整请告诉我"
+        ],
+        "waits": []
+      },
+      "passed": true,
+      "reasons": [],
+      "wrong_contacts": [],
+      "wrong_contacts_to_others": []
+    },
+    {
+      "category": "negation",
+      "clarified": null,
+      "duplicate_actions": [],
+      "estimate_correct": null,
+      "fallback": false,
+      "group": "should_not_open",
+      "hard": false,
+      "id": "negation_01",
+      "localized": true,
+      "missing_contacts": [],
+      "observed": {
+        "contacts": [],
+        "model_items": [
+          {
+            "answers_pending": false,
+            "items": [
+              {
+                "blocker": null,
+                "certainty": "certain",
+                "confidence": 0.9,
+                "expected_completion": null,
+                "health_status": "on_track",
+                "intent": "report_status",
+                "polarity": "negative",
+                "source_quote": "结算页面没在等支付接口，已经联调通了",
+                "speech_act": "statement",
+                "task_id": "checkout_page",
+                "time_expression": null
+              }
+            ]
+          }
+        ],
+        "reply_categories": [
+          "claim_recorded"
+        ],
+        "reply_texts": [
+          "已记录：结算页面 → 正常"
+        ],
+        "waits": []
+      },
+      "passed": true,
+      "reasons": [],
+      "wrong_contacts": [],
+      "wrong_contacts_to_others": []
+    },
+    {
+      "category": "negation",
+      "clarified": null,
+      "duplicate_actions": [],
+      "estimate_correct": null,
+      "fallback": false,
+      "group": "should_not_open",
+      "hard": false,
+      "id": "negation_02",
+      "localized": true,
+      "missing_contacts": [],
+      "observed": {
+        "contacts": [],
+        "model_items": [
+          {
+            "answers_pending": false,
+            "items": [
+              {
+                "blocker": null,
+                "certainty": "certain",
+                "confidence": 0.82,
+                "expected_completion": null,
+                "health_status": "on_track",
+                "intent": "report_status",
+                "polarity": "affirmative",
+                "source_quote": "不用等支付接口，我先用 mock 数据做",
+                "speech_act": "statement",
+                "task_id": "checkout_page",
+                "time_expression": null
+              }
+            ]
+          }
+        ],
+        "reply_categories": [
+          "claim_recorded"
+        ],
+        "reply_texts": [
+          "已记录：结算页面 → 正常"
+        ],
+        "waits": []
+      },
+      "passed": true,
+      "reasons": [],
+      "wrong_contacts": [],
+      "wrong_contacts_to_others": []
+    },
+    {
+      "category": "negation",
+      "clarified": null,
+      "duplicate_actions": [],
+      "estimate_correct": null,
+      "fallback": false,
+      "group": "should_not_open",
+      "hard": false,
+      "id": "negation_03",
+      "localized": true,
+      "missing_contacts": [],
+      "observed": {
+        "contacts": [],
+        "model_items": [
+          {
+            "answers_pending": false,
+            "items": [
+              {
+                "blocker": null,
+                "certainty": "certain",
+                "confidence": 0.7,
+                "expected_completion": null,
+                "health_status": "on_track",
+                "intent": "report_status",
+                "polarity": "affirmative",
+                "source_quote": "等我把结算页面改完再看支付接口的文档",
+                "speech_act": "statement",
+                "task_id": "checkout_page",
+                "time_expression": null
+              }
+            ]
+          }
+        ],
+        "reply_categories": [
+          "claim_recorded"
+        ],
+        "reply_texts": [
+          "已记录：结算页面 → 正常"
+        ],
+        "waits": []
+      },
+      "passed": true,
+      "reasons": [],
+      "wrong_contacts": [],
+      "wrong_contacts_to_others": []
+    },
+    {
+      "category": "cancel",
+      "clarified": null,
+      "duplicate_actions": [],
+      "estimate_correct": null,
+      "fallback": false,
+      "group": "existing_wait",
+      "hard": false,
+      "id": "cancel_01",
+      "localized": true,
+      "missing_contacts": [],
+      "observed": {
+        "contacts": [],
+        "model_items": [
+          {
+            "answers_pending": false,
+            "items": [
+              {
+                "blocker": null,
+                "certainty": "certain",
+                "confidence": 0.85,
+                "expected_completion": null,
+                "health_status": "on_track",
+                "intent": "report_status",
+                "polarity": "affirmative",
+                "source_quote": "支付接口不用等了，我先用 mock 联调",
+                "speech_act": "statement",
+                "task_id": "checkout_page",
+                "time_expression": null
+              }
+            ]
+          }
+        ],
+        "reply_categories": [
+          "claim_recorded"
+        ],
+        "reply_texts": [
+          "好的，已取消对【支付接口】的等待。\n已记录：结算页面 → 正常"
+        ],
+        "waits": [
+          {
+            "estimated_at": null,
+            "status": "released",
+            "upstream": "pay_api",
+            "waiting": "checkout_page"
+          }
+        ]
+      },
+      "passed": true,
+      "reasons": [],
+      "wrong_contacts": [],
+      "wrong_contacts_to_others": []
+    },
+    {
+      "category": "cancel",
+      "clarified": null,
+      "duplicate_actions": [],
+      "estimate_correct": null,
+      "fallback": false,
+      "group": "existing_wait",
+      "hard": false,
+      "id": "cancel_02",
+      "localized": true,
+      "missing_contacts": [],
+      "observed": {
+        "contacts": [],
+        "model_items": [
+          {
+            "answers_pending": false,
+            "items": [
+              {
+                "blocker": null,
+                "certainty": "certain",
+                "confidence": 0.75,
+                "expected_completion": null,
+                "health_status": "on_track",
+                "intent": "report_status",
+                "polarity": "negative",
+                "source_quote": "设计稿不用等了",
+                "speech_act": "statement",
+                "task_id": "checkout_page",
+                "time_expression": null
+              }
+            ]
+          }
+        ],
+        "reply_categories": [
+          "clarify"
+        ],
+        "reply_texts": [
+          "要取消哪个等待？你正在等：支付接口\n已记录：结算页面 → 正常"
+        ],
+        "waits": [
+          {
+            "estimated_at": null,
+            "status": "awaiting_estimate",
+            "upstream": "pay_api",
+            "waiting": "checkout_page"
+          }
+        ]
+      },
+      "passed": true,
+      "reasons": [],
+      "wrong_contacts": [],
+      "wrong_contacts_to_others": []
+    },
+    {
+      "category": "reply_with_time",
+      "clarified": null,
+      "duplicate_actions": [],
+      "estimate_correct": true,
+      "fallback": false,
+      "group": "existing_wait",
+      "hard": false,
+      "id": "reply_time_01",
+      "localized": true,
+      "missing_contacts": [],
+      "observed": {
+        "contacts": [
+          {
+            "action": "relay_delivery_estimate",
+            "subject": "checkout_page->pay_api",
+            "target": "ou_linyue"
+          },
+          {
+            "action": "relay_delivery_estimate",
+            "subject": "checkout_page->pay_api",
+            "target": "ou_pm"
+          }
+        ],
+        "model_items": [
+          {
+            "answers_pending": true,
+            "items": [
+              {
+                "blocker": null,
+                "certainty": "certain",
+                "confidence": 0.92,
+                "expected_completion": "2026-11-19T15:00:00+08:00",
+                "health_status": "on_track",
+                "intent": "answer_pending",
+                "polarity": "affirmative",
+                "source_quote": "明天下午3点可以联调",
+                "speech_act": "statement",
+                "task_id": "pay_api",
+                "time_expression": "明天下午3点"
+              }
+            ]
+          }
+        ],
+        "reply_categories": [
+          "claim_recorded"
+        ],
+        "reply_texts": [
+          "已记录：【支付接口】预计 11/19 15:00 可交付或联调，已转告等待方。这是预计时间，不代表已经交付。"
+        ],
+        "waits": [
+          {
+            "estimated_at": "2026-11-19T15:00:00+08:00",
+            "status": "estimated",
+            "upstream": "pay_api",
+            "waiting": "checkout_page"
+          }
+        ]
+      },
+      "passed": true,
+      "reasons": [],
+      "wrong_contacts": [],
+      "wrong_contacts_to_others": []
+    },
+    {
+      "category": "reply_with_time",
+      "clarified": null,
+      "duplicate_actions": [],
+      "estimate_correct": true,
+      "fallback": false,
+      "group": "existing_wait",
+      "hard": false,
+      "id": "reply_time_02",
+      "localized": true,
+      "missing_contacts": [],
+      "observed": {
+        "contacts": [
+          {
+            "action": "relay_delivery_estimate",
+            "subject": "checkout_page->pay_api",
+            "target": "ou_linyue"
+          },
+          {
+            "action": "relay_delivery_estimate",
+            "subject": "checkout_page->pay_api",
+            "target": "ou_pm"
+          }
+        ],
+        "model_items": [
+          {
+            "answers_pending": true,
+            "items": [
+              {
+                "blocker": null,
+                "certainty": "certain",
+                "confidence": 0.95,
+                "expected_completion": "2026-11-20T10:00:00+08:00",
+                "health_status": "on_track",
+                "intent": "answer_pending",
+                "polarity": "affirmative",
+                "source_quote": "后天上午10点",
+                "speech_act": "statement",
+                "task_id": "pay_api",
+                "time_expression": "后天上午10点"
+              }
+            ]
+          }
+        ],
+        "reply_categories": [
+          "claim_recorded"
+        ],
+        "reply_texts": [
+          "已记录：【支付接口】预计 11/20 10:00 可交付或联调，已转告等待方。这是预计时间，不代表已经交付。"
+        ],
+        "waits": [
+          {
+            "estimated_at": "2026-11-20T10:00:00+08:00",
+            "status": "estimated",
+            "upstream": "pay_api",
+            "waiting": "checkout_page"
+          }
+        ]
+      },
+      "passed": true,
+      "reasons": [],
+      "wrong_contacts": [],
+      "wrong_contacts_to_others": []
+    },
+    {
+      "category": "reply_with_time",
+      "clarified": null,
+      "duplicate_actions": [],
+      "estimate_correct": true,
+      "fallback": false,
+      "group": "existing_wait",
+      "hard": true,
+      "id": "reply_time_03",
+      "localized": true,
+      "missing_contacts": [],
+      "observed": {
+        "contacts": [
+          {
+            "action": "relay_delivery_estimate",
+            "subject": "checkout_page->pay_api",
+            "target": "ou_linyue"
+          },
+          {
+            "action": "relay_delivery_estimate",
+            "subject": "checkout_page->pay_api",
+            "target": "ou_pm"
+          }
+        ],
+        "model_items": [
+          {
+            "answers_pending": true,
+            "items": [
+              {
+                "blocker": null,
+                "certainty": "certain",
+                "confidence": 0.9,
+                "expected_completion": "2026-11-20T12:00:00+08:00",
+                "health_status": "on_track",
+                "intent": "answer_pending",
+                "polarity": "affirmative",
+                "source_quote": "后天中午前交付",
+                "speech_act": "statement",
+                "task_id": "pay_api",
+                "time_expression": "后天中午前"
+              }
+            ]
+          }
+        ],
+        "reply_categories": [
+          "claim_recorded"
+        ],
+        "reply_texts": [
+          "已记录：【支付接口】预计 11/20 12:00 可交付或联调，已转告等待方。这是预计时间，不代表已经交付。"
+        ],
+        "waits": [
+          {
+            "estimated_at": "2026-11-20T12:00:00+08:00",
+            "status": "estimated",
+            "upstream": "pay_api",
+            "waiting": "checkout_page"
+          }
+        ]
+      },
+      "passed": true,
+      "reasons": [],
+      "wrong_contacts": [],
+      "wrong_contacts_to_others": []
+    },
+    {
+      "category": "reply_without_time",
+      "clarified": null,
+      "duplicate_actions": [],
+      "estimate_correct": null,
+      "fallback": false,
+      "group": "existing_wait",
+      "hard": false,
+      "id": "reply_no_time_01",
+      "localized": true,
+      "missing_contacts": [],
+      "observed": {
+        "contacts": [],
+        "model_items": [
+          {
+            "answers_pending": true,
+            "items": [
+              {
+                "blocker": null,
+                "certainty": "hedged",
+                "confidence": 0.9,
+                "expected_completion": null,
+                "health_status": "at_risk",
+                "intent": "answer_pending",
+                "polarity": "affirmative",
+                "source_quote": "在做了，时间还定不下来",
+                "speech_act": "statement",
+                "task_id": "pay_api",
+                "time_expression": null
+              }
+            ]
+          }
+        ],
+        "reply_categories": [
+          "clarify"
+        ],
+        "reply_texts": [
+          "方便告诉我预计什么时候可以交付或联调吗？例如：明天下午3点。"
+        ],
+        "waits": [
+          {
+            "estimated_at": null,
+            "status": "awaiting_estimate",
+            "upstream": "pay_api",
+            "waiting": "checkout_page"
+          }
+        ]
+      },
+      "passed": true,
+      "reasons": [],
+      "wrong_contacts": [],
+      "wrong_contacts_to_others": []
+    },
+    {
+      "category": "reply_without_time",
+      "clarified": null,
+      "duplicate_actions": [],
+      "estimate_correct": null,
+      "fallback": false,
+      "group": "existing_wait",
+      "hard": true,
+      "id": "reply_no_time_02",
+      "localized": true,
+      "missing_contacts": [],
+      "observed": {
+        "contacts": [],
+        "model_items": [
+          {
+            "answers_pending": false,
+            "items": [
+              {
+                "blocker": null,
+                "certainty": "certain",
+                "confidence": 0.7,
+                "expected_completion": null,
+                "health_status": null,
+                "intent": "out_of_scope",
+                "polarity": "affirmative",
+                "source_quote": "明天下午开个会讨论一下",
+                "speech_act": "imperative",
+                "task_id": null,
+                "time_expression": null
+              }
+            ]
+          }
+        ],
+        "reply_categories": [
+          "unsupported"
+        ],
+        "reply_texts": [
+          "这个需求已记录，暂不支持自动处理。"
+        ],
+        "waits": [
+          {
+            "estimated_at": null,
+            "status": "awaiting_estimate",
+            "upstream": "pay_api",
+            "waiting": "checkout_page"
+          }
+        ]
+      },
+      "passed": true,
+      "reasons": [],
+      "wrong_contacts": [],
+      "wrong_contacts_to_others": []
+    },
+    {
+      "category": "multiple_items",
+      "clarified": null,
+      "duplicate_actions": [],
+      "estimate_correct": null,
+      "fallback": false,
+      "group": "should_open",
+      "hard": true,
+      "id": "multi_item_01",
+      "localized": false,
+      "missing_contacts": [
+        [
+          "ask_dependency_eta",
+          "ou_hechuan"
+        ],
+        [
+          "notify_wait_opened",
+          "ou_pm"
+        ]
+      ],
+      "observed": {
+        "contacts": [
+          {
+            "action": "ask_recovery_estimate",
+            "subject": "checkout_page",
+            "target": "ou_linyue"
+          }
+        ],
+        "model_items": [
+          {
+            "answers_pending": false,
+            "items": [
+              {
+                "blocker": "在等支付接口",
+                "certainty": "certain",
+                "confidence": 0.85,
+                "expected_completion": null,
+                "health_status": "at_risk",
+                "intent": "report_status",
+                "polarity": "affirmative",
+                "source_quote": "结算页面在等支付接口",
+                "speech_act": "statement",
+                "task_id": "checkout_page",
+                "time_expression": null
+              },
+              {
+                "blocker": null,
+                "certainty": "certain",
+                "confidence": 0.8,
+                "expected_completion": null,
+                "health_status": null,
+                "intent": "out_of_scope",
+                "polarity": "affirmative",
+                "source_quote": "这周评审几点开？",
+                "speech_act": "question",
+                "task_id": null,
+                "time_expression": null
+              }
+            ]
+          }
+        ],
+        "reply_categories": [
+          "claim_recorded"
+        ],
+        "reply_texts": [
+          "已记录：结算页面 → 有风险（阻塞：在等支付接口）\n这个需求已记录，暂不支持自动处理。"
+        ],
+        "waits": []
+      },
+      "passed": false,
+      "reasons": [
+        "等待状态不符：期望 [('checkout_page', 'pay_api', 'awaiting_estimate')]，实际 []",
+        "错误联系：ask_recovery_estimate -> ou_linyue",
+        "漏联系：ask_dependency_eta -> ou_hechuan",
+        "漏联系：notify_wait_opened -> ou_pm"
+      ],
+      "wrong_contacts": [
+        [
+          "ask_recovery_estimate",
+          "ou_linyue"
+        ]
+      ],
+      "wrong_contacts_to_others": []
+    },
+    {
+      "category": "multiple_items",
+      "clarified": null,
+      "duplicate_actions": [],
+      "estimate_correct": null,
+      "fallback": false,
+      "group": "should_open",
+      "hard": false,
+      "id": "multi_item_02",
+      "localized": false,
+      "missing_contacts": [
+        [
+          "ask_dependency_eta",
+          "ou_tangmin"
+        ],
+        [
+          "notify_wait_opened",
+          "ou_pm"
+        ]
+      ],
+      "observed": {
+        "contacts": [
+          {
+            "action": "ask_dependency_eta",
+            "subject": "invoice_page->pay_api",
+            "target": "ou_hechuan"
+          },
+          {
+            "action": "ask_recovery_estimate",
+            "subject": "refund_page",
+            "target": "ou_mengqi"
+          },
+          {
+            "action": "notify_wait_opened",
+            "subject": "invoice_page->pay_api",
+            "target": "ou_pm"
+          }
+        ],
+        "model_items": [
+          {
+            "answers_pending": false,
+            "items": [
+              {
+                "blocker": "在等退款接口",
+                "certainty": "certain",
+                "confidence": 0.9,
+                "expected_completion": null,
+                "health_status": "at_risk",
+                "intent": "report_status",
+                "polarity": "affirmative",
+                "source_quote": "退款页面在等退款接口",
+                "speech_act": "statement",
+                "task_id": "refund_page",
+                "time_expression": null
+              },
+              {
+                "blocker": "在等支付接口",
+                "certainty": "certain",
+                "confidence": 0.9,
+                "expected_completion": null,
+                "health_status": "at_risk",
+                "intent": "report_status",
+                "polarity": "affirmative",
+                "source_quote": "发票页面在等支付接口",
+                "speech_act": "statement",
+                "task_id": "invoice_page",
+                "time_expression": null
+              }
+            ]
+          }
+        ],
+        "reply_categories": [
+          "claim_recorded"
+        ],
+        "reply_texts": [
+          "已记录：【发票页面】在等【支付接口】。已向 何川 确认交付时间，并告知 PM，有回复后我会转告你。\n已记录：退款页面 → 有风险（阻塞：在等退款接口）"
+        ],
+        "waits": [
+          {
+            "estimated_at": null,
+            "status": "awaiting_estimate",
+            "upstream": "pay_api",
+            "waiting": "invoice_page"
+          }
+        ]
+      },
+      "passed": false,
+      "reasons": [
+        "等待状态不符：期望 [('invoice_page', 'pay_api', 'awaiting_estimate'), ('refund_page', 'refund_api', 'awaiting_estimate')]，实际 [('invoice_page', 'pay_api', 'awaiting_estimate')]",
+        "错误联系：ask_recovery_estimate -> ou_mengqi",
+        "漏联系：ask_dependency_eta -> ou_tangmin",
+        "漏联系：notify_wait_opened -> ou_pm"
+      ],
+      "wrong_contacts": [
+        [
+          "ask_recovery_estimate",
+          "ou_mengqi"
+        ]
+      ],
+      "wrong_contacts_to_others": []
+    },
+    {
+      "category": "repeat",
+      "clarified": null,
+      "duplicate_actions": [],
+      "estimate_correct": null,
+      "fallback": false,
+      "group": "should_open",
+      "hard": false,
+      "id": "repeat_01",
+      "localized": true,
+      "missing_contacts": [],
+      "observed": {
+        "contacts": [
+          {
+            "action": "ask_dependency_eta",
+            "subject": "checkout_page->pay_api",
+            "target": "ou_hechuan"
+          },
+          {
+            "action": "notify_wait_opened",
+            "subject": "checkout_page->pay_api",
+            "target": "ou_pm"
+          }
+        ],
+        "model_items": [
+          {
+            "answers_pending": false,
+            "items": [
+              {
+                "blocker": "在等支付接口",
+                "certainty": "certain",
+                "confidence": 0.85,
+                "expected_completion": null,
+                "health_status": "at_risk",
+                "intent": "report_status",
+                "polarity": "affirmative",
+                "source_quote": "结算页面在等支付接口",
+                "speech_act": "statement",
+                "task_id": "checkout_page",
+                "time_expression": null
+              }
+            ]
+          },
+          {
+            "answers_pending": false,
+            "items": [
+              {
+                "blocker": "等支付接口",
+                "certainty": "certain",
+                "confidence": 0.85,
+                "expected_completion": null,
+                "health_status": "at_risk",
+                "intent": "report_status",
+                "polarity": "affirmative",
+                "source_quote": "结算页面还在等支付接口",
+                "speech_act": "statement",
+                "task_id": "checkout_page",
+                "time_expression": null
+              },
+              {
+                "blocker": null,
+                "certainty": "certain",
+                "confidence": 0.7,
+                "expected_completion": null,
+                "health_status": null,
+                "intent": "dependency_wait",
+                "polarity": "affirmative",
+                "source_quote": "麻烦快点",
+                "speech_act": "imperative",
+                "task_id": "pay_api",
+                "time_expression": null
+              }
+            ]
+          }
+        ],
+        "reply_categories": [
+          "claim_recorded",
+          "claim_recorded"
+        ],
+        "reply_texts": [
+          "已记录：【结算页面】在等【支付接口】。已向 何川 确认交付时间，并告知 PM，有回复后我会转告你。",
+          "这个等待已经登记过了，仍在等 何川 回复，这条消息已追加为记录。"
+        ],
+        "waits": [
+          {
+            "estimated_at": null,
+            "status": "awaiting_estimate",
+            "upstream": "pay_api",
+            "waiting": "checkout_page"
+          }
+        ]
+      },
+      "passed": true,
+      "reasons": [],
+      "wrong_contacts": [],
+      "wrong_contacts_to_others": []
+    },
+    {
+      "category": "repeat",
+      "clarified": null,
+      "duplicate_actions": [],
+      "estimate_correct": null,
+      "fallback": false,
+      "group": "should_open",
+      "hard": false,
+      "id": "repeat_02",
+      "localized": true,
+      "missing_contacts": [],
+      "observed": {
+        "contacts": [
+          {
+            "action": "ask_dependency_eta",
+            "subject": "checkout_page->pay_api",
+            "target": "ou_hechuan"
+          },
+          {
+            "action": "notify_wait_opened",
+            "subject": "checkout_page->pay_api",
+            "target": "ou_pm"
+          }
+        ],
+        "model_items": [
+          {
+            "answers_pending": false,
+            "items": [
+              {
+                "blocker": "在等支付接口",
+                "certainty": "certain",
+                "confidence": 0.9,
+                "expected_completion": null,
+                "health_status": "at_risk",
+                "intent": "report_status",
+                "polarity": "affirmative",
+                "source_quote": "结算页面在等支付接口",
+                "speech_act": "statement",
+                "task_id": "checkout_page",
+                "time_expression": null
+              }
+            ]
+          },
+          {}
+        ],
+        "reply_categories": [
+          "claim_recorded",
+          "claim_recorded"
+        ],
+        "reply_texts": [
+          "已记录：【结算页面】在等【支付接口】。已向 何川 确认交付时间，并告知 PM，有回复后我会转告你。",
+          "已记录：【结算页面】在等【支付接口】。已向 何川 确认交付时间，并告知 PM，有回复后我会转告你。"
+        ],
+        "waits": [
+          {
+            "estimated_at": null,
+            "status": "awaiting_estimate",
+            "upstream": "pay_api",
+            "waiting": "checkout_page"
+          }
+        ]
+      },
+      "passed": true,
+      "reasons": [],
+      "wrong_contacts": [],
+      "wrong_contacts_to_others": []
+    },
+    {
+      "category": "no_formal_edge",
+      "clarified": false,
+      "duplicate_actions": [],
+      "estimate_correct": null,
+      "fallback": false,
+      "group": "should_not_open",
+      "hard": false,
+      "id": "no_edge_01",
+      "localized": true,
+      "missing_contacts": [],
+      "observed": {
+        "contacts": [
+          {
+            "action": "ask_recovery_estimate",
+            "subject": "checkout_page",
+            "target": "ou_linyue"
+          }
+        ],
+        "model_items": [
+          {
+            "answers_pending": false,
+            "items": [
+              {
+                "blocker": "在等退款接口",
+                "certainty": "certain",
+                "confidence": 0.9,
+                "expected_completion": null,
+                "health_status": "at_risk",
+                "intent": "report_status",
+                "polarity": "affirmative",
+                "source_quote": "结算页面在等退款接口",
+                "speech_act": "statement",
+                "task_id": "checkout_page",
+                "time_expression": null
+              }
+            ]
+          }
+        ],
+        "reply_categories": [
+          "claim_recorded"
+        ],
+        "reply_texts": [
+          "已记录：结算页面 → 有风险（阻塞：在等退款接口）"
+        ],
+        "waits": []
+      },
+      "passed": false,
+      "reasons": [
+        "错误联系：ask_recovery_estimate -> ou_linyue",
+        "应回问发送者，但没有回问"
+      ],
+      "wrong_contacts": [
+        [
+          "ask_recovery_estimate",
+          "ou_linyue"
+        ]
+      ],
+      "wrong_contacts_to_others": []
+    }
+  ],
+  "run": {
+    "cases_sha256": "aa49ea9d800b6a5d63a443eb8c58e25f5cea7059912ffce9e302442d83a48e46",
+    "llm_stats": {
+      "avg_cache_read_tokens": 2649.4,
+      "avg_input_tokens": 308.6,
+      "avg_output_tokens": 189.1,
+      "cache_hit_ratio": 0.8957,
+      "call_count": 30,
+      "cost_per_message_usd_estimate": 0.000335,
+      "degraded_rate": 0.0,
+      "first_pass_rate": 1.0,
+      "latency_p50_ms": 2076.6,
+      "latency_p95_ms": 3451.3,
+      "normalization_totals": {
+        "naive_datetimes_fixed": 0,
+        "unknown_fields_dropped": 1
+      },
+      "retry_rate": 0.0,
+      "total_cost_usd_estimate": 0.0101,
+      "validation_error_types": {}
+    },
+    "model": "deepseek-flash",
+    "project_sha256": "b2bcb47ccab59a2d5aa601a67285b930eff030bd4903c090a1cf1a08471e2996",
+    "prompt_version": "c9850dec6655"
+  },
+  "summary": {
+    "cases_passed": {
+      "correct": 20,
+      "total": 29
+    },
+    "cases_with_wrong_contact": [
+      "explicit_03",
+      "explicit_04",
+      "explicit_05",
+      "vague_01",
+      "vague_02",
+      "candidates_01",
+      "multi_item_01",
+      "multi_item_02",
+      "no_edge_01"
+    ],
+    "clarification": {
+      "correct": 1,
+      "total": 5
+    },
+    "duplicate_actions": 0,
+    "estimate_time": {
+      "correct": 3,
+      "total": 3
+    },
+    "fallbacks": 0,
+    "hard_cases_passed": {
+      "correct": 2,
+      "total": 5
+    },
+    "localization_by_group": {
+      "existing_wait": {
+        "correct": 7,
+        "total": 7
+      },
+      "should_not_open": {
+        "correct": 12,
+        "total": 12
+      },
+      "should_open": {
+        "correct": 5,
+        "total": 10
+      }
+    },
+    "missing_contacts": 10,
+    "passed_by_category": {
+      "cancel": {
+        "correct": 2,
+        "total": 2
+      },
+      "explicit_wait": {
+        "correct": 2,
+        "total": 5
+      },
+      "hypothetical": {
+        "correct": 2,
+        "total": 2
+      },
+      "multiple_candidates": {
+        "correct": 2,
+        "total": 3
+      },
+      "multiple_items": {
+        "correct": 0,
+        "total": 2
+      },
+      "negation": {
+        "correct": 3,
+        "total": 3
+      },
+      "no_formal_edge": {
+        "correct": 0,
+        "total": 1
+      },
+      "question": {
+        "correct": 2,
+        "total": 2
+      },
+      "repeat": {
+        "correct": 2,
+        "total": 2
+      },
+      "reply_with_time": {
+        "correct": 3,
+        "total": 3
+      },
+      "reply_without_time": {
+        "correct": 2,
+        "total": 2
+      },
+      "vague_upstream": {
+        "correct": 0,
+        "total": 2
+      }
+    },
+    "scenarios": 29,
+    "upstream_localization": {
+      "correct": 24,
+      "total": 29
+    },
+    "wrong_contacts": 9,
+    "wrong_contacts_to_others": 0
+  }
+}

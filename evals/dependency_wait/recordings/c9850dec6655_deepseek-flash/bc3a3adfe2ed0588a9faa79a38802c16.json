@@ -1,0 +1,53 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "bc3a3adfe2ed0588a9faa79a38802c16",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 137,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2816,
+    "output_tokens": 188,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-11-18T13:07:33.929737+00:00",
+  "response": {
+    "id": "4b408fb9-576e-4053-bd9c-0e04345d56fb",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_S9vcSTABn8mDVrCeK03R7989",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "林悦汇报自己负责的结算页面状态，明确说没在等支付接口且已联调通，属正常推进。否定词“没在等”表示依赖已解除，健康度 on_track。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "source_quote": "结算页面没在等支付接口，已经联调通了",
+              "confidence": 0.9,
+              "task_id": "checkout_page",
+              "health_status": "on_track"
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 137,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2816,
+      "output_tokens": 188,
+      "service_tier": "standard"
+    }
+  }
+}

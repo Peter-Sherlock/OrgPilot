@@ -1,0 +1,52 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "2b87f8b7feeb841d47077175d1676594",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 136,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2816,
+    "output_tokens": 161,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-11-18T13:07:39.646928+00:00",
+  "response": {
+    "id": "31782906-cc42-4a9d-bf8c-77a7455dd03e",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_W6r7wdDrU9bq9nMeNqNN1156",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "林悦说明要先改完结算页面再看支付接口文档，属于对自身任务顺序的陈述，未给出完成时间，也无未解决问题，按正常推进处理。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "等我把结算页面改完再看支付接口的文档",
+              "confidence": 0.7,
+              "task_id": "checkout_page",
+              "health_status": "on_track"
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 136,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2816,
+      "output_tokens": 161,
+      "service_tier": "standard"
+    }
+  }
+}

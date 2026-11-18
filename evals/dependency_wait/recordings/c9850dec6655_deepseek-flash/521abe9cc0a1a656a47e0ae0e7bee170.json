@@ -1,0 +1,62 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "521abe9cc0a1a656a47e0ae0e7bee170",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 138,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2816,
+    "output_tokens": 238,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-11-18T13:07:59.705027+00:00",
+  "response": {
+    "id": "93ed1560-7500-47e8-8a20-bcd0262eb9a5",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_Pd7CSl5t1LtuHhY9TD513855",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "前半句汇报结算页面在等支付接口，属于状态汇报，等待依赖写入 blocker；后半句询问评审时间，与项目协调无关，属超出范围。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "结算页面在等支付接口",
+              "confidence": 0.85,
+              "task_id": "checkout_page",
+              "health_status": "at_risk",
+              "blocker": "在等支付接口"
+            },
+            {
+              "intent": "out_of_scope",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "这周评审几点开？",
+              "confidence": 0.8
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 138,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2816,
+      "output_tokens": 238,
+      "service_tier": "standard"
+    }
+  }
+}

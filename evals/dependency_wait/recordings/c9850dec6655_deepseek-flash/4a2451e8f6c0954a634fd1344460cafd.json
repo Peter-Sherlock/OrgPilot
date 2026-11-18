@@ -1,0 +1,54 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "4a2451e8f6c0954a634fd1344460cafd",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 135,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2816,
+    "output_tokens": 188,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-11-18T13:07:14.605639+00:00",
+  "response": {
+    "id": "4e350312-c0f1-49dd-b2be-d086d57e2b04",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_vxpB6GNxLuDeiJQAEZEG6715",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "林悦汇报自己负责的结算页面被支付接口阻塞，属于状态汇报，阻塞原因写入 blocker，健康度至少 at_risk。未给解除时间。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "结算页面被支付接口卡住了，做不下去",
+              "confidence": 0.9,
+              "task_id": "checkout_page",
+              "health_status": "at_risk",
+              "blocker": "被支付接口卡住了"
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 135,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2816,
+      "output_tokens": 188,
+      "service_tier": "standard"
+    }
+  }
+}

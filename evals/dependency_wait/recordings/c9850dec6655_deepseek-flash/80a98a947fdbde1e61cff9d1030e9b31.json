@@ -1,0 +1,56 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "80a98a947fdbde1e61cff9d1030e9b31",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 148,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2816,
+    "output_tokens": 190,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-11-18T13:07:54.631300+00:00",
+  "response": {
+    "id": "016b376f-2230-471c-9350-3dbd418011ec",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_1Mq8MNViuPPY32cnER5r4972",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "何川在回答机器人关于 pay_api 交付时间的追问，但表示时间定不下来，按规则判为 at_risk 而非 unknown。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "source_quote": "在做了，时间还定不下来",
+              "confidence": 0.9,
+              "task_id": "pay_api",
+              "health_status": "at_risk",
+              "time_expression": null,
+              "expected_completion": null,
+              "blocker": null
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 148,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2816,
+      "output_tokens": 190,
+      "service_tier": "standard"
+    }
+  }
+}

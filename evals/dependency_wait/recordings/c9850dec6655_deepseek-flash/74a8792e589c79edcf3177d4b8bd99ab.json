@@ -1,0 +1,54 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "74a8792e589c79edcf3177d4b8bd99ab",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 264,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2688,
+    "output_tokens": 183,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-11-18T13:07:24.682526+00:00",
+  "response": {
+    "id": "649b6d79-fa08-4868-ae67-7b3a6eefbd9d",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_vdNQu5llZ5zSQny1lI685714",
+        "name": "record_intent",
+        "input": {
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "退款页面在等退款接口",
+              "confidence": 0.85,
+              "task_id": "refund_page",
+              "health_status": "at_risk",
+              "blocker": "在等退款接口"
+            }
+          ],
+          "answers_pending": false,
+          "reasoning": "孟琪汇报自己负责的退款页面因等待退款接口而受阻，属于状态汇报，阻塞原因写入 blocker，未给解除时间故为 at_risk。"
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 264,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2688,
+      "output_tokens": 183,
+      "service_tier": "standard"
+    }
+  }
+}

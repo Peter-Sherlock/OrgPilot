@@ -1,0 +1,53 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "88e4008de54663ab0584522b54e6933c",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 262,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2688,
+    "output_tokens": 163,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-11-18T13:07:22.582263+00:00",
+  "response": {
+    "id": "ecfa4716-22cd-4270-a9e3-fbd56af80df1",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_gJ6Z4x354UF660M3zMYm9734",
+        "name": "record_intent",
+        "input": {
+          "items": [
+            {
+              "intent": "dependency_wait",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "在等支付接口",
+              "confidence": 0.7,
+              "task_id": null,
+              "blocker": "在等支付接口"
+            }
+          ],
+          "answers_pending": false,
+          "reasoning": "消息只是说明自己在等待支付接口，属于单纯表达依赖等待，未点名自己负责的具体任务，故不填 task_id。"
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 262,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2688,
+      "output_tokens": 163,
+      "service_tier": "standard"
+    }
+  }
+}

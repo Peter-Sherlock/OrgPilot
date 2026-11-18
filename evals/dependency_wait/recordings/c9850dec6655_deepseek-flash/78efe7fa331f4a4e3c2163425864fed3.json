@@ -1,0 +1,54 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "78efe7fa331f4a4e3c2163425864fed3",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 393,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 191,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-11-18T13:07:08.538370+00:00",
+  "response": {
+    "id": "5758bf91-8d8c-466b-80b6-1cb508789fd5",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_V1foWS4IljdHph7RJbDb6399",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "苏航汇报自己负责的全链路联调正在等待结算页面提测，属于状态汇报，等待依赖写入 blocker，未给解除时间故为 at_risk。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "全链路联调在等结算页面提测",
+              "confidence": 0.9,
+              "task_id": "e2e_test",
+              "health_status": "at_risk",
+              "blocker": "在等结算页面提测"
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 393,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 191,
+      "service_tier": "standard"
+    }
+  }
+}

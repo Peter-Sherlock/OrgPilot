@@ -1,0 +1,54 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "a27f9edebf687419bb6247c1a12548c1",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 259,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2688,
+    "output_tokens": 181,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-11-18T13:08:13.727433+00:00",
+  "response": {
+    "id": "a5e3e057-dad7-4c40-8629-141ba1960516",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_ppKiT8imqruGKCKK2inJ7421",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "林悦汇报自己负责的结算页面正在等待退款接口，属于状态汇报，等待依赖写入 blocker，未给解除时间故为 at_risk。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "结算页面在等退款接口",
+              "confidence": 0.9,
+              "task_id": "checkout_page",
+              "health_status": "at_risk",
+              "blocker": "在等退款接口"
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 259,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2688,
+      "output_tokens": 181,
+      "service_tier": "standard"
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "5ca3de7bd49e7ddd3fe1f6633249a1b7",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 257,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2688,
+    "output_tokens": 179,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-11-18T13:07:16.558779+00:00",
+  "response": {
+    "id": "83ab2b9b-d38f-450c-8383-874bbb5122a4",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_GlVNJXbI6FiSp1o9RpT45728",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "林悦汇报自己负责的结算页面在等后端，属于状态汇报，等待依赖写入 blocker，健康度至少 at_risk。未给完成时间。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "页面在等后端",
+              "confidence": 0.75,
+              "task_id": "checkout_page",
+              "health_status": "at_risk",
+              "blocker": "在等后端"
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 257,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2688,
+      "output_tokens": 179,
+      "service_tier": "standard"
+    }
+  }
+}

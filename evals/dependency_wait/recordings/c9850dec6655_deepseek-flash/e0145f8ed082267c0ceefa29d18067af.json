@@ -1,0 +1,52 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "e0145f8ed082267c0ceefa29d18067af",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 261,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2688,
+    "output_tokens": 164,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-11-18T13:07:28.114144+00:00",
+  "response": {
+    "id": "01a287e6-9a1b-40bd-a397-65fe1d60f05f",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_8o5J3eMsbfas0k5jpOB97121",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "林悦询问结算页面是否依赖支付接口，属于单纯询问依赖方，识别为 dependency_wait；不是对结算页面本身的状态汇报。",
+          "items": [
+            {
+              "intent": "dependency_wait",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "source_quote": "结算页面是不是还得等支付接口？",
+              "confidence": 0.8,
+              "task_id": "checkout_page"
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 261,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2688,
+      "output_tokens": 164,
+      "service_tier": "standard"
+    }
+  }
+}
