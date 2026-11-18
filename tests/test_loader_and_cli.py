@@ -54,7 +54,7 @@ def test_cli_replays_all_scenarios(
     monkeypatch.setattr(sys, "argv", ["orgpilot", "replay", "--all"])
     assert cli.main() == 0
     output = capsys.readouterr().out
-    assert output.count("[PASS]") == 9
+    assert output.count("[PASS]") == 11
 
 
 def test_cli_replays_one_scenario(

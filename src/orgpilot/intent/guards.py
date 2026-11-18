@@ -182,7 +182,9 @@ def check_role(item: IntentItem, context: IntentContext) -> GuardOutcome:
     return GuardOutcome(verdict="KEEP", reason="role ok")
 
 
-def check_tier(item: IntentItem) -> GuardOutcome:
+def check_tier(item: IntentItem, dependency_wait_enabled: bool = False) -> GuardOutcome:
+    if item.intent == IntentType.DEPENDENCY_WAIT and dependency_wait_enabled:
+        return GuardOutcome(verdict="KEEP", reason="dependency waits enabled (ADR-0016)")
     if item.intent in P1_P2_INTENTS:
         return GuardOutcome(verdict="UNSUPPORTED", reason="P1/P2 recognized but not handled")
     return GuardOutcome(verdict="KEEP", reason="tier ok")
@@ -193,6 +195,7 @@ def evaluate_item_guards(
     message: str,
     context: IntentContext,
     confidence_threshold: float = DEFAULT_CONFIDENCE_THRESHOLD,
+    dependency_wait_enabled: bool = False,
 ) -> GuardOutcome:
     """Runs all guards in ADR order and returns the first non-KEEP verdict."""
     checks = (
@@ -204,7 +207,7 @@ def evaluate_item_guards(
         check_confidence(item, confidence_threshold),
         check_time_expression(item, message, context.occurred_at),
         check_role(item, context),
-        check_tier(item),
+        check_tier(item, dependency_wait_enabled),
     )
     for outcome in checks:
         if outcome.verdict != "KEEP":

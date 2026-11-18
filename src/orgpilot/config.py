@@ -89,6 +89,9 @@ class OrgPilotSettings:
     project_qa_max_spend_usd: Decimal | None = None
     project_qa_input_usd_per_million: Decimal | None = None
     project_qa_output_usd_per_million: Decimal | None = None
+    # ADR-0016 dependency waits: off by default, so the frozen intent evals keep
+    # measuring the recognized-but-unsupported behaviour they were labelled with.
+    dependency_wait_enabled: bool = False
     timezone: str = DEFAULT_TIMEZONE
     intent_timeout_seconds: float = DEFAULT_INTENT_TIMEOUT_SECONDS
     intent_confidence_threshold: float = DEFAULT_INTENT_CONFIDENCE_THRESHOLD
@@ -159,6 +162,10 @@ class OrgPilotSettings:
             project_qa_output_usd_per_million=_decimal_env(
                 "ORGPILOT_PROJECT_QA_OUTPUT_USD_PER_MILLION"
             ),
+            dependency_wait_enabled=os.getenv("ORGPILOT_DEPENDENCY_WAIT_ENABLED", "false")
+            .strip()
+            .lower()
+            in {"1", "true", "yes", "on"},
             timezone=os.getenv("ORGPILOT_TIMEZONE", DEFAULT_TIMEZONE).strip(),
             intent_timeout_seconds=float(
                 os.getenv(

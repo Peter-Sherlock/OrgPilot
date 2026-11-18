@@ -29,7 +29,13 @@ class CollaborationAdapter(ABC):
     def execute(self, command: ActionCommand) -> ActionResult:
         """Dispatches an action command to the appropriate adapter method."""
         match command.action_type:
-            case ActionType.ASK_RECOVERY_ESTIMATE | ActionType.ASK_CLARIFICATION:
+            case (
+                ActionType.ASK_RECOVERY_ESTIMATE
+                | ActionType.ASK_CLARIFICATION
+                | ActionType.ASK_DEPENDENCY_ETA
+                | ActionType.NOTIFY_WAIT_OPENED
+                | ActionType.RELAY_DELIVERY_ESTIMATE
+            ):
                 return self.send_private_message(command)
             case ActionType.PROPOSE_RESCHEDULE:
                 approver = command.targets[0] if command.targets else "approver"

@@ -13,13 +13,19 @@ from orgpilot.domain.enums import (
     AgentTerminationReason,
     ApprovalStatus,
     CommandStatus,
+    CoordinationCaseKind,
     CoordinationCaseStatus,
+    DependencyWaitStatus,
+    PolicyDisposition,
 )
 from orgpilot.domain.models import (
     ActionCommand,
     ActionResult,
     AgentTurnTrace,
+    CoordinationAction,
+    CoordinationCase,
     OrgState,
+    PolicyDecision,
 )
 from orgpilot.events.log import AppendResult, InMemoryEventLog
 from orgpilot.events.models import OrgEvent
@@ -81,7 +87,9 @@ class CoordinationAgent:
             generation_suffix = f":g{case.generation}" if case.generation else ""
             if case.status is CoordinationCaseStatus.OPEN:
                 actions = self.coordination_service.plan_actions_for_case(
-                    case, self.projector.state
+                    case,
+                    self.projector.state,
+                    unreachable_waits=self.case_ledger.unreachable_wait_ids(),
                 )
                 self.case_ledger.transition(
                     case.case_id,
@@ -90,6 +98,17 @@ class CoordinationAgent:
                     candidate_actions=actions,
                 )
 
+                if case.kind is CoordinationCaseKind.DEPENDENCY_WAIT:
+                    self._run_wait_actions(
+                        case,
+                        actions,
+                        current_time,
+                        candidate_action_ids,
+                        policy_decision_ids,
+                        executed_cmd_ids,
+                    )
+                    continue
+
                 for action in actions:
                     candidate_action_ids.append(action.action_id)
                     if self.case_ledger.is_action_duplicate(case.case_id, action):
@@ -97,6 +116,10 @@ class CoordinationAgent:
 
                     decision = self.policy_engine.evaluate(action)
                     policy_decision_ids.append(f"decision:{action.action_id}")
+
+                    if decision.disposition is PolicyDisposition.DENY:
+                        self._escalate_denied(case.case_id, action, decision, current_time)
+                        break
 
                     if action.action_type in {
                         ActionType.ASK_RECOVERY_ESTIMATE,
@@ -246,6 +269,104 @@ class CoordinationAgent:
         )
 
         return trace, generated_events
+
+    def _escalate_denied(
+        self,
+        case_id: str,
+        action: CoordinationAction,
+        decision: PolicyDecision,
+        current_time: datetime,
+    ) -> None:
+        """A denied action is not sent or offered for approval; a human sees why."""
+        self.case_ledger.transition(
+            case_id,
+            CoordinationCaseStatus.ESCALATED,
+            current_time,
+            terminal_reason=f"policy denied {action.action_type.value}: {decision.reason}",
+            candidate_actions=(),
+        )
+
+    def _escalate_wait_failure(
+        self, case: CoordinationCase, error: str, current_time: datetime
+    ) -> None:
+        self.case_ledger.transition(
+            case.case_id,
+            CoordinationCaseStatus.ESCALATED,
+            current_time,
+            terminal_reason=f"dependency wait message failed: {error}",
+            candidate_actions=(),
+        )
+
+    def _run_wait_actions(
+        self,
+        case: CoordinationCase,
+        actions: tuple[CoordinationAction, ...],
+        current_time: datetime,
+        candidate_action_ids: list[str],
+        policy_decision_ids: list[str],
+        executed_cmd_ids: list[str],
+    ) -> None:
+        """Sends a wait's private messages once; a failed send is never retried here.
+
+        Only an undelivered question stops the wait, because then nobody was asked.
+        A failed notice is recorded and the remaining recipients are still tried.
+        """
+        relay_error: str | None = None
+        for action in actions:
+            candidate_action_ids.append(action.action_id)
+            if self.case_ledger.is_action_duplicate(case.case_id, action):
+                continue
+
+            decision = self.policy_engine.evaluate(action)
+            policy_decision_ids.append(f"decision:{action.action_id}")
+            if decision.disposition is not PolicyDisposition.ALLOW:
+                self._escalate_denied(case.case_id, action, decision, current_time)
+                return
+
+            command = ActionCommand(
+                command_id=f"cmd:{action.action_id}:r{self._turn_count}",
+                action_id=action.action_id,
+                action_type=action.action_type,
+                targets=action.targets,
+                payload=action.payload,
+                reason_refs=action.reason_refs,
+                created_at=current_time,
+                idempotency_key=f"idem:{action.action_id}",
+            )
+            result = self.adapter.execute(command)
+            self.case_ledger.record_command(case.case_id, command, current_time)
+            executed_cmd_ids.append(command.command_id)
+            if result.status is CommandStatus.SUCCESS:
+                continue
+
+            error = result.error or result.status.value
+            case.delivery_failures = (*case.delivery_failures, action.action_id)
+            if action.action_type is ActionType.ASK_DEPENDENCY_ETA:
+                self._escalate_wait_failure(case, error, current_time)
+                return
+            if action.action_type is ActionType.RELAY_DELIVERY_ESTIMATE:
+                relay_error = error
+
+        wait = self.projector.state.dependency_waits.get(case.dependency_wait_id or "")
+        if wait is None:
+            return
+        if relay_error is not None:
+            self._escalate_wait_failure(case, relay_error, current_time)
+        elif wait.status is DependencyWaitStatus.ESTIMATED:
+            self.case_ledger.transition(
+                case.case_id,
+                CoordinationCaseStatus.RESOLVED,
+                current_time,
+                terminal_reason="delivery estimate relayed; wait stays open until delivery",
+                candidate_actions=(),
+            )
+        elif wait.status is DependencyWaitStatus.AWAITING_ESTIMATE:
+            self.case_ledger.transition(
+                case.case_id,
+                CoordinationCaseStatus.WAITING_FOR_RESPONSE,
+                current_time,
+                waiting_for=self.projector.state.tasks[wait.upstream_task_id].owner_id,
+            )
 
     def _close_after_update(
         self,

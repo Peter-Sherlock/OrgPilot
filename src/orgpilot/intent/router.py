@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 import httpx
 
 from orgpilot.config import OrgPilotSettings
+from orgpilot.coordination.dependency_wait import awaited_waits
 from orgpilot.intent.client import (
     HeuristicIntentClient,
     IntentClient,
@@ -133,7 +134,10 @@ class MessageRouter:
         self.messages = message_store or SqlMessageStore(service.db)
         self.recent_turns_limit = recent_turns_limit or self.settings.intent_recent_turns
         self.handlers = IntentHandlers(
-            service, self.dialogue, self.settings.intent_confidence_threshold
+            service,
+            self.dialogue,
+            self.settings.intent_confidence_threshold,
+            dependency_wait_enabled=self.settings.dependency_wait_enabled,
         )
         self.handlers.bind_session_registrar(self.register_probe_clarifications)
         self._restored_projects: set[str] = set()
@@ -709,6 +713,15 @@ class MessageRouter:
             if row["reply"]:
                 line += "\n机器人: " + row["reply"]
             history.append(line)
+        pending_view = (
+            PendingQuestionView(
+                question=pending.question,
+                task_ids=list(pending.task_ids),
+                asked_rounds=pending.asked_rounds,
+            )
+            if pending
+            else self._awaited_delivery_question(sender_id, agent)
+        )
         return IntentContext(
             project_id=project_id,
             message=text,
@@ -720,21 +733,27 @@ class MessageRouter:
                 task.task_id for task in state.tasks.values() if task.owner_id == sender_id
             ],
             known_tasks=known_tasks,
-            pending_question=(
-                PendingQuestionView(
-                    question=pending.question,
-                    task_ids=list(pending.task_ids),
-                    asked_rounds=pending.asked_rounds,
-                )
-                if pending
-                else None
-            ),
+            pending_question=pending_view,
             pending_confirmation=(
                 PendingConfirmationView(initiated_by=confirmation.initiated_by)
                 if confirmation
                 else None
             ),
             conversation_history=tuple(history),
+        )
+
+    def _awaited_delivery_question(self, sender_id: str, agent: Any) -> PendingQuestionView | None:
+        """Tells the classifier which delivery question this member was asked (ADR-0016)."""
+        if not self.settings.dependency_wait_enabled:
+            return None
+        waits = awaited_waits(
+            agent.case_ledger.get_all_cases(), agent.projector.state, sender_id
+        )
+        if not waits:
+            return None
+        return PendingQuestionView(
+            question="预计什么时候可以交付或联调？",
+            task_ids=sorted({wait.upstream_task_id for wait in waits}),
         )
 
     async def _classify_with_retry(

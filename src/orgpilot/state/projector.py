@@ -4,10 +4,18 @@ from collections.abc import Iterable
 from datetime import datetime
 from typing import Any
 
-from orgpilot.domain.enums import ClaimStatus, CommitmentStatus, HealthStatus, WorkflowStatus
+from orgpilot.domain.enums import (
+    ClaimStatus,
+    CommitmentStatus,
+    DependencyWaitReleaseReason,
+    DependencyWaitStatus,
+    HealthStatus,
+    WorkflowStatus,
+)
 from orgpilot.domain.errors import DomainInvariantError
 from orgpilot.domain.models import (
     Commitment,
+    DependencyWait,
     MemberState,
     OrgState,
     TaskHealthClaim,
@@ -16,6 +24,9 @@ from orgpilot.domain.models import (
 from orgpilot.events.models import (
     CommitmentMadeEvent,
     CommitmentSupersededEvent,
+    DependencyDeliveryEstimatedEvent,
+    DependencyWaitCancelledEvent,
+    DependencyWaitReportedEvent,
     MemberRegisteredEvent,
     OrgEvent,
     TaskCreatedEvent,
@@ -32,7 +43,7 @@ _HEALTH_SEVERITY = {
 }
 
 # Invalidate derived caches when event projection semantics change.
-PROJECTION_VERSION = 2
+PROJECTION_VERSION = 3
 
 
 class OrgProjector:
@@ -64,6 +75,12 @@ class OrgProjector:
                 self._make_commitment(event)
             case CommitmentSupersededEvent():
                 self._supersede_commitment(event)
+            case DependencyWaitReportedEvent():
+                self._report_dependency_wait(event)
+            case DependencyDeliveryEstimatedEvent():
+                self._estimate_dependency_delivery(event)
+            case DependencyWaitCancelledEvent():
+                self._cancel_dependency_wait(event)
 
         self.state.processed_event_ids.add(event.event_id)
         self.state.last_event_id = event.event_id
@@ -134,6 +151,119 @@ class OrgProjector:
         self._settle_matching_commitments(
             payload.task_id, "workflow_status", payload.to_status, event.occurred_at
         )
+        if payload.to_status is WorkflowStatus.DONE:
+            self._release_waits_on_completion(payload.task_id, event)
+
+    def _report_dependency_wait(self, event: DependencyWaitReportedEvent) -> None:
+        """Opens a wait, or appends evidence when the same active wait is reported again."""
+        payload = event.payload
+        waiting = self._require_task(payload.waiting_task_id)
+        self._require_task(payload.upstream_task_id)
+        if event.actor_id is None or event.actor_id != waiting.owner_id:
+            raise DomainInvariantError(
+                f"only the owner of {waiting.task_id!r} can report that it is waiting"
+            )
+        if payload.upstream_task_id not in waiting.dependencies:
+            raise DomainInvariantError(
+                f"{payload.upstream_task_id!r} is not a formal dependency of {waiting.task_id!r}"
+            )
+
+        existing = self.state.dependency_waits.get(payload.wait_id)
+        if existing is not None:
+            if (
+                existing.status is DependencyWaitStatus.RELEASED
+                or existing.waiting_task_id != payload.waiting_task_id
+                or existing.upstream_task_id != payload.upstream_task_id
+            ):
+                raise DomainInvariantError(f"wait {payload.wait_id!r} cannot take this report")
+            self.state.dependency_waits[payload.wait_id] = existing.model_copy(
+                update={
+                    "evidence_event_ids": (*existing.evidence_event_ids, event.event_id),
+                    "updated_at": event.occurred_at,
+                }
+            )
+            return
+
+        upstream = self._require_task(payload.upstream_task_id)
+        if WorkflowStatus.DONE in {waiting.workflow_status, upstream.workflow_status}:
+            raise DomainInvariantError("a finished task cannot open a dependency wait")
+        for wait in self.state.dependency_waits.values():
+            if (
+                wait.status is not DependencyWaitStatus.RELEASED
+                and wait.waiting_task_id == payload.waiting_task_id
+                and wait.upstream_task_id == payload.upstream_task_id
+            ):
+                raise DomainInvariantError(f"wait {wait.wait_id!r} is already active for this pair")
+        self.state.dependency_waits[payload.wait_id] = DependencyWait(
+            wait_id=payload.wait_id,
+            waiting_task_id=payload.waiting_task_id,
+            upstream_task_id=payload.upstream_task_id,
+            reported_by=event.actor_id,
+            quote=payload.quote,
+            evidence_event_ids=(event.event_id,),
+            opened_at=event.occurred_at,
+            updated_at=event.occurred_at,
+        )
+
+    def _estimate_dependency_delivery(self, event: DependencyDeliveryEstimatedEvent) -> None:
+        """Records the upstream owner's estimate; the wait stays open until delivery."""
+        wait = self._require_active_wait(event.payload.wait_id)
+        upstream = self._require_task(wait.upstream_task_id)
+        if event.actor_id is None or event.actor_id != upstream.owner_id:
+            raise DomainInvariantError(
+                f"only the owner of {upstream.task_id!r} can estimate its delivery"
+            )
+        self.state.dependency_waits[wait.wait_id] = wait.model_copy(
+            update={
+                "status": DependencyWaitStatus.ESTIMATED,
+                "estimated_at": event.payload.estimated_at,
+                "estimated_by": event.actor_id,
+                "estimate_quote": event.payload.quote,
+                "evidence_event_ids": (*wait.evidence_event_ids, event.event_id),
+                "updated_at": event.occurred_at,
+            }
+        )
+
+    def _cancel_dependency_wait(self, event: DependencyWaitCancelledEvent) -> None:
+        wait = self._require_active_wait(event.payload.wait_id)
+        if event.actor_id != wait.reported_by:
+            raise DomainInvariantError(f"only {wait.reported_by!r} can cancel {wait.wait_id!r}")
+        self._release_wait(wait, DependencyWaitReleaseReason.CANCELLED_BY_WAITER, event)
+
+    def _release_waits_on_completion(
+        self, task_id: str, event: TaskWorkflowChangedEvent
+    ) -> None:
+        for wait in tuple(self.state.dependency_waits.values()):
+            if wait.status is DependencyWaitStatus.RELEASED:
+                continue
+            if wait.upstream_task_id == task_id:
+                self._release_wait(wait, DependencyWaitReleaseReason.UPSTREAM_DONE, event)
+            elif wait.waiting_task_id == task_id:
+                self._release_wait(wait, DependencyWaitReleaseReason.WAITER_DONE, event)
+
+    def _release_wait(
+        self,
+        wait: DependencyWait,
+        reason: DependencyWaitReleaseReason,
+        event: OrgEvent,
+    ) -> None:
+        self.state.dependency_waits[wait.wait_id] = wait.model_copy(
+            update={
+                "status": DependencyWaitStatus.RELEASED,
+                "release_reason": reason,
+                "released_by_event_id": event.event_id,
+                "evidence_event_ids": (*wait.evidence_event_ids, event.event_id),
+                "updated_at": event.occurred_at,
+            }
+        )
+
+    def _require_active_wait(self, wait_id: str) -> DependencyWait:
+        wait = self.state.dependency_waits.get(wait_id)
+        if wait is None:
+            raise DomainInvariantError(f"unknown dependency wait {wait_id!r}")
+        if wait.status is DependencyWaitStatus.RELEASED:
+            raise DomainInvariantError(f"dependency wait {wait_id!r} is already released")
+        return wait
 
     def _update_task(self, event: TaskUpdatedEvent) -> None:
         payload = event.payload
