@@ -38,6 +38,27 @@ class PolicyEngine:
                 reason="action changes shared state or sends a public notification",
             )
 
+        if action.action_type in {
+            ActionType.ASK_DEPENDENCY_ETA,
+            ActionType.NOTIFY_WAIT_OPENED,
+            ActionType.RELAY_DELIVERY_ESTIMATE,
+        }:
+            if len(action.targets) != 1:
+                return PolicyDecision(
+                    action_id=action.action_id,
+                    disposition=PolicyDisposition.DENY,
+                    risk_level=RiskLevel.HIGH,
+                    requires_approval=True,
+                    reason="a private dependency-wait message must have exactly one recipient",
+                )
+            return PolicyDecision(
+                action_id=action.action_id,
+                disposition=PolicyDisposition.ALLOW,
+                risk_level=RiskLevel.LOW,
+                requires_approval=False,
+                reason="one private message that does not alter official state",
+            )
+
         return PolicyDecision(
             action_id=action.action_id,
             disposition=PolicyDisposition.DENY,

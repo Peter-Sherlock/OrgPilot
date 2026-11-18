@@ -50,6 +50,7 @@ from orgpilot.intent.replies import (
     merge_reply_kinds,
     sync_started_text,
 )
+from orgpilot.intent.wait_handlers import DependencyWaitHandler, describe_waits
 
 if TYPE_CHECKING:
     from orgpilot.gateway.service import GatewayService
@@ -80,10 +81,13 @@ class IntentHandlers:
         service: "GatewayService",
         dialogue: DialogueStateStore,
         confidence_threshold: float = 0.6,
+        dependency_wait_enabled: bool = False,
     ) -> None:
         self.service = service
         self.dialogue = dialogue
         self.confidence_threshold = confidence_threshold
+        self.dependency_wait_enabled = dependency_wait_enabled
+        self.waits = DependencyWaitHandler(service, dialogue, confidence_threshold)
         self._send_text: Callable[[str, str], Awaitable[None]] | None = None
         self._send_card: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None
         self._session_registrar: Callable[[str, Any, datetime], None] | None = None
@@ -128,12 +132,42 @@ class IntentHandlers:
         counter = [0]
         answer_items: list[IntentItem] = []
 
+        if self.dependency_wait_enabled:
+            result = self.waits.promote(
+                result,
+                project_id=project_id,
+                member=member,
+                message=message,
+                state=agent.projector.state,
+                occurred_at=occurred_at,
+            )
+            result, asks = await self.waits.bind_replies(
+                result,
+                project_id=project_id,
+                member=member,
+                message=message,
+                occurred_at=occurred_at,
+                agent=agent,
+                message_key=message_key,
+                source_ref=source_ref,
+                parts=parts,
+                kinds=kinds,
+                data=data,
+            )
+            agent = await self.service.get_or_replay_agent(project_id)
+
         for item in result.items:
             # Deterministic deadline judgment BEFORE the guards: a completion
             # later than the task deadline upgrades the health to at least
             # delayed (LABELING.md S4); it never downgrades (3b 下半 §1).
             apply_deadline_policy(item, context)
-            guard = evaluate_item_guards(item, message, context, self.confidence_threshold)
+            guard = evaluate_item_guards(
+                item,
+                message,
+                context,
+                self.confidence_threshold,
+                dependency_wait_enabled=self.dependency_wait_enabled,
+            )
             if guard.verdict == "DROP":
                 logger.info("Dropped intent item %s: %s", item.intent, guard.reason)
                 continue
@@ -176,6 +210,20 @@ class IntentHandlers:
             ):
                 answer_items.append(item)
                 continue
+            elif item.intent == IntentType.DEPENDENCY_WAIT:
+                asked = await self.waits.handle_item(
+                    item,
+                    project_id=project_id,
+                    member=member,
+                    message=message,
+                    occurred_at=occurred_at,
+                    message_key=message_key,
+                    source_ref=source_ref,
+                    parts=parts,
+                    kinds=kinds,
+                    data=data,
+                )
+                asks = asks or asked
             elif item.intent in (
                 IntentType.REPORT_STATUS,
                 IntentType.MAKE_COMMITMENT,
@@ -773,6 +821,7 @@ class IntentHandlers:
             if latest.expected_completion is not None:
                 detail += f"，预计 {fmt(latest.expected_completion)} 完成"
             lines.append(detail)
+        lines.extend(describe_waits(state, task))
         return "\n".join(lines)
 
     # ------------------------------------------------------- sync flows

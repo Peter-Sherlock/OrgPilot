@@ -31,4 +31,4 @@ def test_replay_is_deterministic(scenario_path: Path) -> None:
 
 
 def test_all_scenarios_are_discoverable() -> None:
-    assert len(SCENARIO_PATHS) == 9
+    assert len(SCENARIO_PATHS) == 11

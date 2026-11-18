@@ -1,0 +1,118 @@
+schema_version: 1
+scenario_id: m2_02_dependency_wait_released_by_delivery
+title: The upstream task finishes before its owner answers
+description: >-
+  Alice reports a wait and Bob never answers, so the case keeps waiting with no timeout or
+  escalation even a week later. The payment API's formal completion then cancels the question.
+project_id: m2-dependency-release
+rounds:
+  - round_number: 1
+    current_time: "2026-11-18T10:00:00+08:00"
+    events:
+      - schema_version: 1
+        project_id: m2-dependency-release
+        event_id: evt-m2-02-member-alice
+        event_type: member.registered
+        source: human
+        source_ref: setup:alice
+        occurred_at: "2026-11-18T09:00:00+08:00"
+        received_at: "2026-11-18T09:00:00+08:00"
+        payload:
+          member_id: alice
+          display_name: Alice
+          role: frontend
+      - schema_version: 1
+        project_id: m2-dependency-release
+        event_id: evt-m2-02-member-bob
+        event_type: member.registered
+        source: human
+        source_ref: setup:bob
+        occurred_at: "2026-11-18T09:00:00+08:00"
+        received_at: "2026-11-18T09:00:00+08:00"
+        payload:
+          member_id: bob
+          display_name: Bob
+          role: backend
+      - schema_version: 1
+        project_id: m2-dependency-release
+        event_id: evt-m2-02-task-api
+        event_type: task.created
+        source: task
+        source_ref: task-system:payment-api
+        occurred_at: "2026-11-18T09:05:00+08:00"
+        received_at: "2026-11-18T09:05:00+08:00"
+        payload:
+          task_id: payment_api
+          title: Payment API
+          owner_id: bob
+          workflow_status: doing
+          dependencies: []
+      - schema_version: 1
+        project_id: m2-dependency-release
+        event_id: evt-m2-02-task-page
+        event_type: task.created
+        source: task
+        source_ref: task-system:checkout-page
+        occurred_at: "2026-11-18T09:05:00+08:00"
+        received_at: "2026-11-18T09:05:00+08:00"
+        payload:
+          task_id: checkout_page
+          title: Checkout Page
+          owner_id: alice
+          workflow_status: doing
+          dependencies: [payment_api]
+      - schema_version: 1
+        project_id: m2-dependency-release
+        event_id: evt-m2-02-wait
+        event_type: dependency.wait_reported
+        source: message
+        source_ref: message:mock-dm:alice:1
+        actor_id: alice
+        occurred_at: "2026-11-18T10:00:00+08:00"
+        received_at: "2026-11-18T10:00:01+08:00"
+        payload:
+          wait_id: wait-page-api
+          waiting_task_id: checkout_page
+          upstream_task_id: payment_api
+          quote: 页面在等支付接口
+    expected_termination: waiting_response
+    expected_case_statuses:
+      case:dependency-wait:wait-page-api: waiting_for_response
+    expected_waiting_for:
+      case:dependency-wait:wait-page-api: bob
+  - round_number: 2
+    current_time: "2026-11-25T10:00:00+08:00"
+    expected_termination: waiting_response
+    expected_case_statuses:
+      case:dependency-wait:wait-page-api: waiting_for_response
+    expected_waiting_for:
+      case:dependency-wait:wait-page-api: bob
+  - round_number: 3
+    current_time: "2026-11-25T11:00:00+08:00"
+    events:
+      - schema_version: 1
+        project_id: m2-dependency-release
+        event_id: evt-m2-02-api-done
+        event_type: task.workflow_changed
+        source: task
+        source_ref: task-system:payment-api:done
+        occurred_at: "2026-11-25T11:00:00+08:00"
+        received_at: "2026-11-25T11:00:01+08:00"
+        payload:
+          task_id: payment_api
+          from_status: doing
+          to_status: done
+    expected_termination: all_resolved
+    expected_case_statuses:
+      case:dependency-wait:wait-page-api: cancelled
+interactive_ground_truth:
+  total_rounds: 3
+  final_termination_reason: all_resolved
+  final_cases:
+    case:dependency-wait:wait-page-api: cancelled
+  case_terminal_reasons:
+    case:dependency-wait:wait-page-api: upstream_done
+  tasks:
+    payment_api:
+      workflow_status: done
+      health_status: unknown

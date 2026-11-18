@@ -109,6 +109,26 @@ class CommitmentSupersededPayload(FrozenModel):
     replacement_commitment_id: str | None = None
 
 
+class DependencyWaitReportedPayload(FrozenModel):
+    wait_id: str
+    waiting_task_id: str
+    upstream_task_id: str
+    quote: str = Field(min_length=1)
+
+
+class DependencyDeliveryEstimatedPayload(FrozenModel):
+    wait_id: str
+    estimated_at: datetime
+    quote: str = Field(min_length=1)
+
+    _estimate_timezone_required = field_validator("estimated_at")(_require_timezone)
+
+
+class DependencyWaitCancelledPayload(FrozenModel):
+    wait_id: str
+    quote: str = Field(min_length=1)
+
+
 class MemberRegisteredEvent(EventBase):
     event_type: Literal["member.registered"]
     payload: MemberRegisteredPayload
@@ -144,6 +164,21 @@ class CommitmentSupersededEvent(EventBase):
     payload: CommitmentSupersededPayload
 
 
+class DependencyWaitReportedEvent(EventBase):
+    event_type: Literal["dependency.wait_reported"]
+    payload: DependencyWaitReportedPayload
+
+
+class DependencyDeliveryEstimatedEvent(EventBase):
+    event_type: Literal["dependency.delivery_estimated"]
+    payload: DependencyDeliveryEstimatedPayload
+
+
+class DependencyWaitCancelledEvent(EventBase):
+    event_type: Literal["dependency.wait_cancelled"]
+    payload: DependencyWaitCancelledPayload
+
+
 type OrgEvent = Annotated[
     MemberRegisteredEvent
     | TaskCreatedEvent
@@ -151,7 +186,10 @@ type OrgEvent = Annotated[
     | TaskUpdatedEvent
     | TaskHealthReportedEvent
     | CommitmentMadeEvent
-    | CommitmentSupersededEvent,
+    | CommitmentSupersededEvent
+    | DependencyWaitReportedEvent
+    | DependencyDeliveryEstimatedEvent
+    | DependencyWaitCancelledEvent,
     Field(discriminator="event_type"),
 ]
 
