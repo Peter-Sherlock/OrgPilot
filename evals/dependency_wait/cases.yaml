@@ -1,0 +1,343 @@
+# R1 依赖等待评测样本（ADR-0016）。期望结果按设计文档的应有行为标注，不按当前代码的实际行为标注。
+#
+# 字段说明：
+#   setup     由脚本分类的前置消息，不调用模型，只用来建立"已有等待"的状态
+#   turns     被评测的消息，逐条走完整的消息路由
+#   expected.waits     评测结束时全部等待的最终状态；空列表表示不应存在任何等待
+#   expected.contacts  被评测消息应触发的全部外发动作；发给发送者本人的回复不算外发
+#   expected.clarify   true 表示应回问发送者
+#   hard      true 表示消息没有用"在等 + 上游名称"的直接说法，单独统计
+schema_version: 1
+dataset_id: dependency_wait_eval_v1
+cases:
+  # ---------------------------------------------------------------- 明确等待
+  - id: explicit_01
+    category: explicit_wait
+    turns:
+      - {sender: ou_linyue, text: 结算页面在等支付接口}
+    expected:
+      waits:
+        - {waiting: checkout_page, upstream: pay_api, status: awaiting_estimate}
+      contacts:
+        - {action: ask_dependency_eta, target: ou_hechuan}
+        - {action: notify_wait_opened, target: ou_pm}
+
+  - id: explicit_02
+    category: explicit_wait
+    turns:
+      - {sender: ou_suhang, text: 全链路联调在等结算页面提测}
+    expected:
+      waits:
+        - {waiting: e2e_test, upstream: checkout_page, status: awaiting_estimate}
+      contacts:
+        - {action: ask_dependency_eta, target: ou_linyue}
+        - {action: notify_wait_opened, target: ou_pm}
+
+  # ADR-0016 第 2.3 节：只有一个候选时，等待内容是其名称的一部分也算点名。
+  - id: explicit_03
+    category: explicit_wait
+    turns:
+      - {sender: ou_linyue, text: 还在等接口}
+    expected:
+      waits:
+        - {waiting: checkout_page, upstream: pay_api, status: awaiting_estimate}
+      contacts:
+        - {action: ask_dependency_eta, target: ou_hechuan}
+        - {action: notify_wait_opened, target: ou_pm}
+
+  - id: explicit_04
+    category: explicit_wait
+    hard: true
+    turns:
+      - {sender: ou_linyue, text: 支付接口还没给，结算页面只能先等着}
+    expected:
+      waits:
+        - {waiting: checkout_page, upstream: pay_api, status: awaiting_estimate}
+      contacts:
+        - {action: ask_dependency_eta, target: ou_hechuan}
+        - {action: notify_wait_opened, target: ou_pm}
+
+  - id: explicit_05
+    category: explicit_wait
+    hard: true
+    turns:
+      - {sender: ou_linyue, text: 结算页面被支付接口卡住了，做不下去}
+    expected:
+      waits:
+        - {waiting: checkout_page, upstream: pay_api, status: awaiting_estimate}
+      contacts:
+        - {action: ask_dependency_eta, target: ou_hechuan}
+        - {action: notify_wait_opened, target: ou_pm}
+
+  # ---------------------------------------------------------------- 含糊上游
+  - id: vague_01
+    category: vague_upstream
+    turns:
+      - {sender: ou_linyue, text: 页面在等后端}
+    expected:
+      waits: []
+      contacts: []
+      clarify: true
+
+  - id: vague_02
+    category: vague_upstream
+    turns:
+      - {sender: ou_suhang, text: 还在等那边给结果}
+    expected:
+      waits: []
+      contacts: []
+      clarify: true
+
+  # ---------------------------------------------------------------- 多个候选
+  - id: candidates_01
+    category: multiple_candidates
+    turns:
+      - {sender: ou_mengqi, text: 退款页面在等接口}
+    expected:
+      waits: []
+      contacts: []
+      clarify: true
+
+  # 孟琪的退款页面和发票页面都依赖支付接口，无法确定是哪个任务在等。
+  - id: candidates_02
+    category: multiple_candidates
+    turns:
+      - {sender: ou_mengqi, text: 在等支付接口}
+    expected:
+      waits: []
+      contacts: []
+      clarify: true
+
+  - id: candidates_03
+    category: multiple_candidates
+    turns:
+      - {sender: ou_mengqi, text: 退款页面在等退款接口}
+    expected:
+      waits:
+        - {waiting: refund_page, upstream: refund_api, status: awaiting_estimate}
+      contacts:
+        - {action: ask_dependency_eta, target: ou_tangmin}
+        - {action: notify_wait_opened, target: ou_pm}
+
+  # ---------------------------------------------------------------- 提问
+  - id: question_01
+    category: question
+    turns:
+      - {sender: ou_linyue, text: 支付接口什么时候能好？}
+    expected:
+      waits: []
+      contacts: []
+
+  - id: question_02
+    category: question
+    turns:
+      - {sender: ou_linyue, text: 结算页面是不是还得等支付接口？}
+    expected:
+      waits: []
+      contacts: []
+
+  # ---------------------------------------------------------------- 假设
+  - id: hypothetical_01
+    category: hypothetical
+    turns:
+      - {sender: ou_linyue, text: 如果支付接口明天还不给，结算页面就得等到下周了}
+    expected:
+      waits: []
+      contacts: []
+
+  - id: hypothetical_02
+    category: hypothetical
+    turns:
+      - {sender: ou_mengqi, text: 要是退款接口延期，退款页面只能等着}
+    expected:
+      waits: []
+      contacts: []
+
+  # ---------------------------------------------------------------- 否定
+  - id: negation_01
+    category: negation
+    turns:
+      - {sender: ou_linyue, text: 结算页面没在等支付接口，已经联调通了}
+    expected:
+      waits: []
+      contacts: []
+
+  - id: negation_02
+    category: negation
+    turns:
+      - {sender: ou_linyue, text: 不用等支付接口，我先用 mock 数据做}
+    expected:
+      waits: []
+      contacts: []
+
+  - id: negation_03
+    category: negation
+    turns:
+      - {sender: ou_linyue, text: 等我把结算页面改完再看支付接口的文档}
+    expected:
+      waits: []
+      contacts: []
+
+  # ---------------------------------------------------------------- 取消
+  - id: cancel_01
+    category: cancel
+    setup:
+      - {sender: ou_linyue, text: 结算页面在等支付接口, task_id: checkout_page}
+    turns:
+      - {sender: ou_linyue, text: 支付接口不用等了，我先用 mock 联调}
+    expected:
+      waits:
+        - {waiting: checkout_page, upstream: pay_api, status: released}
+      contacts: []
+
+  # 取消的是另一件事，原有等待不能被关闭。
+  - id: cancel_02
+    category: cancel
+    setup:
+      - {sender: ou_linyue, text: 结算页面在等支付接口, task_id: checkout_page}
+    turns:
+      - {sender: ou_linyue, text: 设计稿不用等了}
+    expected:
+      waits:
+        - {waiting: checkout_page, upstream: pay_api, status: awaiting_estimate}
+      contacts: []
+
+  # ---------------------------------------------------------------- 上游回复时间
+  - id: reply_time_01
+    category: reply_with_time
+    setup:
+      - {sender: ou_linyue, text: 结算页面在等支付接口, task_id: checkout_page}
+    turns:
+      - {sender: ou_hechuan, text: 明天下午3点可以联调}
+    expected:
+      waits:
+        - waiting: checkout_page
+          upstream: pay_api
+          status: estimated
+          estimated_at: "2026-11-19T15:00:00+08:00"
+      contacts:
+        - {action: relay_delivery_estimate, target: ou_linyue}
+        - {action: relay_delivery_estimate, target: ou_pm}
+
+  - id: reply_time_02
+    category: reply_with_time
+    setup:
+      - {sender: ou_linyue, text: 结算页面在等支付接口, task_id: checkout_page}
+    turns:
+      - {sender: ou_hechuan, text: 后天上午10点}
+    expected:
+      waits:
+        - waiting: checkout_page
+          upstream: pay_api
+          status: estimated
+          estimated_at: "2026-11-20T10:00:00+08:00"
+      contacts:
+        - {action: relay_delivery_estimate, target: ou_linyue}
+        - {action: relay_delivery_estimate, target: ou_pm}
+
+  # 评审时间不是交付时间。
+  - id: reply_time_03
+    category: reply_with_time
+    hard: true
+    setup:
+      - {sender: ou_linyue, text: 结算页面在等支付接口, task_id: checkout_page}
+    turns:
+      - {sender: ou_hechuan, text: 明天下午开评审，后天中午前交付}
+    expected:
+      waits:
+        - waiting: checkout_page
+          upstream: pay_api
+          status: estimated
+          estimated_at: "2026-11-20T12:00:00+08:00"
+      contacts:
+        - {action: relay_delivery_estimate, target: ou_linyue}
+        - {action: relay_delivery_estimate, target: ou_pm}
+
+  # ---------------------------------------------------------------- 回复无时间
+  - id: reply_no_time_01
+    category: reply_without_time
+    setup:
+      - {sender: ou_linyue, text: 结算页面在等支付接口, task_id: checkout_page}
+    turns:
+      - {sender: ou_hechuan, text: 在做了，时间还定不下来}
+    expected:
+      waits:
+        - {waiting: checkout_page, upstream: pay_api, status: awaiting_estimate}
+      contacts: []
+
+  # 会议时间不是交付时间，不能转告。
+  - id: reply_no_time_02
+    category: reply_without_time
+    hard: true
+    setup:
+      - {sender: ou_linyue, text: 结算页面在等支付接口, task_id: checkout_page}
+    turns:
+      - {sender: ou_hechuan, text: 明天下午开个会讨论一下}
+    expected:
+      waits:
+        - {waiting: checkout_page, upstream: pay_api, status: awaiting_estimate}
+      contacts: []
+
+  # ---------------------------------------------------------------- 一条消息多件事
+  - id: multi_item_01
+    category: multiple_items
+    hard: true
+    turns:
+      - {sender: ou_linyue, text: 结算页面在等支付接口，这周评审几点开？}
+    expected:
+      waits:
+        - {waiting: checkout_page, upstream: pay_api, status: awaiting_estimate}
+      contacts:
+        - {action: ask_dependency_eta, target: ou_hechuan}
+        - {action: notify_wait_opened, target: ou_pm}
+
+  - id: multi_item_02
+    category: multiple_items
+    turns:
+      - {sender: ou_mengqi, text: 退款页面在等退款接口，发票页面在等支付接口}
+    expected:
+      waits:
+        - {waiting: invoice_page, upstream: pay_api, status: awaiting_estimate}
+        - {waiting: refund_page, upstream: refund_api, status: awaiting_estimate}
+      contacts:
+        - {action: ask_dependency_eta, target: ou_hechuan}
+        - {action: ask_dependency_eta, target: ou_tangmin}
+        - {action: notify_wait_opened, target: ou_pm}
+        - {action: notify_wait_opened, target: ou_pm}
+
+  # ---------------------------------------------------------------- 重复
+  - id: repeat_01
+    category: repeat
+    turns:
+      - {sender: ou_linyue, text: 结算页面在等支付接口}
+      - {sender: ou_linyue, text: 结算页面还在等支付接口，麻烦快点}
+    expected:
+      waits:
+        - {waiting: checkout_page, upstream: pay_api, status: awaiting_estimate}
+      contacts:
+        - {action: ask_dependency_eta, target: ou_hechuan}
+        - {action: notify_wait_opened, target: ou_pm}
+
+  # 同一条消息被重复投递（message_id 相同）。
+  - id: repeat_02
+    category: repeat
+    turns:
+      - {sender: ou_linyue, text: 结算页面在等支付接口, message_id: om-redelivered}
+      - {sender: ou_linyue, text: 结算页面在等支付接口, message_id: om-redelivered}
+    expected:
+      waits:
+        - {waiting: checkout_page, upstream: pay_api, status: awaiting_estimate}
+      contacts:
+        - {action: ask_dependency_eta, target: ou_hechuan}
+        - {action: notify_wait_opened, target: ou_pm}
+
+  # ---------------------------------------------------------------- 没有正式依赖
+  # 退款接口不是结算页面的正式上游，既不能联系唐敏，也不能改去联系何川。
+  - id: no_edge_01
+    category: no_formal_edge
+    turns:
+      - {sender: ou_linyue, text: 结算页面在等退款接口}
+    expected:
+      waits: []
+      contacts: []
+      clarify: true
