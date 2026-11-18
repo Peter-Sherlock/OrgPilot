@@ -33,6 +33,10 @@
 
 ### 工作项
 
+截至 2026-11-02，`main@778bfb3` 已合入 M1-1 至 M1-6：最近验证为 524 项测试、覆盖率 92.58%，
+生命周期 58/59，剩余 D3。2026-11-18 起，[ADR-0014](adr/0014-time-driven-coordination.md) 以“草稿、未实施”状态收入 git，
+按 M2 消息驱动计划暂缓；时间驱动功能尚未实现，M1-8 至 M1-10 未启动。
+
 文件按三条线划分，线与线之间不重叠，线内按顺序做。第九节里的行号以 ed8bf27 为准，main 之后又合了 #9、#10，动手前先在当前代码上重新定位。
 
 | ID | 内容 | 主要改动文件 | 依赖 | 波次 |
@@ -43,7 +47,7 @@
 | M1-4 | **D1a** 拿到预计完成时间就结案，没有和截止时间比较 | `coordination/ledger.py` | M1-1 | 2 |
 | M1-5 | **D6** 任务完成后风险状态不清除 | `state/projector.py`，可能还有 `dependencies/analyzer.py` | M1-2 | 3 |
 | M1-6 | **D1b** 已结束的协调事项占住了任务的事项槽位。**只在出现新证据时**重开，否则 m1_01、m1_05 会来回抖动；顺带修掉审批 ID 冲突：同一事项第二次改期会覆盖第一次的审批记录 | `coordination/ledger.py`、`coordination/approval.py` | M1-4 | 3 |
-| M1-7 | **ADR-0014：时间驱动的协调**。截止时间过后怎么触发；承诺快到期和已违约怎么处理；时间推进由谁驱动（回放里由场景轮次推进，网关里由定时任务推进）；打扰频率怎么限制。先写设计，评审后再写代码 | `docs/adr/0014-*.md` | — | 3（只写文档） |
+| M1-7 | **[ADR-0014：时间驱动的协调](adr/0014-time-driven-coordination.md)**。触发、截止时间与承诺跟进、去重和打扰预算。**草稿，未实施**；评审后再写代码 | `docs/adr/0014-time-driven-coordination.md` | — | 3（只写文档） |
 | M1-8 | **D3** 截止时间过了却什么都不做：过期且没有新进展时开协调事项。新增回放场景 | `coordination/ledger.py`、`coordination/service.py`、`evals/scenarios/` | M1-3、M1-6、M1-7 | 4 |
 | M1-9 | **网关定时任务**：按配置的间隔，用注入的 Clock 跑一轮协调；可以关闭；多次触发不会重复执行；测试里用 `FrozenClock.advance` | `gateway/service.py`、`gateway/app.py`、`config.py` | M1-7 | 4 |
 | M1-10 | **R3 承诺跟进**：承诺快到期时提醒负责人，这是低风险动作，自动执行；违约时开协调事项，并升级给 PM。新增回放场景 | `coordination/`、`policy/engine.py`、`evals/scenarios/` | M1-2、M1-8、M1-9 | 5 |

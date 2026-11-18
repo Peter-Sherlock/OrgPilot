@@ -201,6 +201,7 @@ PM 批准改期后，更新的是 OrgPilot 里的任务截止时间。名单导�
 - [ADR-0008](docs/adr/0008-layered-intent-recognition.md) 分层意图识别
 - [ADR-0009](docs/adr/0009-team-onboarding-and-roster-import.md) 团队接入与名单导入
 - [ADR-0013](docs/adr/0013-persist-in-flight-conversations.md) 进行中的对话状态与同步会话持久化（0010–0012 为另一分支上的草稿预留）
+- [ADR-0014](docs/adr/0014-time-driven-coordination.md) 时间驱动的截止时间与承诺跟进（草稿，未实施）
 - [ADR-0015](docs/adr/0015-github-project-context-sync.md) GitHub 只读项目上下文、同步与有界查阅（PR #20，真实验收待完成）
 
 ## 代码结构
