@@ -291,6 +291,28 @@ def test_a_live_run_needs_explicit_confirmation_and_a_cap(argv: list[str]) -> No
         runner.main(argv)
 
 
+def test_a_run_where_every_call_failed_writes_no_results(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rejected = httpx.MockTransport(lambda request: httpx.Response(401, json={"error": "denied"}))
+    client = _llm_client(tmp_path, mode="live", transport=rejected)
+    monkeypatch.setattr(runner, "RESULTS_DIR", tmp_path / "results")
+    monkeypatch.setattr(runner, "_build_llm_client", lambda _args: client)
+    code = runner.main(
+        [
+            "--client",
+            "llm",
+            "--live",
+            "--confirm-spend",
+            "--max-spend-usd",
+            "0.1",
+            "--write-results",
+        ]
+    )
+    assert code == 1
+    assert not (tmp_path / "results").exists()
+
+
 def test_a_live_run_refuses_to_replace_existing_results(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

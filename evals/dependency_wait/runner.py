@@ -553,6 +553,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.client == "llm":
         stats = aggregate_llm_metrics(client.metrics)
         print(f"  模型调用：{stats.get('call_count', 0)} 次")
+        if args.live and not stats.get("call_count"):
+            # Bad credentials or an outage say nothing about the model.
+            print("评测中止：没有一次模型调用成功，结果不写入", file=sys.stderr)
+            return 1
         if args.live:
             print(f"  估算费用：${stats.get('total_cost_usd_estimate')}")
             if args.write_results:
