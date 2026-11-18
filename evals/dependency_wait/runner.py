@@ -448,6 +448,18 @@ async def evaluate(
 # ------------------------------------------------------------------------ CLI
 
 
+def behaviour_view(report: dict[str, Any]) -> dict[str, Any]:
+    """A report without the model's raw output, for comparing a replay with the live run.
+
+    Identical requests can come back with a different reported confidence, and a recording
+    keeps only the last response, so raw output is not reproducible even when behaviour is.
+    """
+    plain = json.loads(json.dumps({key: report[key] for key in ("summary", "cases")}))
+    for case in plain["cases"]:
+        del case["observed"]["model_items"]
+    return plain
+
+
 def results_path(model: str) -> Path:
     return RESULTS_DIR / f"{PROMPT_VERSION}_{model}.json"
 
@@ -573,8 +585,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.check:
         committed = json.loads(results_path(args.model).read_text(encoding="utf-8"))
-        same = all(committed[key] == report[key] for key in ("summary", "cases"))
-        print("  与已提交结果一致" if same else "  与已提交结果不一致")
+        same = behaviour_view(committed) == behaviour_view(report)
+        print("  系统行为与已提交结果一致" if same else "  系统行为与已提交结果不一致")
         return 0 if same else 1
     return 0
 

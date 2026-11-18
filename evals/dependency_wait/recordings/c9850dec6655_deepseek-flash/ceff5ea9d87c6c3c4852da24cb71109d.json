@@ -1,0 +1,52 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "ceff5ea9d87c6c3c4852da24cb71109d",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 259,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2688,
+    "output_tokens": 160,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-11-18T13:07:26.404377+00:00",
+  "response": {
+    "id": "8e9172f5-ceba-4493-b787-045f09b8f0c2",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_DXW0rSHNtLXQJMPUK0ry8861",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "林悦询问支付接口的完成时间，属于查询任务状态。她本人负责结算页面，支付接口非其任务，但查询意图明确。",
+          "items": [
+            {
+              "intent": "query_status",
+              "speech_act": "question",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "支付接口什么时候能好？",
+              "confidence": 0.95,
+              "task_id": "pay_api"
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 259,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2688,
+      "output_tokens": 160,
+      "service_tier": "standard"
+    }
+  }
+}

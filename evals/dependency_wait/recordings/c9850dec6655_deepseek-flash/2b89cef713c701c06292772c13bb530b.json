@@ -1,0 +1,55 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "2b89cef713c701c06292772c13bb530b",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 404,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 209,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-11-18T13:07:46.923513+00:00",
+  "response": {
+    "id": "e3d701a1-4b71-4f00-b14d-da0688afb281",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_UyJqtUO4IcuUy3wat9Mn7343",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息直接回答了机器人关于 pay_api 交付/联调时间的追问，给出明天下午3点可联调，属于将来完成时间，需填 expected_completion。",
+          "answers_pending": true,
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "明天下午3点可以联调",
+              "confidence": 0.92,
+              "task_id": "pay_api",
+              "health_status": "on_track",
+              "time_expression": "明天下午3点",
+              "expected_completion": "2026-11-19T15:00:00+08:00"
+            }
+          ]
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 404,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 209,
+      "service_tier": "standard"
+    }
+  }
+}

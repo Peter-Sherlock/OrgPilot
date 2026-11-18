@@ -1,0 +1,51 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "704b3fac36a47384ea93e1a2872f132a",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 148,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2816,
+    "output_tokens": 157,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-11-18T13:07:56.861274+00:00",
+  "response": {
+    "id": "65e14147-af63-4024-bc5f-9137f19a4f04",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_d25HAZm4hrlMSKMbgSbi2442",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "消息只是提议明天下午开会讨论，没有回答交付或联调时间的问题，属于与进度无关的协调性发言。会议安排不在机器人处理范围内。",
+          "items": [
+            {
+              "intent": "out_of_scope",
+              "speech_act": "imperative",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "明天下午开个会讨论一下",
+              "confidence": 0.7
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 148,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2816,
+      "output_tokens": 157,
+      "service_tier": "standard"
+    }
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "db7068e5716b30330237471eff56e271",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 143,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2816,
+    "output_tokens": 276,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-11-18T13:08:02.898306+00:00",
+  "response": {
+    "id": "d391a2da-dd2e-4e47-995c-da4fa375ef54",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_tkVY4fcE8zJJrnyG8A3P5483",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "孟琪汇报两个自己负责的任务都在等待上游接口，属于状态汇报，等待依赖写入 blocker，不另出 dependency_wait。未给完成时间，健康度按有未解决依赖判为 at_risk。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "退款页面在等退款接口",
+              "confidence": 0.9,
+              "task_id": "refund_page",
+              "health_status": "at_risk",
+              "blocker": "在等退款接口"
+            },
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "发票页面在等支付接口",
+              "confidence": 0.9,
+              "task_id": "invoice_page",
+              "health_status": "at_risk",
+              "blocker": "在等支付接口"
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 143,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2816,
+      "output_tokens": 276,
+      "service_tier": "standard"
+    }
+  }
+}

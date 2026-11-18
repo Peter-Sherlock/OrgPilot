@@ -1,0 +1,55 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "81c18a4e04a65f312e9ba1bd2ff6c33f",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 145,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2816,
+    "output_tokens": 214,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-11-18T13:07:49.390929+00:00",
+  "response": {
+    "id": "982e0326-bbdf-4570-8c64-adfa940d4b76",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_cWon0LBTTKcHKgrwNaHy6941",
+        "name": "record_intent",
+        "input": {
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "后天上午10点",
+              "confidence": 0.95,
+              "task_id": "pay_api",
+              "time_expression": "后天上午10点",
+              "expected_completion": "2026-11-20T10:00:00+08:00",
+              "health_status": "on_track"
+            }
+          ],
+          "answers_pending": true,
+          "reasoning": "消息直接回答了机器人关于 pay_api 交付/联调时间的追问，给出“后天上午10点”即 2026-11-20 10:00。无未解决问题，视为正常推进。"
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 145,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2816,
+      "output_tokens": 214,
+      "service_tier": "standard"
+    }
+  }
+}

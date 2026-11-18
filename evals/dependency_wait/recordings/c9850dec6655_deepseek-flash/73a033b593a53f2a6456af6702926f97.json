@@ -1,0 +1,54 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "73a033b593a53f2a6456af6702926f97",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 135,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2816,
+    "output_tokens": 192,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-11-18T13:07:12.733471+00:00",
+  "response": {
+    "id": "b92a98a2-ad95-4da5-9018-898c3e1464ba",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_6uGAKEzcZr4aqBfLCqsZ7561",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "林悦汇报结算页面因支付接口未交付而无法推进，属于状态汇报，等待依赖写入 blocker，不另出 dependency_wait。未给完成时间，健康度 at_risk。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "source_quote": "支付接口还没给，结算页面只能先等着",
+              "confidence": 0.9,
+              "task_id": "checkout_page",
+              "health_status": "at_risk",
+              "blocker": "支付接口还没给"
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 135,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2816,
+      "output_tokens": 192,
+      "service_tier": "standard"
+    }
+  }
+}

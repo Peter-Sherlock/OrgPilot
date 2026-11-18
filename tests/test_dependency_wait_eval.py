@@ -269,6 +269,26 @@ async def test_the_spend_cap_stops_the_run(tmp_path: Path) -> None:
     assert len(calls) == 1
 
 
+async def test_the_committed_live_run_replays_to_the_same_behaviour() -> None:
+    committed = json.loads(runner.results_path("deepseek-flash").read_text(encoding="utf-8"))
+    client = _llm_client(runner.recordings_dir("deepseek-flash"), mode="replay")
+    replayed = await runner.evaluate(client)
+    await client.aclose()
+    assert runner.behaviour_view(replayed) == runner.behaviour_view(committed)
+
+
+def test_the_published_numbers_match_the_committed_live_run() -> None:
+    summary = json.loads(runner.results_path("deepseek-flash").read_text(encoding="utf-8"))[
+        "summary"
+    ]
+    assert summary["upstream_localization"] == {"correct": 24, "total": 29}
+    assert summary["localization_by_group"]["should_open"] == {"correct": 5, "total": 10}
+    assert summary["wrong_contacts"] == 9
+    assert summary["wrong_contacts_to_others"] == 0
+    assert summary["duplicate_actions"] == 0
+    assert summary["cases_passed"] == {"correct": 20, "total": 29}
+
+
 def test_recordings_stay_out_of_the_frozen_intent_directory() -> None:
     target = runner.recordings_dir("deepseek-flash").resolve()
     assert target.is_relative_to(runner.EVAL_DIR.resolve())

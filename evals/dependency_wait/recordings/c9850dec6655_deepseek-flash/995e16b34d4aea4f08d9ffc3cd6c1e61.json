@@ -1,0 +1,53 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "995e16b34d4aea4f08d9ffc3cd6c1e61",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 184,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2816,
+    "output_tokens": 171,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-11-18T13:07:44.696029+00:00",
+  "response": {
+    "id": "89bd67f7-1a47-4b36-95d5-e1deb78ad0f4",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_D7Ug3LE29RPttONCXFLp7634",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "林悦说明结算页面不再需要等待设计稿，属于阻塞解除的状态汇报，健康度正常。未点名任务，但结合其负责的结算页面可唯一确定。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "negative",
+              "certainty": "certain",
+              "source_quote": "设计稿不用等了",
+              "confidence": 0.75,
+              "task_id": "checkout_page",
+              "health_status": "on_track"
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 184,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2816,
+      "output_tokens": 171,
+      "service_tier": "standard"
+    }
+  }
+}

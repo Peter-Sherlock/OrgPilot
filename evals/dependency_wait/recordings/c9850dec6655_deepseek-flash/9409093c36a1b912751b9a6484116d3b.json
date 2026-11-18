@@ -1,0 +1,53 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "9409093c36a1b912751b9a6484116d3b",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 136,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2816,
+    "output_tokens": 175,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-11-18T13:07:37.481418+00:00",
+  "response": {
+    "id": "ce6ba406-ac75-4cce-91f8-21ca1406c9de",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_48InY5ECbsaUByCziCCq0681",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "林悦说明结算页面不依赖支付接口，先用 mock 数据推进，属于正常推进的状态汇报，阻塞已解除。未提及完成时间。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "不用等支付接口，我先用 mock 数据做",
+              "confidence": 0.82,
+              "task_id": "checkout_page",
+              "health_status": "on_track"
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 136,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2816,
+      "output_tokens": 175,
+      "service_tier": "standard"
+    }
+  }
+}

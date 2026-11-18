@@ -1,0 +1,54 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "1dd14f26378f19c32de122a969523ba7",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 256,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2688,
+    "output_tokens": 178,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-11-18T13:07:10.547439+00:00",
+  "response": {
+    "id": "8692aef6-f26c-4075-9cb3-47480b423e40",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_im0PG3EQ8VloT0k9kjpl7085",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "林悦汇报自己负责的结算页面仍在等接口，属于状态汇报且存在未解除的依赖，健康度至少 at_risk；未给出解除时间。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "还在等接口",
+              "confidence": 0.75,
+              "task_id": "checkout_page",
+              "health_status": "at_risk",
+              "blocker": "等接口"
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 256,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2688,
+      "output_tokens": 178,
+      "service_tier": "standard"
+    }
+  }
+}

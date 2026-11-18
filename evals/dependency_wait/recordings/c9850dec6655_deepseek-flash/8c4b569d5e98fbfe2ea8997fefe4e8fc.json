@@ -1,0 +1,51 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "8c4b569d5e98fbfe2ea8997fefe4e8fc",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 267,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2688,
+    "output_tokens": 157,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-11-18T13:07:31.888248+00:00",
+  "response": {
+    "id": "52140190-f7fc-4b0d-86a7-8c81243d4299",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_7Br6yIGwBcCsf4IBX8yo2107",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "这是假设句（“要是……只能等着”），不产生状态变更；属于对依赖关系的假设性陈述，非单纯催促依赖方。",
+          "items": [
+            {
+              "intent": "dependency_wait",
+              "speech_act": "hypothetical",
+              "polarity": "affirmative",
+              "certainty": "hedged",
+              "source_quote": "要是退款接口延期，退款页面只能等着",
+              "confidence": 0.6
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 267,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2688,
+      "output_tokens": 157,
+      "service_tier": "standard"
+    }
+  }
+}

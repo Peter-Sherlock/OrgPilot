@@ -1,0 +1,54 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "043acb5e130b1fa83b489eba430fd75f",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 191,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2816,
+    "output_tokens": 197,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-11-18T13:07:42.121323+00:00",
+  "response": {
+    "id": "b3d38667-3320-4b08-bda0-503aff84f2ed",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_n16dQskFXKErrjGVdRr00936",
+        "name": "record_intent",
+        "input": {
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "checkout_page",
+              "health_status": "on_track",
+              "source_quote": "支付接口不用等了，我先用 mock 联调",
+              "confidence": 0.85,
+              "reasoning": "林悦说明结算页面不再等待支付接口，改用 mock 联调，原阻塞已解除，属正常推进。"
+            }
+          ],
+          "answers_pending": false,
+          "reasoning": "消息说明结算页面不再依赖支付接口，改用 mock 联调，阻塞解除，按状态汇报处理。"
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 191,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2816,
+      "output_tokens": 197,
+      "service_tier": "standard"
+    }
+  }
+}

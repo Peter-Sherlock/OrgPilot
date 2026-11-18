@@ -1,0 +1,63 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "5d2cba4f866c282712851f6581925440",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 445,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2560,
+    "output_tokens": 242,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-11-18T13:08:08.876392+00:00",
+  "response": {
+    "id": "4f2d4a3f-4f7b-4dae-8b30-9392c44dc546",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_YS5PTG6pNtF7wprf4nTs0153",
+        "name": "record_intent",
+        "input": {
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "结算页面还在等支付接口",
+              "confidence": 0.85,
+              "task_id": "checkout_page",
+              "health_status": "at_risk",
+              "blocker": "等支付接口"
+            },
+            {
+              "intent": "dependency_wait",
+              "speech_act": "imperative",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "麻烦快点",
+              "confidence": 0.7,
+              "task_id": "pay_api"
+            }
+          ],
+          "reasoning": "林悦汇报结算页面仍被支付接口阻塞，属未解决问题，健康度 at_risk；后半句催促支付接口交付，单独记为 dependency_wait。",
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 445,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2560,
+      "output_tokens": 242,
+      "service_tier": "standard"
+    }
+  }
+}

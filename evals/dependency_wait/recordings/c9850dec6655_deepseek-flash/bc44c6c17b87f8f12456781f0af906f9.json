@@ -1,0 +1,55 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "bc44c6c17b87f8f12456781f0af906f9",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 150,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2816,
+    "output_tokens": 208,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-11-18T13:07:52.362125+00:00",
+  "response": {
+    "id": "70f49619-b878-4047-b17f-6b50a1c00112",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_57keHtMZo5zmbUYoTDRt4047",
+        "name": "record_intent",
+        "input": {
+          "items": [
+            {
+              "intent": "answer_pending",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "task_id": "pay_api",
+              "health_status": "on_track",
+              "time_expression": "后天中午前",
+              "expected_completion": "2026-11-20T12:00:00+08:00",
+              "source_quote": "后天中午前交付",
+              "confidence": 0.9
+            }
+          ],
+          "answers_pending": true,
+          "reasoning": "消息正面回答了待回答的交付时间问题，给出“后天中午前交付”，即 2026-11-20 12:00。评审时间不属于完成时间，不填。"
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 150,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2816,
+      "output_tokens": 208,
+      "service_tier": "standard"
+    }
+  }
+}

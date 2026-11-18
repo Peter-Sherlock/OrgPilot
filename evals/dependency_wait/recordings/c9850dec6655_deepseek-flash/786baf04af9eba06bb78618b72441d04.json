@@ -1,0 +1,54 @@
+{
+  "prompt_version": "c9850dec6655",
+  "request_hash": "786baf04af9eba06bb78618b72441d04",
+  "model": "deepseek-flash",
+  "endpoint": "api.deepseek.com",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 260,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 2688,
+    "output_tokens": 198,
+    "service_tier": "standard"
+  },
+  "recorded_at": "2026-11-18T13:07:18.928769+00:00",
+  "response": {
+    "id": "a334895c-78ca-4c6c-b380-4df65bbf5b88",
+    "type": "message",
+    "role": "assistant",
+    "model": "deepseek-flash",
+    "content": [
+      {
+        "type": "tool_use",
+        "id": "call_00_B4P9SSZjXNIR34OdQqsL7397",
+        "name": "record_intent",
+        "input": {
+          "reasoning": "苏航汇报自己在等外部结果，属于状态汇报且存在未解除的等待依赖，健康度至少 at_risk；未点名任务，结合其负责的 e2e_test 可唯一确定。未给出完成时间。",
+          "items": [
+            {
+              "intent": "report_status",
+              "speech_act": "statement",
+              "polarity": "affirmative",
+              "certainty": "certain",
+              "source_quote": "还在等那边给结果",
+              "confidence": 0.72,
+              "task_id": "e2e_test",
+              "health_status": "at_risk",
+              "blocker": "还在等那边给结果"
+            }
+          ],
+          "answers_pending": false
+        }
+      }
+    ],
+    "stop_reason": "tool_use",
+    "stop_sequence": null,
+    "usage": {
+      "input_tokens": 260,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 2688,
+      "output_tokens": 198,
+      "service_tier": "standard"
+    }
+  }
+}
