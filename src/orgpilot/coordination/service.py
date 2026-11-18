@@ -1,7 +1,7 @@
 """Build source-backed coordination cases and candidate actions from current state."""
 
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 
 from orgpilot.coordination.dependency_wait import plan_wait_actions
 from orgpilot.domain.enums import (
@@ -126,11 +126,16 @@ class CoordinationService:
         return tuple(cases)
 
     def plan_actions_for_case(
-        self, case: CoordinationCase, state: OrgState
+        self,
+        case: CoordinationCase,
+        state: OrgState,
+        unreachable_waits: Collection[str] = frozenset(),
     ) -> tuple[CoordinationAction, ...]:
         if case.kind is CoordinationCaseKind.DEPENDENCY_WAIT:
             wait = state.dependency_waits.get(case.dependency_wait_id or "")
-            return plan_wait_actions(wait, state, pm_member_ids(state)) if wait else ()
+            if wait is None:
+                return ()
+            return plan_wait_actions(wait, state, pm_member_ids(state), unreachable_waits)
 
         task = state.tasks.get(case.source_task_id)
         if task is None or not self._is_risky(task.workflow_status, task.health_status):

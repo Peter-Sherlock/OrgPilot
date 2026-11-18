@@ -177,6 +177,8 @@ class CoordinationCase(StrictModel):
     missing_information: tuple[str, ...] = ()
     candidate_actions: tuple[CoordinationAction, ...] = ()
     executed_commands: tuple[ActionCommand, ...] = ()
+    # Action ids whose message was attempted but not delivered (ADR-0016).
+    delivery_failures: tuple[str, ...] = ()
     # Persist episode identity and its deduplication boundary without dropping history.
     generation: int = Field(default=0, ge=0)
     episode_command_start: int = Field(default=0, ge=0)

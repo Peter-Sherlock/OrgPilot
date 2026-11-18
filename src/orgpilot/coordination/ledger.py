@@ -18,6 +18,7 @@ from orgpilot.domain.models import (
     CoordinationAction,
     CoordinationCase,
     DependencyImpact,
+    DependencyWait,
     OrgState,
     TaskHealthClaim,
     TaskState,
@@ -295,19 +296,43 @@ class CaseLedger:
                     terminal_reason=f"wait released: {reason}",
                     candidate_actions=(),
                 )
-            elif case.status is CoordinationCaseStatus.WAITING_FOR_RESPONSE and (
-                wait.status is DependencyWaitStatus.ESTIMATED
-                or (
-                    leads_upstream_question(wait, state)
-                    and not any(
-                        command.action_type is ActionType.ASK_DEPENDENCY_ETA
-                        for command in case.executed_commands
-                    )
-                )
+            elif (
+                case.status is CoordinationCaseStatus.WAITING_FOR_RESPONSE
+                and self._wait_needs_action(case, wait, state)
             ):
-                # An estimate needs relaying, or the wait that was asking got
-                # cancelled and this one must now ask the question itself.
                 self.transition(case_id, CoordinationCaseStatus.OPEN, current_time)
+
+    def unreachable_wait_ids(self) -> frozenset[str]:
+        """Waits whose case escalated, so their question reached nobody."""
+        return frozenset(
+            case.dependency_wait_id
+            for case in self._cases.values()
+            if case.kind is CoordinationCaseKind.DEPENDENCY_WAIT
+            and case.status is CoordinationCaseStatus.ESCALATED
+            and case.dependency_wait_id is not None
+        )
+
+    def _wait_needs_action(
+        self, case: CoordinationCase, wait: DependencyWait, state: OrgState
+    ) -> bool:
+        """An estimate to relay, a new upstream owner, or a question this wait now inherits."""
+        if wait.status is DependencyWaitStatus.ESTIMATED:
+            return True
+        upstream = state.tasks.get(wait.upstream_task_id)
+        if upstream is None:
+            return False
+        owner = upstream.owner_id
+        if case.waiting_for != owner:
+            return True
+        asked_owner = any(
+            command.action_type is ActionType.ASK_DEPENDENCY_ETA and command.targets == (owner,)
+            for command in case.executed_commands
+        )
+        return (
+            not asked_owner
+            and owner != wait.reported_by
+            and leads_upstream_question(wait, state, self.unreachable_wait_ids())
+        )
 
     @staticmethod
     def _estimate_misses_deadline(task: TaskState, active_claims: list[TaskHealthClaim]) -> bool:

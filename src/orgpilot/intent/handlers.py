@@ -50,7 +50,11 @@ from orgpilot.intent.replies import (
     merge_reply_kinds,
     sync_started_text,
 )
-from orgpilot.intent.wait_handlers import DependencyWaitHandler, describe_waits
+from orgpilot.intent.wait_handlers import (
+    DependencyWaitHandler,
+    describe_waits,
+    restates_opened_wait,
+)
 
 if TYPE_CHECKING:
     from orgpilot.gateway.service import GatewayService
@@ -131,6 +135,7 @@ class IntentHandlers:
         agent = await self.service.get_or_replay_agent(project_id)
         counter = [0]
         answer_items: list[IntentItem] = []
+        opened_waits: set[str] = set()
 
         if self.dependency_wait_enabled:
             result = self.waits.promote(
@@ -157,6 +162,8 @@ class IntentHandlers:
             agent = await self.service.get_or_replay_agent(project_id)
 
         for item in result.items:
+            if restates_opened_wait(item, opened_waits):
+                continue
             # Deterministic deadline judgment BEFORE the guards: a completion
             # later than the task deadline upgrades the health to at least
             # delayed (LABELING.md S4); it never downgrades (3b 下半 §1).
@@ -219,6 +226,8 @@ class IntentHandlers:
                     occurred_at=occurred_at,
                     message_key=message_key,
                     source_ref=source_ref,
+                    counter=counter,
+                    opened=opened_waits,
                     parts=parts,
                     kinds=kinds,
                     data=data,

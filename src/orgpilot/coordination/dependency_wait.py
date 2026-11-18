@@ -5,7 +5,7 @@ upstream task that means, who is contacted, and what they are told.
 """
 
 import re
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -38,7 +38,12 @@ _NOT_A_WAIT = re.compile(
     r"[?？]|吗|什么时候|好了没|多久|如果|要是|假如|万一|假设|不等|不用等|别等|没在等|没有在等|无需等"
 )
 _CANCELS_WAIT = re.compile(r"不用等了|不等了|别等了|无需等了")
+_BARE_CANCEL = re.compile(
+    r"^(?:那就|那|好的|好|嗯|我|这边|先|现在|已经|[，,\s])*"
+    r"(?:不用等了|不等了|别等了|无需等了)[。.!！~～\s]*$"
+)
 _CLAUSE_END = re.compile(r"[，。,.!！；;\n]")
+_TRAILING_PARTICLES = re.compile(r"[呢了啊吧呀嘛]+$")
 
 
 class UpstreamOutcome(StrEnum):
@@ -73,13 +78,22 @@ def mention_score(task: TaskState, text: str) -> int:
     """How clearly ``text`` names ``task``: exact title or id first, then shared bigrams."""
     compact = _compact(text)
     title = _compact(task.title)
-    if (title and title in compact) or task.task_id.lower() in compact:
+    # An id must stand alone: task "api" is not named by the word "openapi".
+    id_pattern = rf"(?<![a-z0-9_-]){re.escape(task.task_id.lower())}(?![a-z0-9_-])"
+    if (title and title in compact) or re.search(id_pattern, compact):
         return _EXACT_MENTION_SCORE + len(title)
     return len(_bigrams(title) & _bigrams(compact))
 
 
 def names_task_exactly(task: TaskState, text: str) -> bool:
     return mention_score(task, text) >= _EXACT_MENTION_SCORE
+
+
+def _wait_clause_fits_title(task: TaskState, text: str) -> bool:
+    """Whether what is awaited is just a shorter name of the task ("等接口" for 支付接口)."""
+    title = _compact(task.title)
+    fragments = (_TRAILING_PARTICLES.sub("", _compact(clause)) for clause in wait_clauses(text))
+    return any(fragment and fragment in title for fragment in fragments)
 
 
 def resolve_upstream(state: OrgState, waiting: TaskState, text: str) -> UpstreamResolution:
@@ -110,7 +124,7 @@ def resolve_upstream(state: OrgState, waiting: TaskState, text: str) -> Upstream
 
     candidates = tuple(sorted(task.task_id for task in open_tasks))
     if len(open_tasks) == 1:
-        if best_open < 1:
+        if best_open < _CLEAR_MENTION_SCORE and not _wait_clause_fits_title(open_tasks[0], text):
             return UpstreamResolution(UpstreamOutcome.UNNAMED, candidates=candidates)
         matched = scored[0][1]
     elif best_open >= _CLEAR_MENTION_SCORE and best_open > scored[1][0]:
@@ -139,6 +153,11 @@ def wait_clauses(message: str) -> tuple[str, ...]:
 
 def cancels_wait(message: str) -> bool:
     return _CANCELS_WAIT.search(message) is not None
+
+
+def is_bare_cancel(message: str) -> bool:
+    """ "不用等了" with no subject; "设计稿不用等了" is about something else."""
+    return _BARE_CANCEL.match(message.strip()) is not None
 
 
 def wait_statement_tasks(state: OrgState, sender_id: str, message: str) -> tuple[str, ...]:
@@ -181,14 +200,23 @@ def active_wait_for_pair(
     )
 
 
-def leads_upstream_question(wait: DependencyWait, state: OrgState) -> bool:
-    """One open question per upstream task: the earliest unanswered wait asks it."""
+def leads_upstream_question(
+    wait: DependencyWait, state: OrgState, unreachable: Collection[str] = frozenset()
+) -> bool:
+    """One open question per upstream task: the earliest wait that can still ask it.
+
+    ``unreachable`` lists waits whose question could not be delivered: they asked
+    nobody, so they must not stop a later wait from asking.
+    """
     peers = [
         peer
         for peer in state.dependency_waits.values()
         if peer.upstream_task_id == wait.upstream_task_id
         and peer.status is DependencyWaitStatus.AWAITING_ESTIMATE
+        and peer.wait_id not in unreachable
     ]
+    if not peers:
+        return False
     return min(peers, key=lambda peer: (peer.opened_at, peer.wait_id)).wait_id == wait.wait_id
 
 
@@ -269,7 +297,10 @@ def _private_action(
 
 
 def plan_wait_actions(
-    wait: DependencyWait, state: OrgState, pm_ids: tuple[str, ...]
+    wait: DependencyWait,
+    state: OrgState,
+    pm_ids: tuple[str, ...],
+    unreachable: Collection[str] = frozenset(),
 ) -> tuple[CoordinationAction, ...]:
     """The private messages this wait needs next; never a group message or a task write."""
     waiting = state.tasks.get(wait.waiting_task_id)
@@ -306,11 +337,11 @@ def plan_wait_actions(
         )
 
     actions: list[CoordinationAction] = []
-    if leads_upstream_question(wait, state):
+    if owner != wait.reported_by and leads_upstream_question(wait, state, unreachable):
         actions.append(
             _private_action(
                 wait,
-                "ask_eta",
+                f"ask_eta:{owner}",
                 ActionType.ASK_DEPENDENCY_ETA,
                 owner,
                 (

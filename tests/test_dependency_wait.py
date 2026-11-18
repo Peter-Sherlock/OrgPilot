@@ -38,6 +38,8 @@ from orgpilot.events.models import (
     MemberRegisteredPayload,
     TaskCreatedEvent,
     TaskCreatedPayload,
+    TaskUpdatedEvent,
+    TaskUpdatedPayload,
     TaskWorkflowChangedEvent,
     TaskWorkflowChangedPayload,
 )
@@ -878,5 +880,259 @@ async def test_an_unanswered_wait_stays_visible_in_a_status_query() -> None:
         outcome = await _send(router, message)
 
         assert "正在等【支付接口】：Bob 的交付时间待确认" in outcome.reply_text
+    finally:
+        await db.close()
+
+
+# ------------------------------------------------------- PR review regressions
+
+
+async def test_two_waits_in_one_message_both_open() -> None:
+    message = "结算页面在等支付接口，账务网关在等订单服务"
+    items = [
+        _item(message, intent=IntentType.DEPENDENCY_WAIT, task_id="page"),
+        _item(message, intent=IntentType.DEPENDENCY_WAIT, task_id="gate"),
+    ]
+    router, service, adapter, db = await _make_router(
+        ScriptedIntentClient(responses={message: _result(*items)})
+    )
+    try:
+        await service.ingest_raw_events(
+            PROJECT, [_task("gate", "账务网关", "alice", ("order",)).model_dump(mode="json")]
+        )
+
+        await _send(router, message)
+
+        waits = (await _state(service)).dependency_waits.values()
+        assert {wait.upstream_task_id for wait in waits} == {"api", "order"}
+        assert len(adapter.sent(ActionType.ASK_DEPENDENCY_ETA)) == 2
+    finally:
+        await db.close()
+
+
+async def test_a_wait_never_marks_the_upstream_task_at_risk() -> None:
+    message = "结算页面在等支付接口"
+    labelled_upstream = _result(_item(message, task_id="api", health_status="at_risk"))
+    router, service, adapter, db = await _make_router(
+        ScriptedIntentClient(responses={message: labelled_upstream})
+    )
+    try:
+        await _send(router, message)
+
+        state = await _state(service)
+        assert state.health_claims == {}
+        assert state.tasks["api"].health_status.value == "unknown"
+        assert adapter.sent(ActionType.ASK_RECOVERY_ESTIMATE) == []
+    finally:
+        await db.close()
+
+
+async def test_a_failed_question_does_not_stop_the_next_waiter_from_asking() -> None:
+    router, _service, adapter, db = await _make_router()
+    adapter.fail_action_types.add(ActionType.ASK_DEPENDENCY_ETA)
+    try:
+        await _send(router, "结算页面在等支付接口", sender="alice")
+        adapter.fail_action_types.clear()
+
+        outcome = await _send(
+            router, "购物车页面在等支付接口", sender="dana", at=NOW + timedelta(minutes=5)
+        )
+
+        delivered = [
+            cmd
+            for cmd, result in adapter.audit_log
+            if cmd.action_type is ActionType.ASK_DEPENDENCY_ETA
+            and result.status is CommandStatus.SUCCESS
+        ]
+        assert [cmd.targets for cmd in delivered] == [("bob",)]
+        assert "已向 Bob 确认" in outcome.reply_text
+    finally:
+        await db.close()
+
+
+async def test_a_failed_pm_notice_still_lets_the_upstream_owner_answer() -> None:
+    router, service, adapter, db = await _make_router()
+    adapter.fail_action_types.add(ActionType.NOTIFY_WAIT_OPENED)
+    try:
+        opened = await _send(router, "结算页面在等支付接口")
+        adapter.fail_action_types.clear()
+
+        assert "通知 PM 失败" in opened.reply_text
+
+        await _send(router, "明天下午3点可以联调", sender="bob")
+
+        assert (await _only_wait(service)).status is DependencyWaitStatus.ESTIMATED
+        assert len(adapter.sent(ActionType.RELAY_DELIVERY_ESTIMATE)) == 2
+    finally:
+        await db.close()
+
+
+async def test_every_relay_is_attempted_and_a_failure_is_reported() -> None:
+    router, service, adapter, db = await _make_router()
+    try:
+        await _send(router, "结算页面在等支付接口")
+        adapter.fail_action_types.add(ActionType.RELAY_DELIVERY_ESTIMATE)
+
+        outcome = await _send(router, "明天下午3点可以联调", sender="bob")
+
+        assert "转告等待方失败" in outcome.reply_text
+        assert len(adapter.sent(ActionType.RELAY_DELIVERY_ESTIMATE)) == 2
+        wait = await _only_wait(service)
+        agent = await service.get_or_replay_agent(PROJECT)
+        case = agent.case_ledger.get_case(wait_case_id(wait.wait_id))
+        assert case.status is CoordinationCaseStatus.ESCALATED
+    finally:
+        await db.close()
+
+
+@pytest.mark.parametrize(
+    "message",
+    ["支付接口今天开始做，明天评审", "明天下午开会讨论支付接口"],
+)
+async def test_a_date_that_is_not_about_delivery_is_never_relayed(message: str) -> None:
+    wait_text = "结算页面在等支付接口"
+    client = ScriptedIntentClient(
+        responses={
+            message: _result(_item(message, task_id="api", health_status="on_track")),
+            wait_text: _result(_item(wait_text, task_id="page", health_status="at_risk")),
+        }
+    )
+    router, service, adapter, db = await _make_router(client)
+    try:
+        await _send(router, wait_text)
+
+        await _send(router, message, sender="bob")
+
+        assert (await _only_wait(service)).status is DependencyWaitStatus.AWAITING_ESTIMATE
+        assert adapter.sent(ActionType.RELAY_DELIVERY_ESTIMATE) == []
+    finally:
+        await db.close()
+
+
+async def test_a_bare_time_answers_the_delivery_question() -> None:
+    router, service, _adapter, db = await _make_router()
+    try:
+        await _send(router, "结算页面在等支付接口")
+
+        await _send(router, "明天下午3点", sender="bob")
+
+        wait = await _only_wait(service)
+        assert wait.status is DependencyWaitStatus.ESTIMATED
+        assert wait.estimated_at == datetime(2026, 11, 19, 15, 0, tzinfo=BJ)
+    finally:
+        await db.close()
+
+
+async def test_an_unrelated_meeting_today_is_not_a_delivery_estimate() -> None:
+    router, service, adapter, db = await _make_router()
+    try:
+        await _send(router, "结算页面在等支付接口")
+
+        await _send(router, "今天的会议取消了", sender="bob")
+
+        assert (await _only_wait(service)).status is DependencyWaitStatus.AWAITING_ESTIMATE
+        assert adapter.sent(ActionType.RELAY_DELIVERY_ESTIMATE) == []
+    finally:
+        await db.close()
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["结算页面在等接口文档的评审意见", "结算页面在等openapi规范"],
+)
+def test_a_loose_match_does_not_identify_the_upstream(text: str) -> None:
+    assert _resolve(text, ("api",)).outcome is UpstreamOutcome.UNNAMED
+
+
+async def test_cancelling_something_else_keeps_the_active_wait() -> None:
+    router, service, _adapter, db = await _make_router()
+    try:
+        await _send(router, "结算页面在等支付接口")
+
+        outcome = await _send(router, "设计稿不用等了")
+
+        assert outcome.reply_category is ReplyKind.CLARIFY
+        assert (await _only_wait(service)).status is DependencyWaitStatus.AWAITING_ESTIMATE
+    finally:
+        await db.close()
+
+
+async def test_the_upstream_owner_is_followed_up_only_once() -> None:
+    router, service, _adapter, db = await _make_router()
+    try:
+        await _send(router, "结算页面在等支付接口")
+
+        replies = [
+            (await _send(router, text, sender="bob")).reply_text
+            for text in ("我看一下", "在排查", "稍等", "正在处理")
+        ]
+
+        assert sum("方便告诉我" in reply for reply in replies) == 1
+        assert (await _state(service)).health_claims == {}
+    finally:
+        await db.close()
+
+
+async def test_a_healthy_answer_without_a_time_is_still_recorded() -> None:
+    message = "进展正常"
+    answer = _item(message, intent=IntentType.ANSWER_PENDING, health_status="on_track")
+    wait_text = "结算页面在等支付接口"
+    client = ScriptedIntentClient(
+        responses={
+            message: _result(answer, answers_pending=True),
+            wait_text: _result(_item(wait_text, task_id="page", health_status="at_risk")),
+        }
+    )
+    router, service, _adapter, db = await _make_router(client)
+    try:
+        await _send(router, wait_text)
+
+        await _send(router, message, sender="bob")
+
+        claims = (await _state(service)).health_claims.values()
+        assert [(claim.task_id, claim.health_status.value) for claim in claims] == [
+            ("api", "on_track")
+        ]
+    finally:
+        await db.close()
+
+
+async def test_a_status_report_survives_when_no_wait_opens() -> None:
+    message = "结算页面在等支付接口"
+    report = _item(message, task_id="page", health_status="at_risk", blocker="等接口")
+    router, service, _adapter, db = await _make_router(
+        ScriptedIntentClient(responses={message: _result(report)})
+    )
+    try:
+        await service.ingest_raw_events(PROJECT, [_workflow_done("api").model_dump(mode="json")])
+
+        await _send(router, message)
+
+        state = await _state(service)
+        assert state.dependency_waits == {}
+        assert [claim.task_id for claim in state.health_claims.values()] == ["page"]
+    finally:
+        await db.close()
+
+
+async def test_a_new_upstream_owner_is_asked_and_can_answer() -> None:
+    router, service, adapter, db = await _make_router()
+    try:
+        await _send(router, "结算页面在等支付接口")
+        reassigned = TaskUpdatedEvent(
+            event_type="task.updated",
+            payload=TaskUpdatedPayload(task_id="api", owner_id="dana"),
+            **_common("evt-owner", EventSource.TASK),
+        )
+        await service.ingest_raw_events(PROJECT, [reassigned.model_dump(mode="json")])
+
+        await _send(router, "还在等支付接口", at=NOW + timedelta(minutes=5))
+
+        asks = adapter.sent(ActionType.ASK_DEPENDENCY_ETA)
+        assert [cmd.targets for cmd in asks] == [("bob",), ("dana",)]
+
+        await _send(router, "明天下午3点可以联调", sender="dana", at=NOW + timedelta(minutes=9))
+
+        assert (await _only_wait(service)).status is DependencyWaitStatus.ESTIMATED
     finally:
         await db.close()

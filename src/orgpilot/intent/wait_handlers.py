@@ -7,6 +7,7 @@ dialogue state, so a pending probe or clarification stays untouched.
 """
 
 import logging
+import re
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -17,6 +18,7 @@ from orgpilot.coordination.dependency_wait import (
     awaited_waits,
     cancels_wait,
     format_moment,
+    is_bare_cancel,
     mention_score,
     names_task_exactly,
     resolve_upstream,
@@ -64,6 +66,41 @@ _REPLY_INTENTS = {
     IntentType.MAKE_COMMITMENT,
 }
 _ASK_FOR_ESTIMATE = "方便告诉我预计什么时候可以交付或联调吗？例如：明天下午3点。"
+_ACK_WITHOUT_ESTIMATE = "收到，确定交付时间后告诉我就行。"
+_MAX_ESTIMATE_FOLLOW_UPS = 1
+
+_CLAUSE_SPLIT = re.compile(r"[，。,.!！；;\n]")
+_DELIVERY_CUE = re.compile(
+    r"联调|交付|提测|上线|发布|合并|完成|做完|搞定|修好|修完|恢复|解决|好了|能好|可以给|能给|给你|ready",
+    re.IGNORECASE,
+)
+_OTHER_EVENT_CUE = re.compile(r"开始|启动|评审|演示|开会|会议|讨论|定位|同步|请假|出差")
+_TIME_WORDS = re.compile(
+    r"明天|后天|今天|今晚|下?周[一二三四五六日天]|(?:星期|礼拜)[一二三四五六日天]"
+    r"|上午|下午|晚上|早上|中午|\d+[点时](?:\d+分?|半)?|\d+:\d+|\d+[天日]后"
+    r"|左右|之前|前|吧|大概|应该|估计|差不多|可能"
+)
+
+
+def _delivery_time(item: IntentItem, message: str, anchor: datetime) -> datetime | None:
+    """The delivery time this reply states; dates of meetings or kick-offs do not count."""
+    stated: datetime | None = None
+    for clause in _CLAUSE_SPLIT.split(message):
+        if _OTHER_EVENT_CUE.search(clause):
+            continue
+        moment = TemporalResolver.resolve_relative_time(clause, anchor)
+        bare_time = not _TIME_WORDS.sub("", re.sub(r"\s+", "", clause))
+        if moment is not None and (_DELIVERY_CUE.search(clause) or bare_time):
+            stated = moment
+            break
+
+    if item.intent != IntentType.ANSWER_PENDING:
+        return item.expected_completion or stated
+    # The heuristic client fills an answer's time from any date in the message, so
+    # trust it only for a time the resolver could not read in the message at all.
+    if stated is None and TemporalResolver.resolve_relative_time(message, anchor) is None:
+        return item.expected_completion
+    return (item.expected_completion or stated) if stated is not None else None
 
 
 def _wait_item(quote: str, task_id: str | None, polarity: Polarity) -> IntentItem:
@@ -78,16 +115,30 @@ def _wait_item(quote: str, task_id: str | None, polarity: Polarity) -> IntentIte
     )
 
 
-def _restates_wait(item: IntentItem, waiting_task_ids: tuple[str, ...]) -> bool:
-    """Whether an item only repeats the wait, which would make us question the waiter."""
-    if item.intent == IntentType.CHITCHAT:
-        return True
+def _only_repeats_a_problem(item: IntentItem) -> bool:
     return (
         item.intent == IntentType.REPORT_STATUS
-        and (item.task_id is None or item.task_id in waiting_task_ids)
         and item.health_status in {None, HealthStatus.UNKNOWN, HealthStatus.AT_RISK}
         and item.expected_completion is None
     )
+
+
+def _adds_nothing_to_wait(item: IntentItem, foreign_upstreams: set[str]) -> bool:
+    """Items that are never kept next to a wait, whether or not the wait opens.
+
+    Saying "I am waiting on X" says nothing about X's health, so it must not become
+    the waiter's risk claim on someone else's task.
+    """
+    if item.intent == IntentType.CHITCHAT:
+        return True
+    return _only_repeats_a_problem(item) and (
+        item.task_id is None or item.task_id in foreign_upstreams
+    )
+
+
+def restates_opened_wait(item: IntentItem, opened_task_ids: set[str]) -> bool:
+    """A report on a task whose wait just opened: recording it would question the waiter."""
+    return _only_repeats_a_problem(item) and item.task_id in opened_task_ids
 
 
 def describe_waits(state: OrgState, task: TaskState) -> list[str]:
@@ -146,33 +197,36 @@ class DependencyWaitHandler:
         # A probe answer that mentions waiting is still an answer to the probe.
         if self._has_pending_question(project_id, member.member_id, occurred_at):
             return result
-        recognized = tuple(
-            item.task_id
+
+        wait_items = [item for item in result.items if item.intent == IntentType.DEPENDENCY_WAIT]
+        if not wait_items:
+            quote = message.strip()
+            tasks = wait_statement_tasks(state, member.member_id, message)
+            if cancels_wait(message) and any(
+                wait.reported_by == member.member_id for wait in active_waits(state)
+            ):
+                wait_items = [_wait_item(quote, None, Polarity.NEGATIVE)]
+            elif tasks:
+                named = sorted({item.task_id for item in result.items if item.task_id in tasks})
+                task_id = named[0] if len(named) == 1 else (tasks[0] if len(tasks) == 1 else None)
+                wait_items = [_wait_item(quote, task_id, Polarity.AFFIRMATIVE)]
+            else:
+                return result
+
+        foreign_upstreams = {
+            dependency
+            for task in self._owned_with_dependencies(state, member)
+            for dependency in task.dependencies
+            if dependency in state.tasks and state.tasks[dependency].owner_id != member.member_id
+        }
+        # Wait items go first so later items can see whether the wait really opened.
+        others = [
+            item
             for item in result.items
-            if item.intent == IntentType.DEPENDENCY_WAIT and item.task_id
-        )
-        if any(item.intent == IntentType.DEPENDENCY_WAIT for item in result.items):
-            kept = [item for item in result.items if not _restates_wait(item, recognized)]
-            return result.model_copy(update={"items": kept})
-
-        quote = message.strip()
-        if cancels_wait(message) and any(
-            wait.reported_by == member.member_id for wait in active_waits(state)
-        ):
-            kept = [item for item in result.items if item.intent != IntentType.CHITCHAT]
-            return result.model_copy(
-                update={"items": [_wait_item(quote, None, Polarity.NEGATIVE), *kept]}
-            )
-
-        tasks = wait_statement_tasks(state, member.member_id, message)
-        if not tasks:
-            return result
-        named = sorted({item.task_id for item in result.items if item.task_id in tasks})
-        task_id = named[0] if len(named) == 1 else (tasks[0] if len(tasks) == 1 else None)
-        kept = [item for item in result.items if not _restates_wait(item, tasks)]
-        return result.model_copy(
-            update={"items": [_wait_item(quote, task_id, Polarity.AFFIRMATIVE), *kept]}
-        )
+            if item.intent != IntentType.DEPENDENCY_WAIT
+            and not _adds_nothing_to_wait(item, foreign_upstreams)
+        ]
+        return result.model_copy(update={"items": [*wait_items, *others]})
 
     async def bind_replies(
         self,
@@ -200,6 +254,7 @@ class DependencyWaitHandler:
         remaining: list[IntentItem] = []
         estimates: dict[str, tuple[datetime, str]] = {}
         asks = False
+        answered_without_time = False
         awaited_upstreams = sorted({wait.upstream_task_id for wait in awaited})
         for item in result.items:
             # An answer inherits the task we asked about; it must never reach the
@@ -233,16 +288,35 @@ class DependencyWaitHandler:
                 asks = True
                 continue
 
-            estimate = item.expected_completion or TemporalResolver.resolve_relative_time(
-                message, occurred_at
-            )
+            estimate = _delivery_time(item, message, occurred_at)
             if estimate is None or estimate <= occurred_at:
-                if item.intent == IntentType.ANSWER_PENDING:
+                if item.intent != IntentType.ANSWER_PENDING:
+                    remaining.append(item)
+                    continue
+                # at_risk is the heuristic default for any answer, so it says nothing.
+                if item.blocker or item.health_status in {
+                    HealthStatus.ON_TRACK,
+                    HealthStatus.DELAYED,
+                }:
+                    remaining.append(item)
+                if answered_without_time:
+                    continue
+                answered_without_time = True
+                cases = [
+                    case
+                    for wait in targets
+                    if (case := agent.case_ledger.get_case(wait_case_id(wait.wait_id)))
+                ]
+                if all(case.round_count < _MAX_ESTIMATE_FOLLOW_UPS for case in cases):
+                    for case in cases:
+                        case.round_count += 1
+                    await self.service.save_agent_state(agent)
                     parts.append(_ASK_FOR_ESTIMATE)
                     kinds.append(ReplyKind.CLARIFY)
                     asks = True
                 else:
-                    remaining.append(item)
+                    parts.append(_ACK_WITHOUT_ESTIMATE)
+                    kinds.append(ReplyKind.NOTED)
                 continue
 
             for wait in targets:
@@ -315,11 +389,16 @@ class DependencyWaitHandler:
         occurred_at: datetime,
         message_key: str,
         source_ref: str,
+        counter: list[int],
+        opened: set[str],
         parts: list[str],
         kinds: list[ReplyKind],
         data: dict[str, Any],
     ) -> bool:
-        """Handles one wait item; returns True when the sender was asked something."""
+        """Handles one wait item; returns True when the sender was asked something.
+
+        ``opened`` collects the waiting tasks whose wait is now on record.
+        """
 
         def reply(text: str, kind: ReplyKind) -> bool:
             parts.append(text)
@@ -341,6 +420,7 @@ class DependencyWaitHandler:
                 occurred_at=occurred_at,
                 message_key=message_key,
                 source_ref=source_ref,
+                counter=counter,
                 reply=reply,
                 data=data,
             )
@@ -390,9 +470,10 @@ class DependencyWaitHandler:
             if existing is not None
             else f"wait:{waiting.task_id}:{upstream.task_id}:{message_key[:12]}"
         )
+        counter[0] += 1
         event = DependencyWaitReportedEvent(
             project_id=project_id,
-            event_id=f"evt-dep-wait-{message_key}",
+            event_id=f"evt-dep-wait-{message_key}-{counter[0]}",
             event_type="dependency.wait_reported",
             source=EventSource.MESSAGE,
             source_ref=source_ref,
@@ -413,6 +494,7 @@ class DependencyWaitHandler:
             data["rejected"] = error
             return reply(f"消息处理失败：{error}", ReplyKind.NOTED)
 
+        opened.add(waiting.task_id)
         data["is_actionable"] = True
         data["dependency_wait_id"] = wait_id
         data["turn_termination_reason"] = reason
@@ -481,9 +563,10 @@ class DependencyWaitHandler:
             )
         commands = case.executed_commands
         asked = any(cmd.action_type is ActionType.ASK_DEPENDENCY_ETA for cmd in commands)
-        told_pm = any(cmd.action_type is ActionType.NOTIFY_WAIT_OPENED for cmd in commands)
+        notices = [cmd for cmd in commands if cmd.action_type is ActionType.NOTIFY_WAIT_OPENED]
+        pm_failed = any(cmd.action_id in case.delivery_failures for cmd in notices)
         contact = f"已向 {owner} 确认交付时间" if asked else f"{owner} 已被问过同一任务的交付时间"
-        pm_note = "，并告知 PM" if told_pm else ""
+        pm_note = "，但通知 PM 失败" if pm_failed else ("，并告知 PM" if notices else "")
         return (
             f"已记录：【{waiting.title}】在等【{upstream.title}】。"
             f"{contact}{pm_note}，有回复后我会转告你。"
@@ -500,10 +583,12 @@ class DependencyWaitHandler:
         occurred_at: datetime,
         message_key: str,
         source_ref: str,
+        counter: list[int],
         reply: Any,
         data: dict[str, Any],
     ) -> bool:
         mine = [wait for wait in active_waits(state) if wait.reported_by == member.member_id]
+        ambiguous_subject = False
         if item.task_id is not None:
             mine = [
                 wait
@@ -516,17 +601,19 @@ class DependencyWaitHandler:
                 for wait in mine
                 if mention_score(state.tasks[wait.upstream_task_id], message) >= 2
             ]
+            ambiguous_subject = not named and not is_bare_cancel(message)
             mine = named or mine
         if not mine:
             return reply("当前没有你登记的等待。", ReplyKind.NOTED)
-        if len(mine) > 1:
+        if len(mine) > 1 or ambiguous_subject:
             titles = "、".join(state.tasks[wait.upstream_task_id].title for wait in mine)
             return reply(f"要取消哪个等待？你正在等：{titles}", ReplyKind.CLARIFY)
 
         wait = mine[0]
+        counter[0] += 1
         event = DependencyWaitCancelledEvent(
             project_id=project_id,
-            event_id=f"evt-dep-cancel-{message_key}",
+            event_id=f"evt-dep-cancel-{message_key}-{counter[0]}",
             event_type="dependency.wait_cancelled",
             source=EventSource.MESSAGE,
             source_ref=source_ref,

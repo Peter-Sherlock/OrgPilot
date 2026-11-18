@@ -87,7 +87,9 @@ class CoordinationAgent:
             generation_suffix = f":g{case.generation}" if case.generation else ""
             if case.status is CoordinationCaseStatus.OPEN:
                 actions = self.coordination_service.plan_actions_for_case(
-                    case, self.projector.state
+                    case,
+                    self.projector.state,
+                    unreachable_waits=self.case_ledger.unreachable_wait_ids(),
                 )
                 self.case_ledger.transition(
                     case.case_id,
@@ -284,6 +286,17 @@ class CoordinationAgent:
             candidate_actions=(),
         )
 
+    def _escalate_wait_failure(
+        self, case: CoordinationCase, error: str, current_time: datetime
+    ) -> None:
+        self.case_ledger.transition(
+            case.case_id,
+            CoordinationCaseStatus.ESCALATED,
+            current_time,
+            terminal_reason=f"dependency wait message failed: {error}",
+            candidate_actions=(),
+        )
+
     def _run_wait_actions(
         self,
         case: CoordinationCase,
@@ -293,7 +306,12 @@ class CoordinationAgent:
         policy_decision_ids: list[str],
         executed_cmd_ids: list[str],
     ) -> None:
-        """Sends a wait's private messages once; a failed send is never retried here."""
+        """Sends a wait's private messages once; a failed send is never retried here.
+
+        Only an undelivered question stops the wait, because then nobody was asked.
+        A failed notice is recorded and the remaining recipients are still tried.
+        """
+        relay_error: str | None = None
         for action in actions:
             candidate_action_ids.append(action.action_id)
             if self.case_ledger.is_action_duplicate(case.case_id, action):
@@ -318,22 +336,23 @@ class CoordinationAgent:
             result = self.adapter.execute(command)
             self.case_ledger.record_command(case.case_id, command, current_time)
             executed_cmd_ids.append(command.command_id)
-            if result.status is not CommandStatus.SUCCESS:
-                self.case_ledger.transition(
-                    case.case_id,
-                    CoordinationCaseStatus.ESCALATED,
-                    current_time,
-                    terminal_reason=(
-                        f"dependency wait message failed: {result.error or result.status.value}"
-                    ),
-                    candidate_actions=(),
-                )
+            if result.status is CommandStatus.SUCCESS:
+                continue
+
+            error = result.error or result.status.value
+            case.delivery_failures = (*case.delivery_failures, action.action_id)
+            if action.action_type is ActionType.ASK_DEPENDENCY_ETA:
+                self._escalate_wait_failure(case, error, current_time)
                 return
+            if action.action_type is ActionType.RELAY_DELIVERY_ESTIMATE:
+                relay_error = error
 
         wait = self.projector.state.dependency_waits.get(case.dependency_wait_id or "")
         if wait is None:
             return
-        if wait.status is DependencyWaitStatus.ESTIMATED:
+        if relay_error is not None:
+            self._escalate_wait_failure(case, relay_error, current_time)
+        elif wait.status is DependencyWaitStatus.ESTIMATED:
             self.case_ledger.transition(
                 case.case_id,
                 CoordinationCaseStatus.RESOLVED,
